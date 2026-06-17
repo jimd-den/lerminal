@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "_temp_init",
-    "slug": "_temp_init",
+    "name": "Chunk Buddy",
+    "slug": "chunk_buddy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ddsrv.x-chunk-buddy"
     },
     "android": {
       "adaptiveIcon": {
@@ -17,10 +18,15 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ddsrv.x_temp_init"
+      "package": "com.ddsrv.x_chunk_buddy"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "60754f0d-760d-44ee-8f4b-a68f7edc1fb1"
+      }
     }
   }
 }
