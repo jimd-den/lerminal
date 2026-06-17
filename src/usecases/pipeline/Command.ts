@@ -20,6 +20,8 @@ import { Workspace } from "../../entities/workspace";
 export interface CommandContext {
   /** The active workspace cards are created in / resolved from. */
   workspaceId: string;
+  /** The group new cards are created under (null = workspace root / current view). */
+  parentId: string | null;
   /** Cards piped in from the previous stage (or the current selection). */
   inputCards: Card[];
   /** All workspaces, used by commands such as `move` that target another scope. */

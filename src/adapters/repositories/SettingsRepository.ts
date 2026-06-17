@@ -13,6 +13,8 @@ export interface AppSettings {
   openRouterKey: string;
   selectedModel: string;
   customSystemPrompt: string;
+  /** When true, pipelines auto-organize their output into a group per command. */
+  autoGroupByCommand: boolean;
 }
 
 export interface SettingsRepository {

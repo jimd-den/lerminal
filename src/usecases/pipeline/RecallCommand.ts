@@ -20,7 +20,9 @@ export class RecallCommand implements PipelineCommand {
       throw new EmptySelectionError("Select source, note or chunk to recall");
     }
 
-    const cards = recallable.map(card => recallCard(card));
+    const cards = recallable
+      .map(card => recallCard(card))
+      .map(card => ({ ...card, parentId: ctx.parentId ?? undefined }));
     await this.cardRepo.saveCards(cards);
     return { kind: "cards", cards };
   }

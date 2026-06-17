@@ -81,13 +81,13 @@ describe("OpenRouter Agent Gateway", () => {
     }
   });
 
-  it("should utilize a custom system prompt if provided", async () => {
+  it("should utilize a custom system prompt and append JSON format instructions if missing", async () => {
     const originalFetch = global.fetch;
     const customPrompt = "Custom instructions for card output.";
+    let capturedBody: any = null;
     
     global.fetch = mock(async (url: any, options: any) => {
-      const body = JSON.parse(options.body);
-      expect(body.messages[0].content).toContain(customPrompt);
+      capturedBody = JSON.parse(options.body);
       return {
         ok: true,
         json: async () => ({
@@ -99,6 +99,37 @@ describe("OpenRouter Agent Gateway", () => {
     try {
       const gateway = new OpenRouterAgentGateway();
       await gateway.ask("test-query", [], "key", "google/gemini-2.5-flash", customPrompt);
+      
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody.messages[0].content).toContain(customPrompt);
+      expect(capturedBody.messages[0].content).toContain("Respond ONLY with a valid JSON array");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("should not append JSON format instructions if the custom prompt already asks for a json array", async () => {
+    const originalFetch = global.fetch;
+    const customPrompt = "Respond with a valid json array of cards.";
+    let capturedBody: any = null;
+    
+    global.fetch = mock(async (url: any, options: any) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "[]" } }]
+        })
+      } as Response;
+    });
+
+    try {
+      const gateway = new OpenRouterAgentGateway();
+      await gateway.ask("test-query", [], "key", "google/gemini-2.5-flash", customPrompt);
+      
+      expect(capturedBody).not.toBeNull();
+      expect(capturedBody.messages[0].content).toContain(customPrompt);
+      expect(capturedBody.messages[0].content).not.toContain("Respond ONLY with a valid JSON array of objects (no prose");
     } finally {
       global.fetch = originalFetch;
     }

@@ -75,3 +75,24 @@ export class NothingDueError extends UseCaseError {
     super("Nothing due. Run space on questions first.");
   }
 }
+
+/** Raised when a custom command name is empty or malformed. */
+export class InvalidCommandNameError extends UseCaseError {
+  constructor() {
+    super("Use a single lowercase word (letters, digits, hyphens)");
+  }
+}
+
+/** Raised when a custom command name collides with a built-in command. */
+export class ReservedCommandNameError extends UseCaseError {
+  constructor(name: string) {
+    super(`"${name}" is a built-in command`);
+  }
+}
+
+/** Raised when a custom command name is already taken by another custom command. */
+export class DuplicateCommandNameError extends UseCaseError {
+  constructor(name: string) {
+    super(`A command named "${name}" already exists`);
+  }
+}

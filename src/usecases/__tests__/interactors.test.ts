@@ -30,6 +30,7 @@ const SETTINGS = {
   openRouterKey: "key",
   selectedModel: "model",
   customSystemPrompt: "prompt",
+  autoGroupByCommand: true,
 };
 
 describe("StartReviewInteractor", () => {

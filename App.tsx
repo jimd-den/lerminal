@@ -5,6 +5,7 @@ import { LearnimalController } from "./src/adapters/presenters/LearnimalControll
 import { AsyncStorageCardRepository } from "./src/frameworks/storage/AsyncStorageCardRepository";
 import { AsyncStorageWorkspaceRepository } from "./src/frameworks/storage/AsyncStorageWorkspaceRepository";
 import { AsyncStorageSettingsRepository } from "./src/frameworks/storage/AsyncStorageSettingsRepository";
+import { AsyncStorageCommandDefinitionRepository } from "./src/frameworks/storage/AsyncStorageCommandDefinitionRepository";
 import { OpenRouterAgentGateway } from "./src/frameworks/network/OpenRouterAgentGateway";
 import { MainLayout } from "./src/frameworks/ui/MainLayout";
 
@@ -28,6 +29,7 @@ export default function App() {
     const cardRepo = new AsyncStorageCardRepository();
     const workspaceRepo = new AsyncStorageWorkspaceRepository();
     const settingsRepo = new AsyncStorageSettingsRepository();
+    const commandDefinitionRepo = new AsyncStorageCommandDefinitionRepository();
     const agentGateway = new OpenRouterAgentGateway();
 
     const appController = new LearnimalController({
@@ -35,6 +37,7 @@ export default function App() {
       workspaceRepo,
       settingsRepo,
       agentGateway,
+      commandDefinitionRepo,
     });
 
     appController.init().then(() => {

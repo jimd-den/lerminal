@@ -14,9 +14,12 @@ import { ScheduleState } from "./schedule";
  * - `chunk`: An atomic, single-idea card extracted from a source.
  * - `question`: An active recall question, where the answer is hidden until prompt.
  * - `note`: A user-created thought or summary card.
+ * - `group`: A container that nests other cards (and groups) beneath it. Groups
+ *   form an arbitrarily deep tree via the `parentId` pointer, letting the user
+ *   organize cards into infinite subgroups.
  */
 
-export type CardType = "source" | "chunk" | "question" | "note";
+export type CardType = "source" | "chunk" | "question" | "note" | "group";
 
 export interface Card {
   /** Unique identifier for the card. */
@@ -35,6 +38,11 @@ export interface Card {
   tags: string[];
   /** Optional reference to the original source card ID this card was derived from. */
   sourceRef?: string;
+  /**
+   * Optional id of the `group` card that contains this card. Undefined means the
+   * card sits at the workspace root. Forms the grouping tree.
+   */
+  parentId?: string;
   /** Optional citation string (e.g. source url or title). */
   cite?: string;
   /** Optional spaced repetition state. Present if the card is scheduled. */
@@ -54,6 +62,7 @@ export interface CreateCardParams {
   body: string;
   tags?: string[];
   sourceRef?: string;
+  parentId?: string;
   cite?: string;
   schedule?: ScheduleState;
   answer?: string;
@@ -82,6 +91,7 @@ export function createCard(params: CreateCardParams): Card {
     createdAt: createdTime,
     tags: params.tags || [],
     sourceRef: params.sourceRef,
+    parentId: params.parentId,
     cite: params.cite,
     schedule: params.schedule,
     answer: params.answer,

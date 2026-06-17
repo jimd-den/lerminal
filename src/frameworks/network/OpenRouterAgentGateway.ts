@@ -44,7 +44,12 @@ export class OpenRouterAgentGateway implements AgentGateway {
 
 Each card must be a distinct, recall-ready idea.`;
 
-    const activeSystemPrompt = systemPrompt || defaultSystemPrompt;
+    let activeSystemPrompt = systemPrompt || defaultSystemPrompt;
+
+    // Enforce JSON parsing compatibility for custom agent commands that forget to specify it
+    if (systemPrompt && systemPrompt !== defaultSystemPrompt && !systemPrompt.toLowerCase().includes("json array")) {
+      activeSystemPrompt += `\n\nRespond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:\n- "title": string (max 6 words)\n- "body": string (1-2 clear, simple sentences).`;
+    }
 
     const prompt = `${activeSystemPrompt}
 

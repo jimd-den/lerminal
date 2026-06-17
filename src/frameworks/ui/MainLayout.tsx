@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppState, LearnimalController } from "../../adapters/presenters/LearnimalController";
@@ -29,6 +30,7 @@ const CARD_COLORS = {
   chunk: "#7FB2E8",
   question: "#4EC7C0",
   note: "#E8829B",
+  group: "#9AA7B5",
   due: "#F2A65A",
 };
 
@@ -65,6 +67,8 @@ const COMMANDS_INFO = {
   space: { dot: CARD_COLORS.due, desc: "Schedule with spaced repetition" },
   review: { dot: CARD_COLORS.due, desc: "Run today's due reviews" },
   move: { dot: CARD_COLORS.source, desc: "Send cards to another workspace" },
+  group: { dot: CARD_COLORS.group, desc: "Bundle selected cards into a group" },
+  ungroup: { dot: CARD_COLORS.group, desc: "Dissolve a group, freeing its cards" },
 };
 
 const DEFAULT_SYSTEM_PROMPT = `You generate atomic learning cards. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
@@ -104,6 +108,43 @@ export function MainLayout({ controller }: MainLayoutProps) {
   const [systemPromptInput, setSystemPromptInput] = useState(state.customSystemPrompt);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
 
+  // Custom command creation sheet state
+  const [isCreateCmdOpen, setIsCreateCmdOpen] = useState(false);
+  const [newCmdName, setNewCmdName] = useState("");
+  const [newCmdDesc, setNewCmdDesc] = useState("");
+  const [newCmdPrompt, setNewCmdPrompt] = useState("");
+
+  const openCreateCommand = () => {
+    setNewCmdName("");
+    setNewCmdDesc("");
+    setNewCmdPrompt("");
+    setIsCreateCmdOpen(true);
+  };
+
+  const handleCreateCommand = () => {
+    if (!newCmdName.trim() || !newCmdPrompt.trim()) return;
+    controller.createCustomCommand({
+      name: newCmdName,
+      description: newCmdDesc,
+      systemPrompt: newCmdPrompt,
+    });
+    setIsCreateCmdOpen(false);
+  };
+
+  const confirmDeleteCard = (cardId: string) => {
+    Alert.alert("Delete card?", "This permanently removes the card.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => controller.deleteCard(cardId) },
+    ]);
+  };
+
+  const confirmDeleteCommand = (id: string, name: string) => {
+    Alert.alert(`Delete "${name}"?`, "This removes the custom command.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => controller.deleteCustomCommand(id) },
+    ]);
+  };
+
   React.useEffect(() => {
     setApiKeyInput(state.openRouterKey);
   }, [state.openRouterKey]);
@@ -137,11 +178,10 @@ export function MainLayout({ controller }: MainLayoutProps) {
 
   const handleInputSheetSubmit = () => {
     if (!sheetInput.trim()) return;
-    if (state.inputSheetMode === "ask") {
-      controller.runPipeline(`ask "${sheetInput.replace(/"/g, "")}"`);
-    } else {
-      controller.runPipeline(`source "${sheetInput.replace(/"/g, "")}"`);
-    }
+    // Re-dispatch to the command that asked for input (a built-in like ask/source,
+    // or a custom command), falling back to the sheet mode if none is pending.
+    const command = state.pendingCommandName || (state.inputSheetMode === "ask" ? "ask" : "source");
+    controller.runPipeline(`${command} "${sheetInput.replace(/"/g, "")}"`);
     setSheetInput("");
   };
 
@@ -177,6 +217,34 @@ export function MainLayout({ controller }: MainLayoutProps) {
             </TouchableOpacity>
           </View>
 
+          {/* Breadcrumb trail (drill-in navigation) */}
+          {state.breadcrumb.length > 0 && (
+            <View style={styles.breadcrumbBar}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.breadcrumbContent}
+              >
+                <TouchableOpacity onPress={() => controller.navigateToGroup(null)}>
+                  <Text style={[styles.crumbText, { color: colors.muted }]}>{activeWs ? activeWs.name : "Root"}</Text>
+                </TouchableOpacity>
+                {state.breadcrumb.map((g, i) => {
+                  const isLast = i === state.breadcrumb.length - 1;
+                  return (
+                    <View key={g.id} style={styles.crumbItem}>
+                      <Text style={[styles.crumbSep, { color: colors.faint }]}>›</Text>
+                      <TouchableOpacity onPress={() => controller.navigateToGroup(g.id)}>
+                        <Text style={[styles.crumbText, { color: isLast ? colors.text : colors.muted }]}>
+                          {g.title}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Canvas Scroll Area */}
           <ScrollView
             style={styles.canvas}
@@ -197,22 +265,58 @@ export function MainLayout({ controller }: MainLayoutProps) {
             )}
 
             {/* Empty Canvas Indicator */}
-            {state.cards.length === 0 ? (
+            {state.visibleCards.length === 0 ? (
               <View style={styles.emptyView}>
-                <Text style={[styles.emptyTitle, { color: colors.muted }]}>Empty canvas</Text>
+                <Text style={[styles.emptyTitle, { color: colors.muted }]}>
+                  {state.currentGroupId ? "Empty group" : "Empty canvas"}
+                </Text>
                 <Text style={[styles.emptySub, { color: colors.faint }]}>
                   Open the drawer on the right and run <Text style={styles.monoText}>ask</Text> — or pipe{" "}
                   <Text style={styles.monoText}>ask | chunk | recall | space</Text> to learn something end to end.
                 </Text>
               </View>
             ) : (
-              // Card Flow Render
-              state.cards
+              // Card Flow Render — only the current group's direct children.
+              state.visibleCards
                 .slice()
                 .reverse()
                 .map((card) => {
                   const isSelected = state.selection.has(card.id);
                   const isSpaced = !!card.schedule;
+
+                  // Group cards render as a folder that drills in on tap.
+                  if (card.type === "group") {
+                    const childCount = state.cards.filter((c) => c.parentId === card.id).length;
+                    return (
+                      <TouchableOpacity
+                        key={card.id}
+                        activeOpacity={0.9}
+                        style={[
+                          styles.card,
+                          { backgroundColor: colors.surface },
+                          isSelected
+                            ? { borderColor: accent.line, shadowColor: accent.soft, shadowOpacity: 1, shadowRadius: 10 }
+                            : { borderColor: colors.line },
+                        ]}
+                        onPress={() => controller.openGroup(card.id)}
+                      >
+                        <View style={[styles.cardSpine, { backgroundColor: CARD_COLORS.group }]} />
+                        <View style={styles.cardHeader}>
+                          <Text style={[styles.cardTypeLabel, { color: CARD_COLORS.group }]}>
+                            group · {childCount} {childCount === 1 ? "card" : "cards"}
+                          </Text>
+                          <TouchableOpacity
+                            style={[styles.selDot, isSelected && { backgroundColor: accent.primary, borderColor: accent.primary }]}
+                            onPress={() => controller.toggleSelect(card.id)}
+                          >
+                            {isSelected && <Text style={styles.selDotCheck}>✓</Text>}
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={[styles.cardTitle, { color: colors.text }]}>📁 {card.title}</Text>
+                        <Text style={[styles.cardBodyPreview, { color: colors.faint }]}>Tap to open ›</Text>
+                      </TouchableOpacity>
+                    );
+                  }
                   const borderStyle = isSelected
                     ? { borderColor: accent.line, shadowColor: accent.soft, shadowOpacity: 1, shadowRadius: 10 }
                     : { borderColor: colors.line };
@@ -394,6 +498,50 @@ export function MainLayout({ controller }: MainLayoutProps) {
                     </TouchableOpacity>
                   );
                 })}
+
+                {/* Custom commands */}
+                <View style={[styles.groupLabelRow, { marginTop: 14 }]}>
+                  <Text style={[styles.groupLabelText, { color: colors.faint }]}>CUSTOM COMMANDS</Text>
+                  <TouchableOpacity onPress={openCreateCommand}>
+                    <Text style={[styles.groupEditBtn, { color: accent.primary }]}>+ New</Text>
+                  </TouchableOpacity>
+                </View>
+                {state.commandDefinitions.length === 0 ? (
+                  <Text style={[styles.rowDesc, { color: colors.faint, paddingVertical: 8 }]}>
+                    Create a command with its own agent prompt — it runs like ask.
+                  </Text>
+                ) : (
+                  state.commandDefinitions.map((def) => {
+                    const isPinned = state.pinnedCommands.includes(def.name);
+                    return (
+                      <TouchableOpacity
+                        key={def.id}
+                        style={styles.cmdRow}
+                        onPress={() => controller.runPipeline(def.name)}
+                      >
+                        <View style={[styles.rowDot, { backgroundColor: CARD_COLORS.chunk }]} />
+                        <View style={styles.rowInfo}>
+                          <Text style={[styles.rowName, { color: colors.text }]}>{def.name}</Text>
+                          <Text style={[styles.rowDesc, { color: colors.muted }]}>{def.description}</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.pinStarBtn}
+                          onPress={() => controller.togglePinCommand(def.name)}
+                        >
+                          <Text style={{ fontSize: 18, color: isPinned ? accent.primary : colors.faint }}>
+                            {isPinned ? "★" : "☆"}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.pinStarBtn}
+                          onPress={() => confirmDeleteCommand(def.id, def.name)}
+                        >
+                          <Text style={{ fontSize: 16, color: "#E8829B" }}>✕</Text>
+                        </TouchableOpacity>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
               </ScrollView>
 
               {/* Monospace Command line input */}
@@ -489,6 +637,13 @@ export function MainLayout({ controller }: MainLayoutProps) {
                   onPress={() => controller.closeCard()}
                 >
                   <Text style={{ color: colors.text, fontWeight: "500" }}>Back</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.fullCardDeleteBtn, { borderColor: "rgba(232,130,155,0.5)" }]}
+                  onPress={() => confirmDeleteCard(card.id)}
+                >
+                  <Text style={{ color: "#E8829B", fontWeight: "600" }}>Delete</Text>
                 </TouchableOpacity>
 
                 {card.type === "source" && (
@@ -729,6 +884,25 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 </View>
               </View>
 
+              {/* Auto-group toggle */}
+              <View style={styles.settingsRow}>
+                <Text style={[styles.settingsLabel, { color: colors.text }]}>Group by command</Text>
+                <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+                  <TouchableOpacity
+                    style={[styles.segment, state.autoGroupByCommand && { backgroundColor: colors.raised }]}
+                    onPress={() => controller.setAutoGroupByCommand(true)}
+                  >
+                    <Text style={{ color: state.autoGroupByCommand ? colors.text : colors.muted, fontSize: 13 }}>On</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segment, !state.autoGroupByCommand && { backgroundColor: colors.raised }]}
+                    onPress={() => controller.setAutoGroupByCommand(false)}
+                  >
+                    <Text style={{ color: !state.autoGroupByCommand ? colors.text : colors.muted, fontSize: 13 }}>Off</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {/* OpenRouter API Settings */}
               <View style={styles.formSection}>
                 <Text style={[styles.sectionLabel, { color: colors.muted }]}>OpenRouter API Configuration</Text>
@@ -912,7 +1086,11 @@ export function MainLayout({ controller }: MainLayoutProps) {
             <View style={[styles.sheetGrab, { backgroundColor: colors.line }]} />
             
             <Text style={[styles.sheetTitle, { color: colors.text }]}>
-              {state.inputSheetMode === "ask" ? "Ask the agent" : "Add a source"}
+              {state.inputSheetMode !== "ask"
+                ? "Add a source"
+                : state.pendingCommandName && state.pendingCommandName !== "ask"
+                ? `Run: ${state.pendingCommandName}`
+                : "Ask the agent"}
             </Text>
             <Text style={[styles.sheetSub, { color: colors.muted }]}>
               {state.inputSheetMode === "ask"
@@ -943,6 +1121,79 @@ export function MainLayout({ controller }: MainLayoutProps) {
               <Text style={styles.sheetPrimaryBtnText}>Add</Text>
             </TouchableOpacity>
           </View>
+        </View>
+      </Modal>
+
+      {/* CREATE CUSTOM COMMAND SHEET */}
+      <Modal
+        visible={isCreateCmdOpen}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsCreateCmdOpen(false)}
+      >
+        <View style={styles.scrim}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setIsCreateCmdOpen(false)} />
+          {/* 
+            Style the KeyboardAvoidingView to occupy full width/height. This prevents the absolutely 
+            positioned bottomSheet from collapsing to 0 width because absolutely positioned elements 
+            do not stretch unstyled flex parents in React Native.
+          */}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, width: "100%" }}
+          >
+            <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
+              <View style={[styles.sheetGrab, { backgroundColor: colors.line }]} />
+
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>New command</Text>
+              <Text style={[styles.sheetSub, { color: colors.muted }]}>
+                Runs the agent with your prompt, like <Text style={styles.monoText}>ask</Text>. Use it as{" "}
+                <Text style={styles.monoText}>{newCmdName.trim() ? newCmdName.trim().toLowerCase() : "name"} "your query"</Text>.
+              </Text>
+
+              <View style={[styles.inputBoxField, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+                <TextInput
+                  style={[styles.formInput, { color: colors.text, borderColor: "transparent", backgroundColor: "transparent" }]}
+                  placeholder="command name (e.g. explain)"
+                  placeholderTextColor={colors.faint}
+                  autoCapitalize="none"
+                  value={newCmdName}
+                  onChangeText={setNewCmdName}
+                />
+              </View>
+              <View style={[styles.inputBoxField, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+                <TextInput
+                  style={[styles.formInput, { color: colors.text, borderColor: "transparent", backgroundColor: "transparent" }]}
+                  placeholder="short description (optional)"
+                  placeholderTextColor={colors.faint}
+                  value={newCmdDesc}
+                  onChangeText={setNewCmdDesc}
+                />
+              </View>
+              <View style={[styles.inputBoxField, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+                <TextInput
+                  style={[styles.sheetTextArea, { color: colors.text }]}
+                  multiline={true}
+                  numberOfLines={4}
+                  placeholder="system prompt — how the agent should generate cards"
+                  placeholderTextColor={colors.faint}
+                  value={newCmdPrompt}
+                  onChangeText={setNewCmdPrompt}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.sheetPrimaryBtn,
+                  { backgroundColor: accent.primary, opacity: newCmdName.trim() && newCmdPrompt.trim() ? 1 : 0.5 },
+                ]}
+                onPress={handleCreateCommand}
+                disabled={!newCmdName.trim() || !newCmdPrompt.trim()}
+              >
+                <Text style={styles.sheetPrimaryBtnText}>Create command</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1059,6 +1310,26 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+  },
+  breadcrumbBar: {
+    paddingHorizontal: 18,
+    paddingBottom: 8,
+  },
+  breadcrumbContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  crumbItem: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  crumbSep: {
+    fontSize: 13,
+    marginHorizontal: 6,
+  },
+  crumbText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   canvas: {
     flex: 1,
@@ -1442,6 +1713,13 @@ const styles = StyleSheet.create({
   },
   fullCardPipeBtn: {
     flex: 1.2,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  fullCardDeleteBtn: {
+    flex: 1,
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,

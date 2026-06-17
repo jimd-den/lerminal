@@ -1,5 +1,6 @@
 import { Card } from "../../entities/card";
 import { Workspace } from "../../entities/workspace";
+import { RESERVED_COMMAND_NAMES } from "../../entities/commandDefinition";
 import { UnknownCommandError } from "../errors";
 import { CommandContext, PipelineCommand } from "./Command";
 
@@ -10,11 +11,27 @@ import { CommandContext, PipelineCommand } from "./Command";
  */
 export interface PipelineEnvironment {
   workspaceId: string;
+  /** The group new cards are created under (null = workspace root / current view). */
+  parentId: string | null;
   initialInputCards: Card[];
   workspaces: Workspace[];
   apiKey: string;
   model: string;
   systemPrompt: string;
+  /**
+   * When true, a content-producing pipeline auto-organizes its output by composing
+   * a trailing `group "<command>"` stage — keeping grouping a matter of command
+   * composition rather than special-casing each command.
+   */
+  autoGroup: boolean;
+}
+
+/** Commands whose fresh output is worth auto-grouping by command name. */
+const AUTO_GROUP_PRODUCERS = new Set(["ask", "source", "chunk", "recall"]);
+
+interface ParsedStage {
+  cmd: string;
+  arg: string;
 }
 
 /**
@@ -24,7 +41,7 @@ export interface PipelineEnvironment {
  */
 export type PipelineOutcome =
   | { kind: "completed"; cards: Card[] }
-  | { kind: "needsInput"; mode: "ask" | "source" }
+  | { kind: "needsInput"; mode: "ask" | "source"; command: string }
   | { kind: "review" };
 
 /**
@@ -52,20 +69,11 @@ export class PipelineRunner {
    *   to user feedback).
    */
   async run(pipelineText: string, env: PipelineEnvironment): Promise<PipelineOutcome> {
-    const stages = pipelineText
-      .split("|")
-      .map(s => s.trim())
-      .filter(Boolean);
+    const stages = this.withAutoGroup(this.parse(pipelineText), env.autoGroup);
 
     let cards = env.initialInputCards;
 
-    for (const stage of stages) {
-      const match = stage.match(/^(\w+)\s*(.*)$/);
-      if (!match) continue;
-
-      const cmd = match[1].toLowerCase();
-      const arg = match[2].trim().replace(/^["']|["']$/g, "");
-
+    for (const { cmd, arg } of stages) {
       const command = this.commands.get(cmd);
       if (!command) {
         throw new UnknownCommandError(cmd);
@@ -73,6 +81,7 @@ export class PipelineRunner {
 
       const ctx: CommandContext = {
         workspaceId: env.workspaceId,
+        parentId: env.parentId,
         inputCards: cards,
         workspaces: env.workspaces,
         apiKey: env.apiKey,
@@ -82,7 +91,7 @@ export class PipelineRunner {
 
       const result = await command.execute(arg, ctx);
       if (result.kind === "needsInput") {
-        return { kind: "needsInput", mode: result.mode };
+        return { kind: "needsInput", mode: result.mode, command: cmd };
       }
       if (result.kind === "review") {
         return { kind: "review" };
@@ -91,5 +100,35 @@ export class PipelineRunner {
     }
 
     return { kind: "completed", cards };
+  }
+
+  private parse(pipelineText: string): ParsedStage[] {
+    const stages: ParsedStage[] = [];
+    for (const raw of pipelineText.split("|").map(s => s.trim()).filter(Boolean)) {
+      const match = raw.match(/^([a-zA-Z0-9_-]+)\s*(.*)$/);
+      if (!match) continue;
+      stages.push({
+        cmd: match[1].toLowerCase(),
+        arg: match[2].trim().replace(/^["']|["']$/g, ""),
+      });
+    }
+    return stages;
+  }
+
+  /**
+   * Auto-grouping is implemented as pure composition: when enabled and the pipeline
+   * ends in a content-producing command (and isn't already a grouping command), a
+   * trailing `group "<command>"` stage is appended so the run's output is organized
+   * under a group named after the command that produced it.
+   */
+  private withAutoGroup(stages: ParsedStage[], autoGroup: boolean): ParsedStage[] {
+    if (!autoGroup || stages.length === 0) return stages;
+    const last = stages[stages.length - 1];
+    
+    // Auto-group if it's a known producer OR if it's a custom command (which are always producers)
+    const isCustomCommand = !RESERVED_COMMAND_NAMES.includes(last.cmd);
+    if (!AUTO_GROUP_PRODUCERS.has(last.cmd) && !isCustomCommand) return stages;
+    
+    return [...stages, { cmd: "group", arg: last.cmd }];
   }
 }

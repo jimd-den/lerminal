@@ -29,6 +29,7 @@ export class SourceCommand implements PipelineCommand {
       title,
       body: arg,
       cite: "user source",
+      parentId: ctx.parentId ?? undefined,
     });
 
     await this.cardRepo.saveCard(sourceCard);

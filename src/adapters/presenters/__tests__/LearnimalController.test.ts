@@ -3,6 +3,7 @@ import { LearnimalController } from "../LearnimalController";
 import { MemoryCardRepository } from "../../repositories/MemoryCardRepository";
 import { MemoryWorkspaceRepository } from "../../repositories/MemoryWorkspaceRepository";
 import { MemorySettingsRepository } from "../../repositories/MemorySettingsRepository";
+import { MemoryCommandDefinitionRepository } from "../../repositories/MemoryCommandDefinitionRepository";
 import { AgentCardResponse, AgentGateway, AgentModel } from "../../gateways/AgentGateway";
 import { Card } from "../../../entities/card";
 
@@ -46,7 +47,8 @@ describe("Learnimal App Controller", () => {
       cardRepo,
       workspaceRepo: wsRepo,
       settingsRepo,
-      agentGateway
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository()
     });
 
     await controller.init();
@@ -68,7 +70,8 @@ describe("Learnimal App Controller", () => {
       cardRepo,
       workspaceRepo: wsRepo,
       settingsRepo,
-      agentGateway
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository()
     });
 
     await controller.init();
@@ -121,7 +124,8 @@ describe("Learnimal App Controller", () => {
       cardRepo,
       workspaceRepo: wsRepo,
       settingsRepo,
-      agentGateway
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository()
     });
 
     await controller.init();
@@ -146,7 +150,8 @@ describe("Learnimal App Controller", () => {
       cardRepo,
       workspaceRepo: wsRepo,
       settingsRepo,
-      agentGateway
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository()
     });
 
     await controller.init();
@@ -171,7 +176,8 @@ describe("Learnimal App Controller", () => {
       cardRepo,
       workspaceRepo: wsRepo,
       settingsRepo,
-      agentGateway
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository()
     });
 
     await controller.init();
@@ -193,17 +199,25 @@ describe("Learnimal App Controller", () => {
     controller.toggleSelect(firstCardId);
     expect(controller.getState().selection.has(firstCardId)).toBe(true);
 
-    // Pipe execution: chunk selected (which is already chunk, but lets pipe to recall)
-    // selection: chunk -> run recall -> outputs question card -> auto-selects question
+    // Pipe execution: chunk selected -> run recall -> outputs a question card, which
+    // auto-grouping (on by default) then wraps in a "recall" group. The produced
+    // group becomes the new selection.
     await controller.runPipeline("recall");
 
     const state2 = controller.getState();
     const workspaceCards = await cardRepo.getCardsByWorkspace(state2.activeWorkspaceId!);
     const questions = workspaceCards.filter(c => c.type === "question");
-    
+    const groups = workspaceCards.filter(c => c.type === "group");
+
     expect(questions.length).toBe(1);
+    expect(groups.length).toBe(1);
+    expect(groups[0].title).toBe("recall");
+    // The question is nested under the auto-created group.
+    expect(questions[0].parentId).toBe(groups[0].id);
+    // Selection is the group; the canvas root now shows it.
     expect(state2.selection.size).toBe(1);
-    expect(state2.selection.has(questions[0].id)).toBe(true);
+    expect(state2.selection.has(groups[0].id)).toBe(true);
+    expect(state2.visibleCards.map(c => c.id)).toContain(groups[0].id);
   });
 
   it("should restart onboarding by deleting all data and resetting questionnaire state", async () => {
@@ -216,7 +230,8 @@ describe("Learnimal App Controller", () => {
       cardRepo,
       workspaceRepo: wsRepo,
       settingsRepo,
-      agentGateway
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository()
     });
 
     await controller.init();
@@ -255,7 +270,8 @@ describe("Learnimal App Controller", () => {
       cardRepo,
       workspaceRepo: wsRepo,
       settingsRepo,
-      agentGateway
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository()
     });
 
     await controller.init();

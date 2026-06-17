@@ -24,8 +24,10 @@ export class MoveCommand implements PipelineCommand {
       throw new WorkspaceNotFoundError();
     }
 
+    // Groups belong to the source workspace's tree, so moved cards land at the
+    // target workspace root rather than dangling under a now-foreign parent.
     for (const card of ctx.inputCards) {
-      await this.cardRepo.saveCard({ ...card, workspaceId: target.id });
+      await this.cardRepo.saveCard({ ...card, workspaceId: target.id, parentId: undefined });
     }
     return { kind: "noop" };
   }

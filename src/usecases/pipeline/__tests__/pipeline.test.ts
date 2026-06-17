@@ -48,11 +48,13 @@ function buildRunner(cardRepo: MemoryCardRepository): PipelineRunner {
 function env(overrides: Partial<PipelineEnvironment> = {}): PipelineEnvironment {
   return {
     workspaceId: WS_ID,
+    parentId: null,
     initialInputCards: [],
     workspaces: [],
     apiKey: "k",
     model: "m",
     systemPrompt: "p",
+    autoGroup: false,
     ...overrides,
   };
 }
@@ -112,12 +114,12 @@ describe("PipelineRunner", () => {
 
   it("ask with no argument halts for input", async () => {
     const outcome = await buildRunner(new MemoryCardRepository()).run("ask", env());
-    expect(outcome).toEqual({ kind: "needsInput", mode: "ask" });
+    expect(outcome).toEqual({ kind: "needsInput", mode: "ask", command: "ask" });
   });
 
   it("source with no argument halts for input", async () => {
     const outcome = await buildRunner(new MemoryCardRepository()).run("source", env());
-    expect(outcome).toEqual({ kind: "needsInput", mode: "source" });
+    expect(outcome).toEqual({ kind: "needsInput", mode: "source", command: "source" });
   });
 
   it("review halts the pipeline", async () => {
@@ -162,5 +164,15 @@ describe("PipelineRunner", () => {
     await expect(
       buildRunner(new MemoryCardRepository()).run("frobnicate", env())
     ).rejects.toBeInstanceOf(UnknownCommandError);
+  });
+
+  it("parses hyphenated commands correctly without truncating at the hyphen", async () => {
+    const dummyCommand: PipelineCommand = {
+      name: "my-custom-command",
+      execute: async () => ({ kind: "cards", cards: [] })
+    };
+    const runner = new PipelineRunner([dummyCommand]);
+    const outcome = await runner.run("my-custom-command arg", env());
+    expect(outcome.kind).toBe("completed");
   });
 });

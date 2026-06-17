@@ -20,7 +20,9 @@ export class ChunkCommand implements PipelineCommand {
       throw new EmptySelectionError("Select source or note to chunk");
     }
 
-    const cards = chunkable.flatMap(card => chunkCard(card));
+    const cards = chunkable
+      .flatMap(card => chunkCard(card))
+      .map(card => ({ ...card, parentId: ctx.parentId ?? undefined }));
     await this.cardRepo.saveCards(cards);
     return { kind: "cards", cards };
   }

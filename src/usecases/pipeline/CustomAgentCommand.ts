@@ -1,23 +1,28 @@
 import { createCard } from "../../entities/card";
+import { AgentCommandDefinition } from "../../entities/commandDefinition";
 import { AgentGateway } from "../../adapters/gateways/AgentGateway";
 import { CardRepository } from "../../adapters/repositories/CardRepository";
 import { AgentRequestError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
 /**
- * `ask "<query>"` — queries the agent for atomic cards, using the current input
- * cards as reading context, and persists the generated chunk cards.
+ * A user-defined agent command: behaves like `ask`, but runs the agent with the
+ * definition's own system prompt instead of the global one. Its pipeline keyword
+ * is the definition's name, so it composes with every other command.
  *
- * With no argument the command halts the pipeline and signals that user input is
- * required (the presenter opens the ask sheet).
+ * With no argument it halts for input (like `ask`); the runner reports this
+ * command's name so the input sheet re-dispatches to it rather than to `ask`.
  */
-export class AskCommand implements PipelineCommand {
-  readonly name = "ask";
+export class CustomAgentCommand implements PipelineCommand {
+  readonly name: string;
 
   constructor(
+    private readonly definition: AgentCommandDefinition,
     private readonly agentGateway: AgentGateway,
     private readonly cardRepo: CardRepository
-  ) {}
+  ) {
+    this.name = definition.name;
+  }
 
   async execute(arg: string, ctx: CommandContext): Promise<CommandResult> {
     if (!arg) {
@@ -31,7 +36,7 @@ export class AskCommand implements PipelineCommand {
         ctx.inputCards,
         ctx.apiKey,
         ctx.model,
-        ctx.systemPrompt
+        this.definition.systemPrompt
       );
     } catch (err: any) {
       throw new AgentRequestError(err?.message);

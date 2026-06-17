@@ -13,6 +13,18 @@ import { RecallCommand } from "../../usecases/pipeline/RecallCommand";
 import { SpaceCommand } from "../../usecases/pipeline/SpaceCommand";
 import { MoveCommand } from "../../usecases/pipeline/MoveCommand";
 import { ReviewCommand } from "../../usecases/pipeline/ReviewCommand";
+import { GroupCommand } from "../../usecases/pipeline/GroupCommand";
+import { UngroupCommand } from "../../usecases/pipeline/UngroupCommand";
+import { DeleteCommand } from "../../usecases/pipeline/DeleteCommand";
+import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
+import { breadcrumbPath, directChildren, expandForPipe } from "../../usecases/tree";
+import { CommandDefinition } from "../../entities/commandDefinition";
+import { CommandDefinitionRepository } from "../repositories/CommandDefinitionRepository";
+import { PipelineCommand } from "../../usecases/pipeline/Command";
+import { createPipelineCommand } from "../../usecases/pipeline/CommandFactory";
+import { CreateCommandDefinitionInteractor, CreateCommandDefinitionRequest } from "../../usecases/commands/CreateCommandDefinitionInteractor";
+import { DeleteCommandDefinitionInteractor } from "../../usecases/commands/DeleteCommandDefinitionInteractor";
+import { DeleteCardInteractor } from "../../usecases/card/DeleteCardInteractor";
 import { StartReviewInteractor } from "../../usecases/review/StartReviewInteractor";
 import { GradeReviewInteractor } from "../../usecases/review/GradeReviewInteractor";
 import { CreateWorkspaceInteractor } from "../../usecases/workspace/CreateWorkspaceInteractor";
@@ -53,8 +65,19 @@ export interface AppState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   cards: Card[];
+  /** Cards directly under the current group (what the canvas should render). */
+  visibleCards: Card[];
+  /** The group the user is currently viewing (null = workspace root). */
+  currentGroupId: string | null;
+  /** Group cards from the root down to the current group, for breadcrumbs. */
+  breadcrumb: Card[];
   selection: Set<string>;
   pinnedCommands: string[];
+  autoGroupByCommand: boolean;
+  /** User-defined custom commands available in the palette and pipelines. */
+  commandDefinitions: CommandDefinition[];
+  /** Command awaiting input in the input sheet (so submit re-runs the right one). */
+  pendingCommandName: string;
   onboarded: boolean;
   openCardId: string | null;
   reviewQueue: Card[];
@@ -89,8 +112,11 @@ interface DomainState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   cards: Card[];
+  currentGroupId: string | null;
   selection: Set<string>;
   pinnedCommands: string[];
+  autoGroupByCommand: boolean;
+  commandDefinitions: CommandDefinition[];
   onboarded: boolean;
   onboardingStep: number;
   onboardingAnswers: string[];
@@ -109,6 +135,7 @@ interface UiState {
   isSettingsSheetOpen: boolean;
   isInputSheetOpen: boolean;
   inputSheetMode: "source" | "ask";
+  pendingCommandName: string;
   isOnboardingOpen: boolean;
   toastMessage: string;
   isLoadingModels: boolean;
@@ -119,6 +146,7 @@ export interface LearnimalControllerDeps {
   workspaceRepo: WorkspaceRepository;
   settingsRepo: SettingsRepository;
   agentGateway: AgentGateway;
+  commandDefinitionRepo: CommandDefinitionRepository;
 }
 
 /**
@@ -135,6 +163,8 @@ export class LearnimalController {
   private cardRepo: CardRepository;
   private workspaceRepo: WorkspaceRepository;
   private settingsRepo: SettingsRepository;
+  private agentGateway: AgentGateway;
+  private commandDefinitionRepo: CommandDefinitionRepository;
 
   private pipeline: PipelineRunner;
   private startReviewInteractor: StartReviewInteractor;
@@ -146,6 +176,12 @@ export class LearnimalController {
   private completeOnboardingInteractor: CompleteOnboardingInteractor;
   private saveSettingsInteractor: SaveSettingsInteractor;
   private loadModelsInteractor: LoadModelsInteractor;
+  private createCommandDefinitionInteractor: CreateCommandDefinitionInteractor;
+  private deleteCommandDefinitionInteractor: DeleteCommandDefinitionInteractor;
+  private deleteCardInteractor: DeleteCardInteractor;
+
+  /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
+  private builtinCommands: PipelineCommand[];
 
   private domain: DomainState;
   private ui: UiState;
@@ -155,9 +191,13 @@ export class LearnimalController {
     this.cardRepo = deps.cardRepo;
     this.workspaceRepo = deps.workspaceRepo;
     this.settingsRepo = deps.settingsRepo;
+    this.agentGateway = deps.agentGateway;
+    this.commandDefinitionRepo = deps.commandDefinitionRepo;
 
-    // Compose use-case interactors from the injected ports.
-    this.pipeline = new PipelineRunner([
+    // Compose built-in pipeline commands from the injected ports. Custom commands
+    // are layered on top by rebuildPipeline() once their definitions are loaded.
+    const groupCardsInteractor = new GroupCardsInteractor(deps.cardRepo);
+    this.builtinCommands = [
       new AskCommand(deps.agentGateway, deps.cardRepo),
       new SourceCommand(deps.cardRepo),
       new ChunkCommand(deps.cardRepo),
@@ -165,7 +205,15 @@ export class LearnimalController {
       new SpaceCommand(deps.cardRepo),
       new MoveCommand(deps.cardRepo),
       new ReviewCommand(),
-    ]);
+      new GroupCommand(groupCardsInteractor),
+      new UngroupCommand(deps.cardRepo),
+      new DeleteCommand(deps.cardRepo),
+    ];
+    this.pipeline = new PipelineRunner(this.builtinCommands);
+
+    this.createCommandDefinitionInteractor = new CreateCommandDefinitionInteractor(deps.commandDefinitionRepo);
+    this.deleteCommandDefinitionInteractor = new DeleteCommandDefinitionInteractor(deps.commandDefinitionRepo);
+    this.deleteCardInteractor = new DeleteCardInteractor(deps.cardRepo);
     this.startReviewInteractor = new StartReviewInteractor();
     this.gradeReviewInteractor = new GradeReviewInteractor(deps.cardRepo);
     this.createWorkspaceInteractor = new CreateWorkspaceInteractor(deps.workspaceRepo);
@@ -191,8 +239,11 @@ export class LearnimalController {
       workspaces: [],
       activeWorkspaceId: null,
       cards: [],
+      currentGroupId: null,
       selection: new Set(),
       pinnedCommands: ["ask", "chunk", "recall", "space", "review"],
+      autoGroupByCommand: true,
+      commandDefinitions: [],
       onboarded: false,
       onboardingStep: 0,
       onboardingAnswers: [],
@@ -210,6 +261,7 @@ export class LearnimalController {
       isSettingsSheetOpen: false,
       isInputSheetOpen: false,
       inputSheetMode: "source",
+      pendingCommandName: "",
       isOnboardingOpen: true,
       toastMessage: "",
       isLoadingModels: false,
@@ -231,9 +283,13 @@ export class LearnimalController {
         this.domain.openRouterKey = settings.openRouterKey || "";
         this.domain.selectedModel = settings.selectedModel || "google/gemini-2.5-flash";
         this.domain.customSystemPrompt = settings.customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
+        this.domain.autoGroupByCommand = settings.autoGroupByCommand ?? true;
       } else {
         this.domain.customSystemPrompt = DEFAULT_SYSTEM_PROMPT;
       }
+
+      this.domain.commandDefinitions = await this.commandDefinitionRepo.getDefinitions();
+      this.rebuildPipeline();
 
       if (this.domain.workspaces.length > 0) {
         this.domain.onboarded = true;
@@ -277,8 +333,14 @@ export class LearnimalController {
       workspaces: [...this.domain.workspaces],
       activeWorkspaceId: this.domain.activeWorkspaceId,
       cards: [...this.domain.cards],
+      visibleCards: directChildren(this.domain.cards, this.domain.currentGroupId),
+      currentGroupId: this.domain.currentGroupId,
+      breadcrumb: breadcrumbPath(this.domain.cards, this.domain.currentGroupId),
       selection: new Set(this.domain.selection),
       pinnedCommands: [...this.domain.pinnedCommands],
+      autoGroupByCommand: this.domain.autoGroupByCommand,
+      commandDefinitions: [...this.domain.commandDefinitions],
+      pendingCommandName: this.ui.pendingCommandName,
       onboarded: this.domain.onboarded,
       reviewQueue: [...this.domain.reviewQueue],
       reviewIndex: this.domain.reviewIndex,
@@ -369,6 +431,7 @@ export class LearnimalController {
 
       this.domain.workspaces.push(workspace);
       this.domain.activeWorkspaceId = workspace.id;
+      this.domain.currentGroupId = null;
       this.domain.selection = new Set(cards.map(c => c.id));
       await this.loadCardsForActiveWorkspace();
 
@@ -478,6 +541,91 @@ export class LearnimalController {
     this.emit();
   }
 
+  setAutoGroupByCommand(enabled: boolean): void {
+    this.domain.autoGroupByCommand = enabled;
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  // --- Group Navigation (drill-in) ---
+
+  /** Drills into a group so the canvas shows that group's children. */
+  openGroup(groupId: string): void {
+    this.domain.currentGroupId = groupId;
+    this.emit();
+  }
+
+  /**
+   * Navigates to an arbitrary point in the breadcrumb trail; pass null for the
+   * workspace root.
+   */
+  navigateToGroup(groupId: string | null): void {
+    this.domain.currentGroupId = groupId;
+    this.emit();
+  }
+
+  // --- Custom Commands ---
+
+  /**
+   * Rebuilds the pipeline's command set from the built-ins plus the current custom
+   * command definitions. Called whenever definitions are loaded or change.
+   */
+  private rebuildPipeline(): void {
+    const customCommands = this.domain.commandDefinitions.map(def =>
+      createPipelineCommand(def, { agentGateway: this.agentGateway, cardRepo: this.cardRepo })
+    );
+    this.pipeline = new PipelineRunner([...this.builtinCommands, ...customCommands]);
+  }
+
+  /** Defines and registers a new custom command, then makes it usable immediately. */
+  async createCustomCommand(request: CreateCommandDefinitionRequest): Promise<void> {
+    const logTimestamp = new Date().toISOString();
+    try {
+      const definition = await this.createCommandDefinitionInteractor.execute(request);
+      this.domain.commandDefinitions.push(definition);
+      this.rebuildPipeline();
+      this.ui.isInputSheetOpen = false;
+      this.showToast(`Created command: ${definition.name}`);
+      console.log(`[${logTimestamp}] [LearnimalController.createCustomCommand] SUCCESS | name=${definition.name}`);
+    } catch (err: any) {
+      console.error(`[${logTimestamp}] [LearnimalController.createCustomCommand] ERROR: ${err.message}`);
+      this.showToast(err instanceof UseCaseError ? err.userMessage : "Could not create command");
+    }
+  }
+
+  /** Removes a custom command and unregisters it from the pipeline. */
+  async deleteCustomCommand(id: string): Promise<void> {
+    await this.deleteCommandDefinitionInteractor.execute(id);
+    const removed = this.domain.commandDefinitions.find(d => d.id === id);
+    this.domain.commandDefinitions = this.domain.commandDefinitions.filter(d => d.id !== id);
+    this.domain.pinnedCommands = this.domain.pinnedCommands.filter(c => c !== removed?.name);
+    this.rebuildPipeline();
+    this.emit();
+    this.showToast("Command deleted");
+  }
+
+  // --- Card Deletion ---
+
+  /** Permanently deletes a single card (promoting any children up a level). */
+  async deleteCard(cardId: string): Promise<void> {
+    const logTimestamp = new Date().toISOString();
+    const card = this.domain.cards.find(c => c.id === cardId);
+    if (!card) return;
+
+    await this.deleteCardInteractor.execute(card);
+
+    // If we were viewing the group we just deleted, step up to its parent.
+    if (this.domain.currentGroupId === cardId) {
+      this.domain.currentGroupId = card.parentId ?? null;
+    }
+    this.domain.selection.delete(cardId);
+    this.ui.openCardId = null;
+    await this.loadCardsForActiveWorkspace();
+    this.emit();
+    this.showToast("Card deleted");
+    console.log(`[${logTimestamp}] [LearnimalController.deleteCard] SUCCESS | cardId=${cardId}`);
+  }
+
   private currentSettings(): AppSettings {
     return {
       theme: this.domain.theme,
@@ -485,6 +633,7 @@ export class LearnimalController {
       openRouterKey: this.domain.openRouterKey,
       selectedModel: this.domain.selectedModel,
       customSystemPrompt: this.domain.customSystemPrompt,
+      autoGroupByCommand: this.domain.autoGroupByCommand,
     };
   }
 
@@ -504,6 +653,7 @@ export class LearnimalController {
     const ws = await this.createWorkspaceInteractor.execute(name);
     this.domain.workspaces.push(ws);
     this.domain.activeWorkspaceId = ws.id;
+    this.domain.currentGroupId = null;
     this.domain.selection.clear();
     this.ui.isWorkspaceSheetOpen = false;
     await this.loadCardsForActiveWorkspace();
@@ -512,6 +662,7 @@ export class LearnimalController {
 
   async switchWorkspace(workspaceId: string): Promise<void> {
     this.domain.activeWorkspaceId = workspaceId;
+    this.domain.currentGroupId = null;
     this.domain.selection.clear();
     this.ui.isWorkspaceSheetOpen = false;
     this.domain.cards = await this.switchWorkspaceInteractor.execute(workspaceId);
@@ -524,6 +675,7 @@ export class LearnimalController {
 
     await this.deleteWorkspaceInteractor.execute(toDeleteId);
     this.domain.workspaces = this.domain.workspaces.filter(w => w.id !== toDeleteId);
+    this.domain.currentGroupId = null;
 
     if (this.domain.workspaces.length > 0) {
       this.domain.activeWorkspaceId = this.domain.workspaces[0].id;
@@ -562,21 +714,23 @@ export class LearnimalController {
     this.ui.isInputSheetOpen = false;
     this.emit();
 
-    const initialInputCards = Array.from(this.domain.selection)
-      .map(id => this.domain.cards.find(c => c.id === id))
-      .filter((c): c is Card => !!c);
+    // Expand the selection so piping a group feeds all of its descendants.
+    const initialInputCards = expandForPipe(this.domain.cards, this.domain.selection);
 
     try {
       const outcome = await this.pipeline.run(pipelineText, {
         workspaceId,
+        parentId: this.domain.currentGroupId,
         initialInputCards,
         workspaces: this.domain.workspaces,
         apiKey: this.domain.openRouterKey,
         model: this.domain.selectedModel,
         systemPrompt: this.domain.customSystemPrompt,
+        autoGroup: this.domain.autoGroupByCommand,
       });
 
       if (outcome.kind === "needsInput") {
+        this.ui.pendingCommandName = outcome.command;
         this.setInputSheetOpen(true, outcome.mode);
         return;
       }
@@ -677,6 +831,7 @@ export class LearnimalController {
       await this.restartOnboardingInteractor.execute();
       this.domain.workspaces = [];
       this.domain.activeWorkspaceId = null;
+      this.domain.currentGroupId = null;
       this.domain.cards = [];
       this.domain.selection.clear();
       this.domain.onboarded = false;
