@@ -7,6 +7,8 @@ import { AsyncStorageWorkspaceRepository } from "./src/frameworks/storage/AsyncS
 import { AsyncStorageSettingsRepository } from "./src/frameworks/storage/AsyncStorageSettingsRepository";
 import { AsyncStorageCommandDefinitionRepository } from "./src/frameworks/storage/AsyncStorageCommandDefinitionRepository";
 import { OpenRouterAgentGateway } from "./src/frameworks/network/OpenRouterAgentGateway";
+import { DuckDuckGoSearchGateway } from "./src/frameworks/network/DuckDuckGoSearchGateway";
+import { WebExtractionGateway } from "./src/frameworks/network/WebExtractionGateway";
 import { MainLayout } from "./src/frameworks/ui/MainLayout";
 
 /**
@@ -31,6 +33,8 @@ export default function App() {
     const settingsRepo = new AsyncStorageSettingsRepository();
     const commandDefinitionRepo = new AsyncStorageCommandDefinitionRepository();
     const agentGateway = new OpenRouterAgentGateway();
+    const searchGateway = new DuckDuckGoSearchGateway();
+    const extractionGateway = new WebExtractionGateway();
 
     const appController = new LearnimalController({
       cardRepo,
@@ -38,6 +42,8 @@ export default function App() {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo,
+      searchGateway,
+      extractionGateway,
     });
 
     appController.init().then(() => {

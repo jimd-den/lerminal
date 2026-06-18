@@ -105,7 +105,7 @@ export class PipelineRunner {
   private parse(pipelineText: string): ParsedStage[] {
     const stages: ParsedStage[] = [];
     for (const raw of pipelineText.split("|").map(s => s.trim()).filter(Boolean)) {
-      const match = raw.match(/^([a-zA-Z0-9_-]+)\s*(.*)$/);
+      const match = raw.match(/^([a-zA-Z0-9_-]+)\s*([\s\S]*)$/);
       if (!match) continue;
       stages.push({
         cmd: match[1].toLowerCase(),

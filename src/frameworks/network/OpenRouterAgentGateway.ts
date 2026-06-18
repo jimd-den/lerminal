@@ -20,14 +20,20 @@ export class OpenRouterAgentGateway implements AgentGateway {
     systemPrompt?: string
   ): Promise<AgentCardResponse[]> {
     const logTimestamp = new Date().toISOString();
-    const modelToUse = model || "google/gemini-2.5-flash";
-    const keyPrefix = apiKey ? `${apiKey.substring(0, 10)}... (len: ${apiKey.length})` : "EMPTY";
+    const modelToUse = model;
+    const cleanKey = apiKey?.trim() || "";
+    const keyPrefix = cleanKey ? `${cleanKey.substring(0, 10)}... (len: ${cleanKey.length})` : "EMPTY";
 
     // Telemetry trace for input args
     console.log(`[${logTimestamp}] [OpenRouterAgentGateway.ask] query="${query}" | contextCardsCount=${contextCards.length} | model="${modelToUse}" | apiKey="${keyPrefix}"`);
 
+    // Prevent invalid header corruption
+    if (cleanKey && cleanKey.includes(" ")) {
+      throw new Error("Invalid OpenRouter API key (contains spaces). Please update your key in Settings.");
+    }
+
     // Fall back to local card generation if API key is not set
-    if (!apiKey) {
+    if (!cleanKey) {
       console.warn(`[${logTimestamp}] [OpenRouterAgentGateway] API Key is missing. Falling back to local generation.`);
       return this.generateLocalFallback(query);
     }
@@ -60,7 +66,7 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
+          "Authorization": `Bearer ${cleanKey}`,
           "HTTP-Referer": "https://github.com/dbslim/lerminal",
           "X-Title": "Learnimal",
         },

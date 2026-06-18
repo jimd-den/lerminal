@@ -48,6 +48,10 @@ export class AskCommand implements PipelineCommand {
       })
     );
 
+    if (cards.length === 0) {
+      throw new AgentRequestError("The AI did not generate any cards from this prompt.");
+    }
+
     await this.cardRepo.saveCards(cards);
     return { kind: "cards", cards };
   }

@@ -129,7 +129,8 @@ describe("CompleteOnboardingInteractor", () => {
       wsRepo,
       cardRepo,
       settingsRepo,
-      new MockAgentGateway()
+      new MockAgentGateway(),
+      { search: async () => [] } as any
     );
 
     const { workspace, cards } = await interactor.execute({
@@ -139,8 +140,8 @@ describe("CompleteOnboardingInteractor", () => {
     });
 
     expect(workspace.name).toBe("Machine Learning");
-    expect(cards.length).toBe(1);
-    expect((await cardRepo.getCardsByWorkspace(workspace.id)).length).toBe(1);
+    expect(cards.length).toBe(0);
+    expect((await cardRepo.getCardsByWorkspace(workspace.id)).length).toBe(0);
     expect((await settingsRepo.getSettings())?.openRouterKey).toBe("key");
   });
 });

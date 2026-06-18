@@ -16,6 +16,9 @@ import { ReviewCommand } from "../../usecases/pipeline/ReviewCommand";
 import { GroupCommand } from "../../usecases/pipeline/GroupCommand";
 import { UngroupCommand } from "../../usecases/pipeline/UngroupCommand";
 import { DeleteCommand } from "../../usecases/pipeline/DeleteCommand";
+import { SearchCommand } from "../../usecases/pipeline/SearchCommand";
+import { SearchGateway } from "../gateways/SearchGateway";
+import { ExtractionGateway } from "../gateways/ExtractionGateway";
 import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
 import { breadcrumbPath, directChildren, expandForPipe } from "../../usecases/tree";
 import { CommandDefinition } from "../../entities/commandDefinition";
@@ -34,6 +37,7 @@ import { RestartOnboardingInteractor } from "../../usecases/onboarding/RestartOn
 import { CompleteOnboardingInteractor } from "../../usecases/onboarding/CompleteOnboardingInteractor";
 import { SaveSettingsInteractor } from "../../usecases/settings/SaveSettingsInteractor";
 import { LoadModelsInteractor } from "../../usecases/models/LoadModelsInteractor";
+import { ExtractUrlInteractor } from "../../usecases/card/ExtractUrlInteractor";
 
 const DEFAULT_SYSTEM_PROMPT = `You generate atomic learning cards. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
 - "title": string (max 6 words, representing the atomic concept)
@@ -59,6 +63,13 @@ const DEFAULT_MODELS: AgentModel[] = [
  * internal {@link DomainState} (business data) and {@link UiState} (ephemeral
  * presentation flags) — see {@link LearnimalController.getState}.
  */
+export interface PendingOperation {
+  id: string;
+  commandName: string;
+  status: "loading" | "error";
+  errorMessage?: string;
+}
+
 export interface AppState {
   theme: "dark" | "light";
   accent: "teal" | "lilac" | "amber" | "rose" | "arctic";
@@ -99,6 +110,7 @@ export interface AppState {
   customSystemPrompt: string;
   availableModels: AgentModel[];
   isLoadingModels: boolean;
+  pendingOperations: PendingOperation[];
 }
 
 /** Business/domain state: persisted or derivable data, free of UI concerns. */
@@ -139,6 +151,7 @@ interface UiState {
   isOnboardingOpen: boolean;
   toastMessage: string;
   isLoadingModels: boolean;
+  pendingOperations: PendingOperation[];
 }
 
 export interface LearnimalControllerDeps {
@@ -147,6 +160,8 @@ export interface LearnimalControllerDeps {
   settingsRepo: SettingsRepository;
   agentGateway: AgentGateway;
   commandDefinitionRepo: CommandDefinitionRepository;
+  searchGateway: SearchGateway;
+  extractionGateway: ExtractionGateway;
 }
 
 /**
@@ -179,6 +194,7 @@ export class LearnimalController {
   private createCommandDefinitionInteractor: CreateCommandDefinitionInteractor;
   private deleteCommandDefinitionInteractor: DeleteCommandDefinitionInteractor;
   private deleteCardInteractor: DeleteCardInteractor;
+  private extractUrlInteractor: ExtractUrlInteractor;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
   private builtinCommands: PipelineCommand[];
@@ -208,6 +224,7 @@ export class LearnimalController {
       new GroupCommand(groupCardsInteractor),
       new UngroupCommand(deps.cardRepo),
       new DeleteCommand(deps.cardRepo),
+      new SearchCommand(deps.searchGateway, deps.cardRepo),
     ];
     this.pipeline = new PipelineRunner(this.builtinCommands);
 
@@ -223,17 +240,17 @@ export class LearnimalController {
     this.completeOnboardingInteractor = new CompleteOnboardingInteractor(
       deps.workspaceRepo,
       deps.cardRepo,
-      deps.settingsRepo,
-      deps.agentGateway
+      deps.settingsRepo
     );
     this.saveSettingsInteractor = new SaveSettingsInteractor(deps.settingsRepo);
     this.loadModelsInteractor = new LoadModelsInteractor(deps.agentGateway);
+    this.extractUrlInteractor = new ExtractUrlInteractor(deps.extractionGateway, deps.cardRepo);
 
     this.domain = {
       theme: "dark",
       accent: "teal",
       openRouterKey: "",
-      selectedModel: "google/gemini-2.5-flash",
+      selectedModel: DEFAULT_MODELS[0]?.id || "",
       customSystemPrompt: DEFAULT_SYSTEM_PROMPT,
       availableModels: [...DEFAULT_MODELS],
       workspaces: [],
@@ -265,6 +282,7 @@ export class LearnimalController {
       isOnboardingOpen: true,
       toastMessage: "",
       isLoadingModels: false,
+      pendingOperations: [],
     };
   }
 
@@ -281,7 +299,7 @@ export class LearnimalController {
         this.domain.theme = settings.theme || "dark";
         this.domain.accent = settings.accent || "teal";
         this.domain.openRouterKey = settings.openRouterKey || "";
-        this.domain.selectedModel = settings.selectedModel || "google/gemini-2.5-flash";
+        this.domain.selectedModel = settings.selectedModel || DEFAULT_MODELS[0]?.id || "";
         this.domain.customSystemPrompt = settings.customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
         this.domain.autoGroupByCommand = settings.autoGroupByCommand ?? true;
       } else {
@@ -362,6 +380,7 @@ export class LearnimalController {
       isOnboardingOpen: this.ui.isOnboardingOpen,
       toastMessage: this.ui.toastMessage,
       isLoadingModels: this.ui.isLoadingModels,
+      pendingOperations: this.ui.pendingOperations,
     };
   }
 
@@ -379,7 +398,7 @@ export class LearnimalController {
 
     console.log(`[${logTimestamp}] [LearnimalController.answerOnboardingQuestion] step=${this.domain.onboardingStep} -> answer="${cleanAnswer}"`);
 
-    if (nextStep >= 5) {
+    if (nextStep >= 6) {
       await this.finishOnboarding();
     } else {
       this.domain.onboardingStep = nextStep;
@@ -391,15 +410,17 @@ export class LearnimalController {
     const logTimestamp = new Date().toISOString();
     console.log(`[${logTimestamp}] [LearnimalController.skipOnboarding] Skipping remaining onboarding steps.`);
 
+    const defaultModel = this.domain.availableModels.find(m => m.free)?.id || this.domain.availableModels[0]?.id || "";
     const defaults = [
-      "",                  // Step 0: API Key (default empty if not entered)
-      "My learning goal",  // Step 1: Topic
-      "curiosity",         // Step 2: Why
-      "experiment",        // Step 3: What to do
-      "basics",            // Step 4: What to learn first
+      "",                               // Step 0: API Key (default empty if not entered)
+      this.domain.selectedModel || defaultModel, // Step 1: Model
+      "My learning goal",               // Step 2: Topic
+      "curiosity",                      // Step 3: Why
+      "experiment",                     // Step 4: What to do
+      "basics",                         // Step 5: What to learn first
     ];
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       if (this.domain.onboardingAnswers[i] === undefined || this.domain.onboardingAnswers[i] === "") {
         this.domain.onboardingAnswers[i] = defaults[i];
       }
@@ -411,12 +432,19 @@ export class LearnimalController {
   private async finishOnboarding(): Promise<void> {
     const logTimestamp = new Date().toISOString();
     const answers = this.domain.onboardingAnswers;
-    const topic = answers[1] || "My first topic";
     const apiKey = answers[0] || "";
-    const prompt = answers[4] || answers[1];
+    const defaultModel = this.domain.availableModels.find(m => m.free)?.id || this.domain.availableModels[0]?.id || "";
+    const selectedModel = answers[1] || defaultModel;
+    const topic = answers[2] || "My first topic";
+    const why = answers[3] || "curiosity";
+    const whatToDo = answers[4] || "experiment";
+    const firstLearn = answers[5] || answers[2];
+
+    const combinedPrompt = `Generate foundational learning cards for the following topic.\nTopic: ${topic}\nWhy I want to learn: ${why}\nWhat I want to do with it: ${whatToDo}\nWhat I want to learn first: ${firstLearn}`;
 
     // Close onboarding immediately so the user sees the workspace being built.
     this.domain.openRouterKey = apiKey;
+    this.domain.selectedModel = selectedModel;
     this.domain.onboarded = true;
     this.ui.isOnboardingOpen = false;
     this.domain.selection.clear();
@@ -425,7 +453,7 @@ export class LearnimalController {
     try {
       const { workspace, cards } = await this.completeOnboardingInteractor.execute({
         topic,
-        prompt,
+        prompt: combinedPrompt,
         settings: this.currentSettings(),
       });
 
@@ -435,8 +463,12 @@ export class LearnimalController {
       this.domain.selection = new Set(cards.map(c => c.id));
       await this.loadCardsForActiveWorkspace();
 
-      this.showToast("First cards generated! Pipe into recall.");
       console.log(`[${logTimestamp}] [LearnimalController.finishOnboarding] SUCCESS | wsId=${workspace.id}`);
+      this.emit();
+
+      // Trigger async operations independently so they appear as loading cards
+      this.runPipeline(`search "${topic.replace(/"/g, '\\"')}"`);
+      this.runPipeline(`ask "${combinedPrompt.replace(/"/g, '\\"')}"`);
     } catch (err: any) {
       console.error(`[${logTimestamp}] [LearnimalController.finishOnboarding] ERROR: ${err.message}`);
       this.showToast(err instanceof UseCaseError ? err.userMessage : "Onboarding setup failed");
@@ -626,6 +658,35 @@ export class LearnimalController {
     console.log(`[${logTimestamp}] [LearnimalController.deleteCard] SUCCESS | cardId=${cardId}`);
   }
 
+  // --- Search & Extraction ---
+
+  async extractUrlToCard(url: string, title: string, parentId?: string): Promise<void> {
+    const logTimestamp = new Date().toISOString();
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) return;
+
+    const opId = this.addPendingOperation(`Extracting ${url}...`);
+
+    try {
+      const card = await this.extractUrlInteractor.execute({
+        url,
+        title,
+        workspaceId,
+        parentId: parentId || this.domain.currentGroupId || undefined,
+      });
+
+      this.domain.selection = new Set([card.id]);
+      await this.loadCardsForActiveWorkspace();
+      this.removePendingOperation(opId);
+      this.showToast("Extracted to new card");
+      console.log(`[${logTimestamp}] [LearnimalController.extractUrlToCard] SUCCESS | cardId=${card.id}`);
+    } catch (err: any) {
+      console.error(`[${logTimestamp}] [LearnimalController.extractUrlToCard] ERROR: ${err.message}`);
+      this.setPendingOperationError(opId, `Failed to extract: ${err.message}`);
+      this.showToast(`Extraction failed: ${err.message}`);
+    }
+  }
+
   private currentSettings(): AppSettings {
     return {
       theme: this.domain.theme,
@@ -700,7 +761,7 @@ export class LearnimalController {
    *
    * @param pipelineText A pipeline string (e.g., 'ask "React" | chunk | recall | space')
    */
-  async runPipeline(pipelineText: string): Promise<void> {
+  public async runPipeline(pipelineText: string): Promise<void> {
     const logTimestamp = new Date().toISOString();
     console.log(`[${logTimestamp}] [LearnimalController.runPipeline] Running: "${pipelineText}"`);
 
@@ -716,6 +777,8 @@ export class LearnimalController {
 
     // Expand the selection so piping a group feeds all of its descendants.
     const initialInputCards = expandForPipe(this.domain.cards, this.domain.selection);
+    
+    const opId = this.addPendingOperation(pipelineText);
 
     try {
       const outcome = await this.pipeline.run(pipelineText, {
@@ -728,6 +791,8 @@ export class LearnimalController {
         systemPrompt: this.domain.customSystemPrompt,
         autoGroup: this.domain.autoGroupByCommand,
       });
+
+      this.removePendingOperation(opId);
 
       if (outcome.kind === "needsInput") {
         this.ui.pendingCommandName = outcome.command;
@@ -746,8 +811,32 @@ export class LearnimalController {
       }
     } catch (err: any) {
       console.error(`[${logTimestamp}] [LearnimalController.runPipeline] ERROR: ${err.message}`);
-      this.showToast(err instanceof UseCaseError ? err.userMessage : "Pipeline failed");
+      const errorMessage = err instanceof UseCaseError ? err.userMessage : "Pipeline failed";
+      this.setPendingOperationError(opId, errorMessage);
+      this.showToast(errorMessage);
     }
+  }
+
+  public addPendingOperation(commandName: string): string {
+    const id = Math.random().toString(36).substring(2, 9);
+    this.ui.pendingOperations = [
+      ...this.ui.pendingOperations,
+      { id, commandName, status: "loading" }
+    ];
+    this.emit();
+    return id;
+  }
+
+  public setPendingOperationError(id: string, errorMessage: string): void {
+    this.ui.pendingOperations = this.ui.pendingOperations.map(op =>
+      op.id === id ? { ...op, status: "error", errorMessage } : op
+    );
+    this.emit();
+  }
+
+  public removePendingOperation(id: string): void {
+    this.ui.pendingOperations = this.ui.pendingOperations.filter(op => op.id !== id);
+    this.emit();
   }
 
   // --- Spaced Repetition Review Flow ---

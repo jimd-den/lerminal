@@ -59,12 +59,11 @@ describe("OpenRouter Agent Gateway", () => {
     }
   });
 
-  it("should fallback to a default model if not provided", async () => {
+  it("should use the provided model string without hardcoding a fallback", async () => {
     const originalFetch = global.fetch;
     global.fetch = mock(async (url: any, options: any) => {
       const body = JSON.parse(options.body);
-      // default model fallback check
-      expect(body.model).toBe("google/gemini-2.5-flash");
+      expect(body.model).toBe("");
       return {
         ok: true,
         json: async () => ({

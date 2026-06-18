@@ -19,7 +19,7 @@ import { ScheduleState } from "./schedule";
  *   organize cards into infinite subgroups.
  */
 
-export type CardType = "source" | "chunk" | "question" | "note" | "group";
+export type CardType = "source" | "chunk" | "question" | "note" | "group" | "search";
 
 export interface Card {
   /** Unique identifier for the card. */

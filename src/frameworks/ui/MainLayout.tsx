@@ -11,6 +11,7 @@ import {
   Platform,
   Dimensions,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppState, LearnimalController } from "../../adapters/presenters/LearnimalController";
@@ -25,12 +26,13 @@ const ACCENTS = {
   arctic: { primary: "#7FB2E8", soft: "rgba(127,178,232,0.16)", line: "rgba(127,178,232,0.40)" },
 };
 
-const CARD_COLORS = {
+const CARD_COLORS: Record<string, string> = {
   source: "#B49CE6",
   chunk: "#7FB2E8",
   question: "#4EC7C0",
   note: "#E8829B",
   group: "#9AA7B5",
+  search: "#E0A45E",
   due: "#F2A65A",
 };
 
@@ -81,6 +83,7 @@ Each card must be a distinct, recall-ready idea.`;
 
 const ONBOARDING_QUESTIONS = [
   { eyebrow: "API Key", q: "What is your OpenRouter API Key?", ph: "sk-or-... (optional, press Continue to skip)" },
+  { eyebrow: "AI Model", q: "Which model would you like to use?", ph: "" },
   { eyebrow: "New workspace", q: "What do you want to learn?", ph: "e.g. linear algebra" },
   { eyebrow: "The why", q: "Why?", ph: "what's it for?" },
   { eyebrow: "The goal", q: "What do you want to do with it?", ph: "the thing you're aiming at" },
@@ -265,7 +268,7 @@ export function MainLayout({ controller }: MainLayoutProps) {
             )}
 
             {/* Empty Canvas Indicator */}
-            {state.visibleCards.length === 0 ? (
+            {state.visibleCards.length === 0 && state.pendingOperations.length === 0 ? (
               <View style={styles.emptyView}>
                 <Text style={[styles.emptyTitle, { color: colors.muted }]}>
                   {state.currentGroupId ? "Empty group" : "Empty canvas"}
@@ -276,8 +279,57 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 </Text>
               </View>
             ) : (
-              // Card Flow Render — only the current group's direct children.
-              state.visibleCards
+              <View>
+                {/* Pending Operations Placeholders */}
+                {state.pendingOperations.slice().reverse().map((op) => (
+                  <View
+                    key={op.id}
+                    style={[
+                      styles.card,
+                      { backgroundColor: colors.surface, borderColor: op.status === "error" ? "#E8829B" : colors.line }
+                    ]}
+                  >
+                    <View style={[styles.cardSpine, { backgroundColor: op.status === "error" ? "#E8829B" : CARD_COLORS.chunk }]} />
+                    <View style={styles.cardHeader}>
+                      <Text style={[styles.cardTypeLabel, { color: op.status === "error" ? "#E8829B" : CARD_COLORS.chunk }]}>
+                        {op.commandName} · {op.status === "loading" ? "generating..." : "failed"}
+                      </Text>
+                    </View>
+                    <View style={{ paddingVertical: 12, paddingHorizontal: 16 }}>
+                      {op.status === "loading" ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <ActivityIndicator size="small" color={accent.primary} style={{ marginRight: 12 }} />
+                          <Text style={{ color: colors.muted }}>Working on it...</Text>
+                        </View>
+                      ) : (
+                        <View>
+                          <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>Error during generation</Text>
+                          <Text style={{ color: colors.faint }}>{op.errorMessage}</Text>
+                          <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                            <TouchableOpacity 
+                              onPress={() => {
+                                controller.removePendingOperation(op.id);
+                                controller.runPipeline(op.commandName);
+                              }} 
+                              style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: accent.primary, alignSelf: 'flex-start', borderRadius: 4 }}
+                            >
+                              <Text style={{ color: colors.surface, fontSize: 12, fontWeight: 'bold' }}>Retry</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                              onPress={() => controller.removePendingOperation(op.id)} 
+                              style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: colors.lineSoft, alignSelf: 'flex-start', borderRadius: 4 }}
+                            >
+                              <Text style={{ color: colors.text, fontSize: 12 }}>Dismiss</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ))}
+
+              {/* Card Flow Render — only the current group's direct children. */}
+              {state.visibleCards
                 .slice()
                 .reverse()
                 .map((card) => {
@@ -364,7 +416,16 @@ export function MainLayout({ controller }: MainLayoutProps) {
                       </View>
 
                       <Text style={[styles.cardTitle, { color: colors.text }]}>{card.title}</Text>
-                      {card.type !== "question" && (
+                      {card.type === "search" ? (
+                        <Text numberOfLines={2} style={[styles.cardBodyPreview, { color: colors.muted }]}>
+                          {(() => {
+                            try {
+                              const res = JSON.parse(card.body);
+                              return `${res.length} recommended links available`;
+                            } catch { return "Search results"; }
+                          })()}
+                        </Text>
+                      ) : card.type !== "question" && (
                         <Text numberOfLines={2} style={[styles.cardBodyPreview, { color: colors.muted }]}>
                           {card.body}
                         </Text>
@@ -377,7 +438,8 @@ export function MainLayout({ controller }: MainLayoutProps) {
                       ) : null}
                     </TouchableOpacity>
                   );
-                })
+                })}
+              </View>
             )}
           </ScrollView>
 
@@ -618,6 +680,39 @@ export function MainLayout({ controller }: MainLayoutProps) {
                       )}
                     </View>
                   )
+                ) : card.type === "search" ? (
+                  <View>
+                    {(() => {
+                      try {
+                        const results = JSON.parse(card.body);
+                        return results.map((res: any, idx: number) => {
+                          const isExtracting = state.pendingOperations.some(op => op.commandName === `Extracting ${res.url}...`);
+                          return (
+                            <View key={idx} style={{ marginBottom: 20, padding: 12, backgroundColor: colors.surface2, borderRadius: 8 }}>
+                              <Text style={{ color: colors.text, fontSize: 16, fontWeight: "bold", marginBottom: 4 }}>{res.title}</Text>
+                              <Text style={{ color: colors.muted, fontSize: 14, marginBottom: 12 }}>{res.snippet}</Text>
+                              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                                <Text style={{ color: accent.primary, fontSize: 12, flex: 1, marginRight: 8 }} numberOfLines={1}>{res.url}</Text>
+                                <TouchableOpacity 
+                                  style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: accent.soft, borderRadius: 6, borderColor: accent.line, borderWidth: 1 }}
+                                  onPress={() => controller.extractUrlToCard(res.url, res.title, card.parentId ?? undefined)}
+                                  disabled={isExtracting}
+                                >
+                                  {isExtracting ? (
+                                    <ActivityIndicator size="small" color={accent.primary} />
+                                  ) : (
+                                    <Text style={{ color: accent.primary, fontWeight: "bold", fontSize: 13 }}>📥 Extract</Text>
+                                  )}
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          );
+                        });
+                      } catch {
+                        return <Text style={{ color: colors.text }}>Invalid search data</Text>;
+                      }
+                    })()}
+                  </View>
                 ) : (
                   <View>
                     <Text style={[styles.fullCardText, { color: colors.text }]}>{card.body}</Text>
@@ -997,7 +1092,7 @@ export function MainLayout({ controller }: MainLayoutProps) {
                         isCustomSelected && { backgroundColor: colors.raised }
                       ]}
                       onPress={() => {
-                        const fallbackCustomVal = isCustomSelected ? state.selectedModel : "google/gemini-2.5-flash";
+                        const fallbackCustomVal = isCustomSelected ? state.selectedModel : (state.availableModels[0]?.id || "");
                         controller.setSelectedModel(fallbackCustomVal);
                         setModelInput(fallbackCustomVal);
                         setIsModelDropdownOpen(false);
@@ -1217,16 +1312,55 @@ export function MainLayout({ controller }: MainLayoutProps) {
             <Text style={[styles.onbEyebrow, { color: accent.primary }]}>{currentOnboardingQ.eyebrow}</Text>
             <Text style={[styles.onbQuestionText, { color: colors.text }]}>{currentOnboardingQ.q}</Text>
             
-            <TextInput
-              style={[styles.onbInput, { color: colors.text, borderColor: colors.line }]}
-              placeholder={currentOnboardingQ.ph}
-              placeholderTextColor={colors.faint}
-              value={onboardingInput}
-              onChangeText={setOnboardingInput}
-              onSubmitEditing={() => handleOnboardingSubmit()}
-              autoFocus={true}
-              secureTextEntry={state.onboardingStep === 0}
-            />
+            {state.onboardingStep === 1 ? (
+              <ScrollView style={{ maxHeight: 240, width: '100%', marginTop: 12, borderRadius: 8, backgroundColor: colors.surface }}>
+                {state.isLoadingModels ? (
+                  <ActivityIndicator style={{ padding: 20 }} color={accent.primary} />
+                ) : (
+                  <View>
+                    <Text style={{ color: colors.muted, padding: 8, fontSize: 12, fontWeight: 'bold' }}>Free Models</Text>
+                    {freeModels.map(m => {
+                      const defaultModel = freeModels[0]?.id || state.availableModels[0]?.id;
+                      const isSelected = onboardingInput === m.id || (!onboardingInput && state.selectedModel === m.id) || (!onboardingInput && !state.selectedModel && m.id === defaultModel);
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          style={{ padding: 12, backgroundColor: isSelected ? colors.raised : 'transparent', borderBottomWidth: 1, borderBottomColor: colors.line }}
+                          onPress={() => setOnboardingInput(m.id)}
+                        >
+                          <Text style={{ color: isSelected ? accent.primary : colors.text }}>{m.name}</Text>
+                        </TouchableOpacity>
+                      )
+                    })}
+                    {paidModels.length > 0 && <Text style={{ color: colors.muted, padding: 8, fontSize: 12, fontWeight: 'bold' }}>Paid Models</Text>}
+                    {paidModels.map(m => {
+                      const defaultModel = freeModels[0]?.id || state.availableModels[0]?.id;
+                      const isSelected = onboardingInput === m.id || (!onboardingInput && state.selectedModel === m.id) || (!onboardingInput && !state.selectedModel && m.id === defaultModel);
+                      return (
+                        <TouchableOpacity
+                          key={m.id}
+                          style={{ padding: 12, backgroundColor: isSelected ? colors.raised : 'transparent', borderBottomWidth: 1, borderBottomColor: colors.line }}
+                          onPress={() => setOnboardingInput(m.id)}
+                        >
+                          <Text style={{ color: isSelected ? accent.primary : colors.text }}>{m.name}</Text>
+                        </TouchableOpacity>
+                      )
+                    })}
+                  </View>
+                )}
+              </ScrollView>
+            ) : (
+              <TextInput
+                style={[styles.onbInput, { color: colors.text, borderColor: colors.line }]}
+                placeholder={currentOnboardingQ.ph}
+                placeholderTextColor={colors.faint}
+                value={onboardingInput}
+                onChangeText={setOnboardingInput}
+                onSubmitEditing={() => handleOnboardingSubmit()}
+                autoFocus={true}
+                secureTextEntry={state.onboardingStep === 0}
+              />
+            )}
           </View>
 
           <View style={styles.onbFooter}>
