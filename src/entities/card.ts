@@ -28,6 +28,17 @@ export interface Card {
   workspaceId: string;
   /** The specific type of the card, determining compatible pipeline actions. */
   type: CardType;
+  /**
+   * Optional reference to a {@link CardTypeDefinition} id, enabling user-defined
+   * card types. When omitted, the legacy `type` string is the effective type id, so
+   * existing cards resolve to the seeded built-in definitions without migration.
+   */
+  typeId?: string;
+  /**
+   * Optional bag of structured values for the type's custom `fields` (keyed by
+   * `FieldSpec.key`). Undefined for cards whose type declares no extra fields.
+   */
+  fields?: Record<string, string>;
   /** The main heading or question text. */
   title: string;
   /** Detailed content, answer explanation, or source text. */
@@ -58,6 +69,8 @@ export interface CreateCardParams {
   id?: string;
   workspaceId: string;
   type: CardType;
+  typeId?: string;
+  fields?: Record<string, string>;
   title: string;
   body: string;
   tags?: string[];
@@ -86,6 +99,8 @@ export function createCard(params: CreateCardParams): Card {
     id: generatedId,
     workspaceId: params.workspaceId,
     type: params.type,
+    typeId: params.typeId,
+    fields: params.fields,
     title: params.title,
     body: params.body,
     createdAt: createdTime,

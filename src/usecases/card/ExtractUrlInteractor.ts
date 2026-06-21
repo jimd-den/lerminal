@@ -2,7 +2,7 @@ import { Card, createCard } from "../../entities/card";
 import { ExtractionGateway } from "../../adapters/gateways/ExtractionGateway";
 import { CardRepository } from "../../adapters/repositories/CardRepository";
 
-import { MarkdownChunkerService } from "./MarkdownChunkerService";
+import { MarkdownChunkerService, MarkdownNode } from "./MarkdownChunkerService";
 
 export interface ExtractUrlRequest {
   url: string;
@@ -21,15 +21,15 @@ export class ExtractUrlInteractor {
     const text = await this.extractionGateway.extractText(request.url);
     const mainTitle = request.title || request.url;
 
-    const sections = MarkdownChunkerService.chunk(text, mainTitle);
+    const tree = MarkdownChunkerService.chunkTree(text, mainTitle);
 
-    // If it didn't chunk (only 1 section), just save as a single source card
-    if (sections.length <= 1) {
+    // If it has no real heading structure (single intro node), save one source card.
+    if (tree.length <= 1 && (tree[0]?.children.length ?? 0) === 0) {
       const card = createCard({
         workspaceId: request.workspaceId,
         type: "source",
-        title: sections.length === 1 ? sections[0].title : mainTitle,
-        body: sections.length === 1 ? sections[0].body : text,
+        title: tree.length === 1 ? tree[0].title : mainTitle,
+        body: tree.length === 1 ? tree[0].body : text,
         cite: request.url,
         parentId: request.parentId,
       });
@@ -37,7 +37,7 @@ export class ExtractUrlInteractor {
       return card;
     }
 
-    // If there are multiple sections, create a parent group and nest the chunks
+    // Otherwise mirror the document's heading hierarchy as a nested group tree.
     const parentGroup = createCard({
       workspaceId: request.workspaceId,
       type: "group",
@@ -47,22 +47,44 @@ export class ExtractUrlInteractor {
       parentId: request.parentId,
     });
     await this.cardRepo.saveCard(parentGroup);
-
-    // The UI displays visible cards in reverse chronological order (newest at top).
-    // By saving the chunks in reverse order, the first section is saved last,
-    // which pushes it to the very top of the list in the Lerminal workspace!
-    for (const section of sections.slice().reverse()) {
-      const childCard = createCard({
-        workspaceId: request.workspaceId,
-        type: "source",
-        title: section.title,
-        body: section.body,
-        cite: request.url,
-        parentId: parentGroup.id,
-      });
-      await this.cardRepo.saveCard(childCard);
-    }
-
+    await this.saveTree(tree, parentGroup.id, request.url, request.workspaceId);
     return parentGroup;
+  }
+
+  /**
+   * Recursively persists a heading tree: a node with subsections becomes a `group`
+   * (recursing into its children), a leaf becomes a `source` card. Children are saved
+   * in reverse so the first section sits on top of the reverse-chronological canvas.
+   */
+  private async saveTree(
+    nodes: MarkdownNode[],
+    parentId: string,
+    url: string,
+    workspaceId: string
+  ): Promise<void> {
+    for (const node of nodes.slice().reverse()) {
+      if (node.children.length === 0) {
+        await this.cardRepo.saveCard(createCard({
+          workspaceId,
+          type: "source",
+          title: node.title,
+          body: node.body,
+          cite: url,
+          parentId,
+        }));
+        continue;
+      }
+
+      const group = createCard({
+        workspaceId,
+        type: "group",
+        title: node.title,
+        body: "",
+        cite: url,
+        parentId,
+      });
+      await this.cardRepo.saveCard(group);
+      await this.saveTree(node.children, group.id, url, workspaceId);
+    }
   }
 }

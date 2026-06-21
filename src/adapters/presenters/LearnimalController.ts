@@ -17,12 +17,26 @@ import { GroupCommand } from "../../usecases/pipeline/GroupCommand";
 import { UngroupCommand } from "../../usecases/pipeline/UngroupCommand";
 import { DeleteCommand } from "../../usecases/pipeline/DeleteCommand";
 import { SearchCommand } from "../../usecases/pipeline/SearchCommand";
+import { ClozeCommand } from "../../usecases/pipeline/ClozeCommand";
+import { ElaborateCommand } from "../../usecases/pipeline/ElaborateCommand";
 import { SearchGateway } from "../gateways/SearchGateway";
 import { ExtractionGateway } from "../gateways/ExtractionGateway";
 import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
 import { breadcrumbPath, directChildren, expandForPipe } from "../../usecases/tree";
 import { CommandDefinition } from "../../entities/commandDefinition";
 import { CommandDefinitionRepository } from "../repositories/CommandDefinitionRepository";
+import { BUILTIN_CARD_TYPES, CardTypeDefinition } from "../../entities/cardTypeDefinition";
+import { CardTypeRepository } from "../repositories/CardTypeRepository";
+import {
+  BUILTIN_PROMPT_PRESETS,
+  createPromptPreset,
+  DEFAULT_CARD_INSTRUCTION,
+  DEFAULT_CHUNK_INSTRUCTION,
+  PromptPreset,
+} from "../../entities/promptPreset";
+import { PromptPresetRepository } from "../repositories/PromptPresetRepository";
+import { CreateCardTypeInteractor, CreateCardTypeRequest } from "../../usecases/cardTypes/CreateCardTypeInteractor";
+import { DeleteCardTypeInteractor } from "../../usecases/cardTypes/DeleteCardTypeInteractor";
 import { PipelineCommand } from "../../usecases/pipeline/Command";
 import { createPipelineCommand } from "../../usecases/pipeline/CommandFactory";
 import { CreateCommandDefinitionInteractor, CreateCommandDefinitionRequest } from "../../usecases/commands/CreateCommandDefinitionInteractor";
@@ -30,6 +44,7 @@ import { DeleteCommandDefinitionInteractor } from "../../usecases/commands/Delet
 import { DeleteCardInteractor } from "../../usecases/card/DeleteCardInteractor";
 import { StartReviewInteractor } from "../../usecases/review/StartReviewInteractor";
 import { GradeReviewInteractor } from "../../usecases/review/GradeReviewInteractor";
+import { ReviewGrade } from "../../entities/schedule";
 import { CreateWorkspaceInteractor } from "../../usecases/workspace/CreateWorkspaceInteractor";
 import { SwitchWorkspaceInteractor } from "../../usecases/workspace/SwitchWorkspaceInteractor";
 import { DeleteWorkspaceInteractor } from "../../usecases/workspace/DeleteWorkspaceInteractor";
@@ -38,28 +53,10 @@ import { SaveSettingsInteractor } from "../../usecases/settings/SaveSettingsInte
 import { LoadModelsInteractor } from "../../usecases/models/LoadModelsInteractor";
 import { ExtractUrlInteractor } from "../../usecases/card/ExtractUrlInteractor";
 
-export const DEFAULT_SYSTEM_PROMPT = `You answer questions directly. Respond ONLY with a valid JSON array containing EXACTLY ONE object (no prose, no markdown code block formatting). The object must have:
-- "title": string (max 6 words, representing the topic)
-- "body": string (a direct, clear answer to the user's query)
-
-Your response must be a single card.`;
-
-export const DEFAULT_CHUNK_SYSTEM_PROMPT = `You break down text into memorable, sequenced atomic learning cards that are detailed. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
-- "title": string (max 6 words, representing the concept)
-- "body": string (a detailed, memorable explanation clearly sequenced for learning)
-
-Each card must be a distinct, recall-ready idea.`;
-
-const DEFAULT_MODELS: AgentModel[] = [
-  { id: "google/gemini-2.5-flash:free", name: "Gemini 2.5 Flash (Free)", free: true },
-  { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B (Free)", free: true },
-  { id: "qwen/qwen-2.5-72b-instruct:free", name: "Qwen 2.5 72B (Free)", free: true },
-  { id: "openchat/openchat-7b:free", name: "OpenChat 7B (Free)", free: true },
-  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", free: false },
-  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", free: false },
-  { id: "meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B", free: false },
-  { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", free: false },
-];
+// Default prompts are now *instructions* (the strict JSON format contract is appended
+// by the gateway via composeCardPrompt), so users can edit them freely.
+export const DEFAULT_SYSTEM_PROMPT = DEFAULT_CARD_INSTRUCTION;
+export const DEFAULT_CHUNK_SYSTEM_PROMPT = DEFAULT_CHUNK_INSTRUCTION;
 
 /**
  * # Learnimal Application State Model
@@ -73,6 +70,12 @@ export interface PendingOperation {
   commandName: string;
   status: "loading" | "error";
   errorMessage?: string;
+  /** The pipeline text to re-run on retry (defaults to commandName). */
+  pipelineText?: string;
+  /** Selection that seeded the run, so a retry restores the same input context. */
+  inputCardIds?: string[];
+  /** The group the run targeted, restored on retry. */
+  parentId?: string | null;
 }
 
 export interface AppState {
@@ -90,8 +93,14 @@ export interface AppState {
   selection: Set<string>;
   pinnedCommands: string[];
   autoGroupByCommand: boolean;
+  /** When true, review sessions interleave cards across topics/groups. */
+  interleaveReviews: boolean;
   /** User-defined custom commands available in the palette and pipelines. */
   commandDefinitions: CommandDefinition[];
+  /** Card type registry (seeded built-ins + user-defined types). */
+  cardTypes: CardTypeDefinition[];
+  /** Card-generation instruction presets (seeded built-ins + user-defined). */
+  promptPresets: PromptPreset[];
   /** Command awaiting input in the input sheet (so submit re-runs the right one). */
   pendingCommandName: string;
   openCardId: string | null;
@@ -132,7 +141,10 @@ interface DomainState {
   selection: Set<string>;
   pinnedCommands: string[];
   autoGroupByCommand: boolean;
+  interleaveReviews: boolean;
   commandDefinitions: CommandDefinition[];
+  cardTypes: CardTypeDefinition[];
+  promptPresets: PromptPreset[];
   reviewQueue: Card[];
   reviewIndex: number;
   searchSiteFlags: Record<string, string>;
@@ -161,6 +173,8 @@ export interface LearnimalControllerDeps {
   settingsRepo: SettingsRepository;
   agentGateway: AgentGateway;
   commandDefinitionRepo: CommandDefinitionRepository;
+  cardTypeRepo: CardTypeRepository;
+  promptPresetRepo: PromptPresetRepository;
   searchGateway: SearchGateway;
   extractionGateway: ExtractionGateway;
 }
@@ -181,6 +195,8 @@ export class LearnimalController {
   private settingsRepo: SettingsRepository;
   private agentGateway: AgentGateway;
   private commandDefinitionRepo: CommandDefinitionRepository;
+  private cardTypeRepo: CardTypeRepository;
+  private promptPresetRepo: PromptPresetRepository;
 
   private pipeline: PipelineRunner;
   private startReviewInteractor: StartReviewInteractor;
@@ -192,6 +208,8 @@ export class LearnimalController {
   private loadModelsInteractor: LoadModelsInteractor;
   private createCommandDefinitionInteractor: CreateCommandDefinitionInteractor;
   private deleteCommandDefinitionInteractor: DeleteCommandDefinitionInteractor;
+  private createCardTypeInteractor: CreateCardTypeInteractor;
+  private deleteCardTypeInteractor: DeleteCardTypeInteractor;
   private deleteCardInteractor: DeleteCardInteractor;
   private extractUrlInteractor: ExtractUrlInteractor;
   private groupCardsInteractor: GroupCardsInteractor;
@@ -209,6 +227,8 @@ export class LearnimalController {
     this.settingsRepo = deps.settingsRepo;
     this.agentGateway = deps.agentGateway;
     this.commandDefinitionRepo = deps.commandDefinitionRepo;
+    this.cardTypeRepo = deps.cardTypeRepo;
+    this.promptPresetRepo = deps.promptPresetRepo;
 
     // Compose built-in pipeline commands from the injected ports. Custom commands
     // are layered on top by rebuildPipeline() once their definitions are loaded.
@@ -225,11 +245,15 @@ export class LearnimalController {
       new UngroupCommand(deps.cardRepo),
       new DeleteCommand(deps.cardRepo),
       new SearchCommand(deps.searchGateway, deps.cardRepo, deps.settingsRepo),
+      new ClozeCommand(deps.cardRepo),
+      new ElaborateCommand(deps.cardRepo),
     ];
     this.pipeline = new PipelineRunner(this.builtinCommands);
 
     this.createCommandDefinitionInteractor = new CreateCommandDefinitionInteractor(deps.commandDefinitionRepo);
     this.deleteCommandDefinitionInteractor = new DeleteCommandDefinitionInteractor(deps.commandDefinitionRepo);
+    this.createCardTypeInteractor = new CreateCardTypeInteractor(deps.cardTypeRepo);
+    this.deleteCardTypeInteractor = new DeleteCardTypeInteractor(deps.cardTypeRepo);
     this.deleteCardInteractor = new DeleteCardInteractor(deps.cardRepo);
     this.startReviewInteractor = new StartReviewInteractor();
     this.gradeReviewInteractor = new GradeReviewInteractor(deps.cardRepo);
@@ -244,10 +268,10 @@ export class LearnimalController {
       theme: "dark",
       accent: "teal",
       openRouterKey: "",
-      selectedModel: DEFAULT_MODELS[0]?.id || "",
+      selectedModel: "",
       customSystemPrompt: DEFAULT_SYSTEM_PROMPT,
       customChunkSystemPrompt: DEFAULT_CHUNK_SYSTEM_PROMPT,
-      availableModels: [...DEFAULT_MODELS],
+      availableModels: [],
       workspaces: [],
       activeWorkspaceId: null,
       cards: [],
@@ -255,7 +279,10 @@ export class LearnimalController {
       selection: new Set(),
       pinnedCommands: ["ask", "search", "chunk", "recall", "space", "review"],
       autoGroupByCommand: true,
+      interleaveReviews: true,
       commandDefinitions: [],
+      cardTypes: [...BUILTIN_CARD_TYPES],
+      promptPresets: [...BUILTIN_PROMPT_PRESETS],
       reviewQueue: [],
       reviewIndex: 0,
       searchSiteFlags: {
@@ -294,10 +321,11 @@ export class LearnimalController {
         this.domain.theme = settings.theme || "dark";
         this.domain.accent = settings.accent || "teal";
         this.domain.openRouterKey = settings.openRouterKey || "";
-        this.domain.selectedModel = settings.selectedModel || DEFAULT_MODELS[0]?.id || "";
+        this.domain.selectedModel = settings.selectedModel || "";
         this.domain.customSystemPrompt = settings.customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
         this.domain.customChunkSystemPrompt = settings.customChunkSystemPrompt || DEFAULT_CHUNK_SYSTEM_PROMPT;
         this.domain.autoGroupByCommand = settings.autoGroupByCommand ?? true;
+        this.domain.interleaveReviews = settings.interleaveReviews ?? true;
         if (settings.searchSiteFlags) {
           this.domain.searchSiteFlags = settings.searchSiteFlags;
         }
@@ -307,6 +335,8 @@ export class LearnimalController {
       }
 
       this.domain.commandDefinitions = await this.commandDefinitionRepo.getDefinitions();
+      this.domain.cardTypes = await this.loadCardTypes();
+      this.domain.promptPresets = await this.loadPromptPresets();
       this.rebuildPipeline();
 
       if (this.domain.workspaces.length === 0) {
@@ -356,7 +386,10 @@ export class LearnimalController {
       selection: new Set(this.domain.selection),
       pinnedCommands: [...this.domain.pinnedCommands],
       autoGroupByCommand: this.domain.autoGroupByCommand,
+      interleaveReviews: this.domain.interleaveReviews,
       commandDefinitions: [...this.domain.commandDefinitions],
+      cardTypes: [...this.domain.cardTypes],
+      promptPresets: [...this.domain.promptPresets],
       pendingCommandName: this.ui.pendingCommandName,
       reviewQueue: [...this.domain.reviewQueue],
       reviewIndex: this.domain.reviewIndex,
@@ -491,6 +524,12 @@ export class LearnimalController {
     this.emit();
   }
 
+  setInterleaveReviews(enabled: boolean): void {
+    this.domain.interleaveReviews = enabled;
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
   async updateSearchSiteFlags(flags: Record<string, string>): Promise<void> {
     this.domain.searchSiteFlags = flags;
     this.emit();
@@ -522,7 +561,13 @@ export class LearnimalController {
    */
   private rebuildPipeline(): void {
     const customCommands = this.domain.commandDefinitions.map(def =>
-      createPipelineCommand(def, { agentGateway: this.agentGateway, cardRepo: this.cardRepo })
+      createPipelineCommand(def, {
+        agentGateway: this.agentGateway,
+        cardRepo: this.cardRepo,
+        // Lazy thunk: pipeline-macro commands expand into whatever the current runner
+        // is, so a macro can call other custom commands defined alongside it.
+        getRunner: () => this.pipeline,
+      })
     );
     this.pipeline = new PipelineRunner([...this.builtinCommands, ...customCommands]);
   }
@@ -554,15 +599,126 @@ export class LearnimalController {
     this.showToast("Command deleted");
   }
 
+  // --- Card Types (modular registry) ---
+
+  /**
+   * Loads the persisted card type registry, seeding the built-in definitions on the
+   * very first run so every card always resolves its type. Restyled built-ins and
+   * custom types take precedence over the seeds once saved.
+   */
+  private async loadCardTypes(): Promise<CardTypeDefinition[]> {
+    const stored = await this.cardTypeRepo.getTypes();
+    if (stored.length === 0) {
+      for (const def of BUILTIN_CARD_TYPES) {
+        await this.cardTypeRepo.saveType(def);
+      }
+      return [...BUILTIN_CARD_TYPES];
+    }
+    // Backfill any built-ins missing from an older store (forward compatibility).
+    const byId = new Map(stored.map(t => [t.id, t]));
+    for (const def of BUILTIN_CARD_TYPES) {
+      if (!byId.has(def.id)) {
+        await this.cardTypeRepo.saveType(def);
+        byId.set(def.id, def);
+      }
+    }
+    return Array.from(byId.values());
+  }
+
+  /** Defines and registers a new custom card type. */
+  async createCardType(request: CreateCardTypeRequest): Promise<void> {
+    try {
+      const definition = await this.createCardTypeInteractor.execute(request);
+      this.domain.cardTypes = [...this.domain.cardTypes, definition];
+      this.showToast(`Created card type: ${definition.name}`);
+    } catch (err: any) {
+      this.showToast(err instanceof UseCaseError ? err.userMessage : "Could not create card type");
+    }
+  }
+
+  /** Restyles/updates an existing card type (built-in or custom). */
+  async updateCardType(definition: CardTypeDefinition): Promise<void> {
+    await this.cardTypeRepo.saveType(definition);
+    this.domain.cardTypes = this.domain.cardTypes.map(t => (t.id === definition.id ? definition : t));
+    this.emit();
+  }
+
+  /** Removes a custom card type (built-ins are protected). */
+  async deleteCardType(id: string): Promise<void> {
+    try {
+      await this.deleteCardTypeInteractor.execute(id);
+      this.domain.cardTypes = this.domain.cardTypes.filter(t => t.id !== id);
+      this.emit();
+      this.showToast("Card type deleted");
+    } catch (err: any) {
+      this.showToast(err instanceof UseCaseError ? err.userMessage : "Could not delete card type");
+    }
+  }
+
+  // --- Prompt Presets (extendable card-generation instructions) ---
+
+  /** Loads persisted presets, seeding the built-ins on first run and backfilling new ones. */
+  private async loadPromptPresets(): Promise<PromptPreset[]> {
+    const stored = await this.promptPresetRepo.getPresets();
+    if (stored.length === 0) {
+      for (const p of BUILTIN_PROMPT_PRESETS) await this.promptPresetRepo.savePreset(p);
+      return [...BUILTIN_PROMPT_PRESETS];
+    }
+    const byId = new Map(stored.map(p => [p.id, p]));
+    for (const p of BUILTIN_PROMPT_PRESETS) {
+      if (!byId.has(p.id)) {
+        await this.promptPresetRepo.savePreset(p);
+        byId.set(p.id, p);
+      }
+    }
+    return Array.from(byId.values());
+  }
+
+  /** Applies a preset's instruction as the active agent + chunk system prompt. */
+  applyPromptPreset(id: string): void {
+    const preset = this.domain.promptPresets.find(p => p.id === id);
+    if (!preset) return;
+    this.domain.customSystemPrompt = preset.prompt;
+    this.domain.customChunkSystemPrompt = preset.prompt;
+    this.saveCurrentSettings();
+    this.emit();
+    this.showToast(`Applied preset: ${preset.name}`);
+  }
+
+  /** Saves the current system prompt as a new named, reusable preset. */
+  async saveCurrentAsPreset(name: string): Promise<void> {
+    const preset = createPromptPreset({ name, prompt: this.domain.customSystemPrompt });
+    await this.promptPresetRepo.savePreset(preset);
+    this.domain.promptPresets = [...this.domain.promptPresets, preset];
+    this.emit();
+    this.showToast(`Saved preset: ${preset.name}`);
+  }
+
+  /** Removes a user-defined preset (built-ins are protected). */
+  async deletePromptPreset(id: string): Promise<void> {
+    const preset = this.domain.promptPresets.find(p => p.id === id);
+    if (!preset || preset.builtin) {
+      this.showToast("Built-in presets can't be deleted");
+      return;
+    }
+    await this.promptPresetRepo.deletePreset(id);
+    this.domain.promptPresets = this.domain.promptPresets.filter(p => p.id !== id);
+    this.emit();
+    this.showToast("Preset deleted");
+  }
+
   // --- Card Deletion ---
 
-  /** Permanently deletes a single card (promoting any children up a level). */
-  async deleteCard(cardId: string): Promise<void> {
+  /**
+   * Permanently deletes a card. Non-groups (and groups by default) promote any
+   * children up a level; pass `recursive` to delete a group and its entire contents.
+   */
+  async deleteCard(cardId: string, recursive: boolean = false): Promise<void> {
     const logTimestamp = new Date().toISOString();
     const card = this.domain.cards.find(c => c.id === cardId);
     if (!card) return;
 
-    await this.deleteCardInteractor.execute(card);
+    await this.deleteCardInteractor.execute(card, recursive);
 
     // If we were viewing the group we just deleted, step up to its parent.
     if (this.domain.currentGroupId === cardId) {
@@ -574,6 +730,40 @@ export class LearnimalController {
     this.emit();
     this.showToast("Card deleted");
     console.log(`[${logTimestamp}] [LearnimalController.deleteCard] SUCCESS | cardId=${cardId}`);
+  }
+
+  /**
+   * Persists a value into one of a card's schema-defined fields (e.g. the learner's
+   * own write-up on an elaboration card). Generic over any field key so custom card
+   * types work without bespoke methods.
+   */
+  async setCardField(cardId: string, key: string, value: string): Promise<void> {
+    const card = this.domain.cards.find(c => c.id === cardId);
+    if (!card) return;
+    const updated: Card = { ...card, fields: { ...(card.fields || {}), [key]: value } };
+    await this.cardRepo.saveCard(updated);
+    this.domain.cards = this.domain.cards.map(c => (c.id === cardId ? updated : c));
+    this.emit();
+  }
+
+  /** Re-assigns a card's modular type (e.g. to make it render as interactive HTML). */
+  async setCardType(cardId: string, typeId: string): Promise<void> {
+    const card = this.domain.cards.find(c => c.id === cardId);
+    if (!card) return;
+    const updated: Card = { ...card, typeId };
+    await this.cardRepo.saveCard(updated);
+    this.domain.cards = this.domain.cards.map(c => (c.id === cardId ? updated : c));
+    this.emit();
+  }
+
+  /** Edits a card's body text (used by the in-card HTML/content editor). */
+  async setCardBody(cardId: string, body: string): Promise<void> {
+    const card = this.domain.cards.find(c => c.id === cardId);
+    if (!card) return;
+    const updated: Card = { ...card, body };
+    await this.cardRepo.saveCard(updated);
+    this.domain.cards = this.domain.cards.map(c => (c.id === cardId ? updated : c));
+    this.emit();
   }
 
   // --- Search & Extraction ---
@@ -630,6 +820,7 @@ export class LearnimalController {
       customSystemPrompt: this.domain.customSystemPrompt,
       customChunkSystemPrompt: this.domain.customChunkSystemPrompt,
       autoGroupByCommand: this.domain.autoGroupByCommand,
+      interleaveReviews: this.domain.interleaveReviews,
       searchSiteFlags: this.domain.searchSiteFlags,
     };
   }
@@ -695,7 +886,10 @@ export class LearnimalController {
    *
    * @param pipelineText A pipeline string (e.g., 'ask "React" | chunk | recall | space')
    */
-  public async runPipeline(pipelineText: string): Promise<void> {
+  public async runPipeline(
+    pipelineText: string,
+    retry?: { inputCardIds: string[]; parentId: string | null }
+  ): Promise<void> {
     const logTimestamp = new Date().toISOString();
     console.log(`[${logTimestamp}] [LearnimalController.runPipeline] Running: "${pipelineText}"`);
 
@@ -709,15 +903,23 @@ export class LearnimalController {
     this.ui.isInputSheetOpen = false;
     this.emit();
 
-    // Expand the selection so piping a group feeds all of its descendants.
-    const initialInputCards = expandForPipe(this.domain.cards, this.domain.selection);
-    
-    const opId = this.addPendingOperation(pipelineText);
+    // Resolve the input context: a retry restores the original selection/group;
+    // otherwise expand the current selection so piping a group feeds its descendants.
+    const targetParentId = retry ? retry.parentId : this.domain.currentGroupId;
+    const initialInputCards = retry
+      ? this.domain.cards.filter(c => retry.inputCardIds.includes(c.id))
+      : expandForPipe(this.domain.cards, this.domain.selection);
+
+    const opId = this.addPendingOperation(pipelineText, {
+      pipelineText,
+      inputCardIds: initialInputCards.map(c => c.id),
+      parentId: targetParentId,
+    });
 
     try {
       const outcome = await this.pipeline.run(pipelineText, {
         workspaceId,
-        parentId: this.domain.currentGroupId,
+        parentId: targetParentId,
         initialInputCards,
         workspaces: this.domain.workspaces,
         apiKey: this.domain.openRouterKey,
@@ -752,14 +954,33 @@ export class LearnimalController {
     }
   }
 
-  public addPendingOperation(commandName: string): string {
+  public addPendingOperation(
+    commandName: string,
+    retry?: { pipelineText: string; inputCardIds: string[]; parentId: string | null }
+  ): string {
     const id = Math.random().toString(36).substring(2, 9);
     this.ui.pendingOperations = [
       ...this.ui.pendingOperations,
-      { id, commandName, status: "loading" }
+      { id, commandName, status: "loading", ...retry }
     ];
     this.emit();
     return id;
+  }
+
+  /**
+   * Re-runs a failed pipeline operation, restoring the exact selection and group it
+   * originally ran against so the retry is faithful (not dependent on whatever is
+   * selected now).
+   */
+  async retryPipeline(opId: string): Promise<void> {
+    const op = this.ui.pendingOperations.find(o => o.id === opId);
+    if (!op) return;
+    const text = op.pipelineText ?? op.commandName;
+    const retry = op.inputCardIds !== undefined
+      ? { inputCardIds: op.inputCardIds, parentId: op.parentId ?? null }
+      : undefined;
+    this.removePendingOperation(opId);
+    await this.runPipeline(text, retry);
   }
 
   public setPendingOperationError(id: string, errorMessage: string): void {
@@ -779,7 +1000,7 @@ export class LearnimalController {
   startReview(): void {
     const logTimestamp = new Date().toISOString();
     try {
-      const queue = this.startReviewInteractor.execute(this.domain.cards, Date.now());
+      const queue = this.startReviewInteractor.execute(this.domain.cards, Date.now(), this.domain.interleaveReviews);
       this.domain.reviewQueue = queue;
       this.domain.reviewIndex = 0;
       this.ui.isReviewOpen = true;
@@ -797,12 +1018,12 @@ export class LearnimalController {
     this.emit();
   }
 
-  async gradeReview(ok: boolean): Promise<void> {
+  async gradeReview(grade: boolean | ReviewGrade): Promise<void> {
     const logTimestamp = new Date().toISOString();
     const currentCard = this.domain.reviewQueue[this.domain.reviewIndex];
     if (!currentCard) return;
 
-    const updated = await this.gradeReviewInteractor.execute(currentCard, ok, Date.now());
+    const updated = await this.gradeReviewInteractor.execute(currentCard, grade, Date.now());
     if (!updated) return;
 
     const nextIndex = this.domain.reviewIndex + 1;

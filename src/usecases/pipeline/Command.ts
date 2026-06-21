@@ -34,6 +34,12 @@ export interface CommandContext {
   systemPrompt: string;
   /** System prompt for chunking commands. */
   chunkSystemPrompt: string;
+  /**
+   * Names of pipeline-macro commands currently being expanded, outermost first.
+   * Threaded so a {@link PipelineCommandDefinition} can detect and reject recursion
+   * (a macro that references itself, directly or transitively). Empty at top level.
+   */
+  expansionStack: string[];
 }
 
 /**

@@ -14,7 +14,7 @@
  */
 
 /** The source a custom command draws its cards from. */
-export type CommandKind = "agent";
+export type CommandKind = "agent" | "pipeline";
 
 interface BaseCommandDefinition {
   /** Unique identifier. */
@@ -34,8 +34,20 @@ export interface AgentCommandDefinition extends BaseCommandDefinition {
   systemPrompt: string;
 }
 
+/**
+ * A custom command that expands into a saved pipeline string — a Unix-style macro.
+ * Running it executes `body` as a sub-pipeline. The token `$1` (or `$ARG`) inside
+ * `body` is replaced with the quoted argument the macro is invoked with, letting a
+ * macro take a topic (e.g. `learn "$1"` -> `ask "$1" | chunk | recall | space`).
+ */
+export interface PipelineCommandDefinition extends BaseCommandDefinition {
+  kind: "pipeline";
+  /** The pipeline string this command expands into (e.g. `source | chunk | recall`). */
+  body: string;
+}
+
 /** Discriminated union of all custom command kinds (extend as kinds are added). */
-export type CommandDefinition = AgentCommandDefinition;
+export type CommandDefinition = AgentCommandDefinition | PipelineCommandDefinition;
 
 /**
  * Built-in command keywords that custom commands may not shadow. Kept here so both
@@ -53,6 +65,8 @@ export const RESERVED_COMMAND_NAMES: readonly string[] = [
   "ungroup",
   "delete",
   "search",
+  "cloze",
+  "elaborate",
 ];
 
 /** A command name must be a single lowercase token (letters, digits, hyphens). */
@@ -68,25 +82,41 @@ export interface CreateCommandDefinitionParams {
   name: string;
   description?: string;
   kind?: CommandKind;
-  systemPrompt: string;
+  /** Required for `agent` kind: the system prompt. */
+  systemPrompt?: string;
+  /** Required for `pipeline` kind: the pipeline string to expand into. */
+  body?: string;
   createdAt?: number;
 }
 
 /**
- * Factory for a valid {@link CommandDefinition}. Normalizes the name; callers are
- * responsible for validating uniqueness / reserved words (see the create interactor).
+ * Factory for a valid {@link CommandDefinition}. Normalizes the name and builds the
+ * shape for the requested `kind`; callers are responsible for validating uniqueness /
+ * reserved words / required fields (see the create interactor).
  */
 export function createCommandDefinition(params: CreateCommandDefinitionParams): CommandDefinition {
   const logTimestamp = new Date().toISOString();
-  const definition: CommandDefinition = {
+  const base = {
     id: params.id || Math.random().toString(36).substring(2, 10),
     name: normalizeCommandName(params.name),
-    description: params.description?.trim() || "Custom agent command",
-    kind: params.kind || "agent",
-    systemPrompt: params.systemPrompt,
     createdAt: params.createdAt || Date.now(),
   };
 
-  console.log(`[${logTimestamp}] [createCommandDefinition] OUTPUT: ${JSON.stringify({ ...definition, systemPrompt: `(${definition.systemPrompt.length} chars)` })}`);
+  const definition: CommandDefinition =
+    params.kind === "pipeline"
+      ? {
+          ...base,
+          kind: "pipeline",
+          description: params.description?.trim() || "Custom pipeline macro",
+          body: params.body || "",
+        }
+      : {
+          ...base,
+          kind: "agent",
+          description: params.description?.trim() || "Custom agent command",
+          systemPrompt: params.systemPrompt || "",
+        };
+
+  console.log(`[${logTimestamp}] [createCommandDefinition] OUTPUT: ${JSON.stringify({ ...definition, kind: definition.kind })}`);
   return definition;
 }

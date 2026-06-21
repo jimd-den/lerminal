@@ -6,6 +6,8 @@ import { AsyncStorageCardRepository } from "./src/frameworks/storage/AsyncStorag
 import { AsyncStorageWorkspaceRepository } from "./src/frameworks/storage/AsyncStorageWorkspaceRepository";
 import { AsyncStorageSettingsRepository } from "./src/frameworks/storage/AsyncStorageSettingsRepository";
 import { AsyncStorageCommandDefinitionRepository } from "./src/frameworks/storage/AsyncStorageCommandDefinitionRepository";
+import { AsyncStorageCardTypeRepository } from "./src/frameworks/storage/AsyncStorageCardTypeRepository";
+import { AsyncStoragePromptPresetRepository } from "./src/frameworks/storage/AsyncStoragePromptPresetRepository";
 import { OpenRouterAgentGateway } from "./src/frameworks/network/OpenRouterAgentGateway";
 import { DuckDuckGoSearchGateway } from "./src/frameworks/network/DuckDuckGoSearchGateway";
 import { WebExtractionGateway } from "./src/frameworks/network/WebExtractionGateway";
@@ -32,6 +34,8 @@ export default function App() {
     const workspaceRepo = new AsyncStorageWorkspaceRepository();
     const settingsRepo = new AsyncStorageSettingsRepository();
     const commandDefinitionRepo = new AsyncStorageCommandDefinitionRepository();
+    const cardTypeRepo = new AsyncStorageCardTypeRepository();
+    const promptPresetRepo = new AsyncStoragePromptPresetRepository();
     const agentGateway = new OpenRouterAgentGateway();
     const searchGateway = new DuckDuckGoSearchGateway();
     const extractionGateway = new WebExtractionGateway();
@@ -42,6 +46,8 @@ export default function App() {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo,
+      cardTypeRepo,
+      promptPresetRepo,
       searchGateway,
       extractionGateway,
     });

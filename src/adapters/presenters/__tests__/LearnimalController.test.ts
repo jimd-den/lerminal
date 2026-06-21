@@ -4,6 +4,8 @@ import { MemoryCardRepository } from "../../repositories/MemoryCardRepository";
 import { MemoryWorkspaceRepository } from "../../repositories/MemoryWorkspaceRepository";
 import { MemorySettingsRepository } from "../../repositories/MemorySettingsRepository";
 import { MemoryCommandDefinitionRepository } from "../../repositories/MemoryCommandDefinitionRepository";
+import { MemoryCardTypeRepository } from "../../repositories/MemoryCardTypeRepository";
+import { MemoryPromptPresetRepository } from "../../repositories/MemoryPromptPresetRepository";
 import { AgentGateway, AgentModel, AgentCardResponse } from "../../gateways/AgentGateway";
 import { SearchGateway, SearchResult } from "../../gateways/SearchGateway";
 import { ExtractionGateway } from "../../gateways/ExtractionGateway";
@@ -59,6 +61,8 @@ describe("Learnimal App Controller", () => {
   let settingsRepo: MemorySettingsRepository;
   let agentGateway: MockAgentGateway;
   let commandDefinitionRepo: MemoryCommandDefinitionRepository;
+  let cardTypeRepo: MemoryCardTypeRepository;
+  let promptPresetRepo: MemoryPromptPresetRepository;
   let searchGateway: MockSearchGateway;
   let extractionGateway: MockExtractionGateway;
 
@@ -68,6 +72,8 @@ describe("Learnimal App Controller", () => {
     settingsRepo = new MemorySettingsRepository();
     agentGateway = new MockAgentGateway();
     commandDefinitionRepo = new MemoryCommandDefinitionRepository();
+    cardTypeRepo = new MemoryCardTypeRepository();
+    promptPresetRepo = new MemoryPromptPresetRepository();
     searchGateway = new MockSearchGateway();
     extractionGateway = new MockExtractionGateway();
   });
@@ -79,6 +85,8 @@ describe("Learnimal App Controller", () => {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo,
+      cardTypeRepo,
+      promptPresetRepo,
       searchGateway,
       extractionGateway
     });
@@ -103,6 +111,8 @@ describe("Learnimal App Controller", () => {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
+      cardTypeRepo: new MemoryCardTypeRepository(),
+      promptPresetRepo: new MemoryPromptPresetRepository(),
       searchGateway: new MockSearchGateway(),
       extractionGateway: new MockExtractionGateway()
     });
@@ -131,6 +141,8 @@ describe("Learnimal App Controller", () => {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
+      cardTypeRepo: new MemoryCardTypeRepository(),
+      promptPresetRepo: new MemoryPromptPresetRepository(),
       searchGateway: new MockSearchGateway(),
       extractionGateway: new MockExtractionGateway()
     });
@@ -159,6 +171,8 @@ describe("Learnimal App Controller", () => {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
+      cardTypeRepo: new MemoryCardTypeRepository(),
+      promptPresetRepo: new MemoryPromptPresetRepository(),
       searchGateway: new MockSearchGateway(),
       extractionGateway: new MockExtractionGateway()
     });
@@ -239,6 +253,8 @@ describe("Learnimal App Controller", () => {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
+      cardTypeRepo: new MemoryCardTypeRepository(),
+      promptPresetRepo: new MemoryPromptPresetRepository(),
       searchGateway: new MockSearchGateway(),
       extractionGateway: new MockExtractionGateway()
     });
@@ -290,6 +306,8 @@ describe("Learnimal App Controller", () => {
       settingsRepo,
       agentGateway,
       commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
+      cardTypeRepo: new MemoryCardTypeRepository(),
+      promptPresetRepo: new MemoryPromptPresetRepository(),
       searchGateway: new MockSearchGateway(),
       extractionGateway: new MockExtractionGateway()
     });

@@ -25,6 +25,11 @@ export interface PipelineEnvironment {
    * composition rather than special-casing each command.
    */
   autoGroup: boolean;
+  /**
+   * Names of pipeline-macro commands already being expanded (for recursion guarding).
+   * Top-level callers omit this; macro expansion threads it down.
+   */
+  expansionStack?: string[];
 }
 
 /** Commands whose fresh output is worth auto-grouping by command name. */
@@ -89,6 +94,7 @@ export class PipelineRunner {
         model: env.model,
         systemPrompt: env.systemPrompt,
         chunkSystemPrompt: env.chunkSystemPrompt,
+        expansionStack: env.expansionStack ?? [],
       };
 
       const result = await command.execute(arg, ctx);

@@ -96,3 +96,31 @@ export class DuplicateCommandNameError extends UseCaseError {
     super(`A command named "${name}" already exists`);
   }
 }
+
+/** Raised when a custom card type name is empty or malformed. */
+export class InvalidCardTypeNameError extends UseCaseError {
+  constructor() {
+    super("Use a single lowercase word (letters, digits, hyphens)");
+  }
+}
+
+/** Raised when a custom card type id collides with an existing type. */
+export class DuplicateCardTypeError extends UseCaseError {
+  constructor(id: string) {
+    super(`A card type "${id}" already exists`);
+  }
+}
+
+/** Raised when attempting to delete a seeded built-in card type. */
+export class BuiltinCardTypeError extends UseCaseError {
+  constructor() {
+    super("Built-in card types can't be deleted");
+  }
+}
+
+/** Raised when a pipeline macro references itself directly or transitively. */
+export class PipelineCycleError extends UseCaseError {
+  constructor(name: string) {
+    super(`Pipeline "${name}" can't call itself`);
+  }
+}

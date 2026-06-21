@@ -72,9 +72,62 @@ export function chunkCard(card: Card): Card[] {
   return results;
 }
 
+/** Common words never worth blanking in a cloze deletion. */
+const CLOZE_STOPWORDS = new Set([
+  "the", "and", "for", "that", "this", "with", "from", "their", "there", "which",
+  "while", "where", "these", "those", "into", "about", "would", "could", "should",
+  "because", "between", "through", "however", "therefore",
+]);
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Builds a cloze-deletion (fill-in-the-blank) prompt from a passage by blanking its
+ * most salient terms — proper nouns, numbers, and long content words. Active recall of
+ * a deleted term is a science-backed retrieval-practice technique.
+ *
+ * @param source The passage to turn into a cloze.
+ * @returns `{ prompt, answer }` where `prompt` has blanks and `answer` lists the
+ *   removed terms, or `null` when the text is too short to make a useful cloze.
+ */
+export function makeCloze(source: string): { prompt: string; answer: string } | null {
+  const text = source.trim().replace(/\s+/g, " ");
+  if (text.length < 12) return null;
+
+  const snippet = text.length > 220 ? text.slice(0, 220).trimEnd() + "…" : text;
+  const words = snippet.match(/[A-Za-z0-9][A-Za-z0-9'’\-]*/g) || [];
+
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  for (const w of words) {
+    const key = w.toLowerCase();
+    if (seen.has(key) || CLOZE_STOPWORDS.has(key)) continue;
+    const salient = /^[A-Z]/.test(w) || /\d/.test(w) || w.length >= 7;
+    if (salient) {
+      candidates.push(w);
+      seen.add(key);
+    }
+  }
+
+  let blanks = candidates.slice(0, 3);
+  if (blanks.length === 0) {
+    const longest = [...words].sort((a, b) => b.length - a.length)[0];
+    if (!longest) return null;
+    blanks = [longest];
+  }
+
+  let prompt = snippet;
+  for (const term of blanks) {
+    prompt = prompt.replace(new RegExp(`\\b${escapeRegExp(term)}\\b`), "_____");
+  }
+  return { prompt, answer: blanks.join(", ") };
+}
+
 /**
  * Transforms a content card (chunk or source) into an active recall question card.
- * 
+ *
  * @param card The input card containing the facts.
  * @returns A new question card with the hidden answer set to the input card's content.
  */

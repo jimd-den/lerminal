@@ -1,5 +1,6 @@
 import { Card } from "../../entities/card";
 import { AgentCardResponse, AgentGateway, AgentModel } from "../../adapters/gateways/AgentGateway";
+import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
 
 /**
  * # OpenRouter Agent Gateway Implementation
@@ -44,18 +45,11 @@ export class OpenRouterAgentGateway implements AgentGateway {
       .join("\n\n")
       .substring(0, 3000); // Restrict length for token budgets
 
-    const defaultSystemPrompt = `You answer questions directly. Respond ONLY with a valid JSON array containing EXACTLY ONE object (no prose, no markdown code block formatting). The object must have:
-- "title": string (max 6 words, representing the topic)
-- "body": string (a direct, clear answer to the user's query)
-
-Your response must be a single card.`;
-
-    let activeSystemPrompt = systemPrompt || defaultSystemPrompt;
-
-    // Enforce JSON parsing compatibility for custom agent commands that forget to specify it
-    if (systemPrompt && systemPrompt !== defaultSystemPrompt && !systemPrompt.toLowerCase().includes("json array")) {
-      activeSystemPrompt += `\n\nRespond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:\n- "title": string (max 6 words)\n- "body": string (1-2 clear, simple sentences).`;
-    }
+    // The incoming systemPrompt is treated purely as an *instruction* (what kind of
+    // cards to make); the strict JSON format contract is always appended by
+    // composeCardPrompt, so any instruction yields parseable output.
+    const instruction = systemPrompt?.trim() || DEFAULT_CARD_INSTRUCTION;
+    const activeSystemPrompt = composeCardPrompt(instruction);
 
     const prompt = `${activeSystemPrompt}
 
@@ -165,17 +159,10 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       console.log(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Retrieved ${models.length} models dynamically`);
       return models;
     } catch (err: any) {
-      console.warn(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Warning: ${err.message}. Falling back to default list.`);
-      return [
-        { id: "google/gemini-2.5-flash:free", name: "Gemini 2.5 Flash (Free)", free: true },
-        { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B (Free)", free: true },
-        { id: "qwen/qwen-2.5-72b-instruct:free", name: "Qwen 2.5 72B (Free)", free: true },
-        { id: "openchat/openchat-7b:free", name: "OpenChat 7B (Free)", free: true },
-        { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", free: false },
-        { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", free: false },
-        { id: "meta-llama/llama-3.1-405b-instruct", name: "Llama 3.1 405B", free: false },
-        { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", free: false },
-      ];
+      // No hardcoded model fallback — models are always sourced live from OpenRouter.
+      // On failure return an empty list; the UI still allows entering a custom model id.
+      console.warn(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Warning: ${err.message}. Returning empty model list.`);
+      return [];
     }
   }
 

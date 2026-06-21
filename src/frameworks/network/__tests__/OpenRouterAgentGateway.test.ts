@@ -107,11 +107,12 @@ describe("OpenRouter Agent Gateway", () => {
     }
   });
 
-  it("should not append JSON format instructions if the custom prompt already asks for a json array", async () => {
+  it("always enforces the strict JSON format contract regardless of the instruction", async () => {
     const originalFetch = global.fetch;
-    const customPrompt = "Respond with a valid json array of cards.";
+    // An instruction that never mentions formatting at all.
+    const customPrompt = "Make playful cards about the topic.";
     let capturedBody: any = null;
-    
+
     global.fetch = mock(async (url: any, options: any) => {
       capturedBody = JSON.parse(options.body);
       return {
@@ -125,10 +126,13 @@ describe("OpenRouter Agent Gateway", () => {
     try {
       const gateway = new OpenRouterAgentGateway();
       await gateway.ask("test-query", [], "key", "google/gemini-2.5-flash", customPrompt);
-      
+
       expect(capturedBody).not.toBeNull();
+      // The user instruction is preserved verbatim...
       expect(capturedBody.messages[0].content).toContain(customPrompt);
-      expect(capturedBody.messages[0].content).not.toContain("Respond ONLY with a valid JSON array of objects (no prose");
+      // ...and the strict format contract is always appended.
+      expect(capturedBody.messages[0].content).toContain("Respond ONLY with a valid JSON array");
+      expect(capturedBody.messages[0].content).toContain("OUTPUT FORMAT (STRICT");
     } finally {
       global.fetch = originalFetch;
     }
@@ -166,7 +170,7 @@ describe("OpenRouter Agent Gateway - fetchModels", () => {
     }
   });
 
-  it("should log a warning and return default list on fetch failure", async () => {
+  it("should log a warning and return an empty list on fetch failure (no hardcoded models)", async () => {
     const originalFetch = global.fetch;
     const originalWarn = console.warn;
     const originalError = console.error;
@@ -184,10 +188,10 @@ describe("OpenRouter Agent Gateway - fetchModels", () => {
     try {
       const gateway = new OpenRouterAgentGateway();
       const models = await gateway.fetchModels();
-      
-      expect(models.length).toBeGreaterThan(0);
-      expect(models[0].id).toBe("google/gemini-2.5-flash:free");
-      
+
+      // No hardcoded fallback — failure yields an empty list.
+      expect(models).toEqual([]);
+
       // We expect a warning to be logged, not an error, because it's an expected fallback scenario
       expect(warnCalled).toBe(true);
       expect(errorCalled).toBe(false);

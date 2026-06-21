@@ -14,9 +14,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AppState, LearnimalController } from "../../adapters/presenters/LearnimalController";
+import { AppState, LearnimalController, DEFAULT_SYSTEM_PROMPT, DEFAULT_CHUNK_SYSTEM_PROMPT } from "../../adapters/presenters/LearnimalController";
 import { useControllerState } from "./useControllerState";
+import { resolveCardType } from "../../entities/cardTypeDefinition";
 import Markdown from "react-native-markdown-display";
+import { WebView } from "react-native-webview";
 
 // Accent and card type color definitions conforming to prototype specs
 const ACCENTS = {
@@ -34,6 +36,8 @@ const CARD_COLORS: Record<string, string> = {
   note: "#E8829B",
   group: "#9AA7B5",
   search: "#E0A45E",
+  cloze: "#5BC8A8",
+  elaboration: "#C9A24B",
   due: "#F2A65A",
 };
 
@@ -66,8 +70,10 @@ const COMMANDS_INFO = {
   ask: { dot: CARD_COLORS.chunk, desc: "Ask the agent · returns chunked cards" },
   source: { dot: CARD_COLORS.source, desc: "Bring in text or a link" },
   search: { dot: CARD_COLORS.source, desc: "Search the web for links and text" },
-  chunk: { dot: CARD_COLORS.chunk, desc: "Split into atomic cards" },
+  chunk: { dot: CARD_COLORS.chunk, desc: "Split into faithful source chunks" },
   recall: { dot: CARD_COLORS.question, desc: "Make active-recall questions" },
+  cloze: { dot: CARD_COLORS.cloze, desc: "Make fill-in-the-blank cards" },
+  elaborate: { dot: CARD_COLORS.elaboration, desc: "Explain it in your own words" },
   space: { dot: CARD_COLORS.due, desc: "Schedule with spaced repetition" },
   review: { dot: CARD_COLORS.due, desc: "Run today's due reviews" },
   move: { dot: CARD_COLORS.source, desc: "Send cards to another workspace" },
@@ -75,21 +81,22 @@ const COMMANDS_INFO = {
   ungroup: { dot: CARD_COLORS.group, desc: "Dissolve a group, freeing its cards" },
 };
 
-const DEFAULT_SYSTEM_PROMPT = `You answer questions directly. Respond ONLY with a valid JSON array containing EXACTLY ONE object (no prose, no markdown code block formatting). The object must have:
-- "title": string (max 6 words, representing the topic)
-- "body": string (a direct, clear answer to the user's query)
-
-Your response must be a single card.`;
-
-const DEFAULT_CHUNK_SYSTEM_PROMPT = `You break down text into memorable, sequenced atomic learning cards that are detailed. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
-- "title": string (max 6 words, representing the concept)
-- "body": string (a detailed, memorable explanation clearly sequenced for learning)
-
-Each card must be a distinct, recall-ready idea.`;
 
 
-
-
+/**
+ * Wraps a card's HTML body in a minimal, theme-aware document for the WebView. If the
+ * body is already a full document (has an <html> tag), it's rendered as-is so the
+ * AI/user retains full control.
+ */
+function buildInteractiveHtml(body: string, bg: string, fg: string, accent: string): string {
+  if (/<html[\s>]/i.test(body)) return body;
+  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
+    html,body{margin:0;padding:14px;background:${bg};color:${fg};font-family:-apple-system,system-ui,Roboto,sans-serif;font-size:16px;line-height:1.5}
+    a{color:${accent}} button,input,select,textarea{font-size:16px;font-family:inherit}
+    button{background:${accent};color:#fff;border:none;border-radius:8px;padding:8px 14px}
+    input,select,textarea{background:transparent;color:${fg};border:1px solid ${accent};border-radius:8px;padding:6px 8px}
+  </style></head><body>${body}</body></html>`;
+}
 
 interface MainLayoutProps {
   controller: LearnimalController;
@@ -111,12 +118,20 @@ export function MainLayout({ controller }: MainLayoutProps) {
   const [systemPromptInput, setSystemPromptInput] = useState(state.customSystemPrompt);
   const [chunkSystemPromptInput, setChunkSystemPromptInput] = useState(state.customChunkSystemPrompt);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  // Typed answer/explanation during a review (cloze fill-in, elaboration write-in).
+  const [reviewInput, setReviewInput] = useState("");
+  // HTML editing state for interactive cards in the card detail overlay.
+  const [htmlEditMode, setHtmlEditMode] = useState(false);
+  const [htmlDraft, setHtmlDraft] = useState("");
 
   // Custom command creation sheet state
   const [isCreateCmdOpen, setIsCreateCmdOpen] = useState(false);
   const [newCmdName, setNewCmdName] = useState("");
   const [newCmdDesc, setNewCmdDesc] = useState("");
   const [newCmdPrompt, setNewCmdPrompt] = useState("");
+  const [newCmdKind, setNewCmdKind] = useState<"agent" | "pipeline">("agent");
+  const [newCmdBody, setNewCmdBody] = useState("");
   const [newFlagName, setNewFlagName] = useState("");
   const [newFlagDomain, setNewFlagDomain] = useState("");
 
@@ -124,15 +139,22 @@ export function MainLayout({ controller }: MainLayoutProps) {
     setNewCmdName("");
     setNewCmdDesc("");
     setNewCmdPrompt("");
+    setNewCmdBody("");
+    setNewCmdKind("agent");
     setIsCreateCmdOpen(true);
   };
 
+  const newCmdPayloadValid =
+    newCmdKind === "agent" ? !!newCmdPrompt.trim() : !!newCmdBody.trim();
+
   const handleCreateCommand = () => {
-    if (!newCmdName.trim() || !newCmdPrompt.trim()) return;
+    if (!newCmdName.trim() || !newCmdPayloadValid) return;
     controller.createCustomCommand({
       name: newCmdName,
       description: newCmdDesc,
-      systemPrompt: newCmdPrompt,
+      kind: newCmdKind,
+      systemPrompt: newCmdKind === "agent" ? newCmdPrompt : undefined,
+      body: newCmdKind === "pipeline" ? newCmdBody : undefined,
     });
     setIsCreateCmdOpen(false);
   };
@@ -142,6 +164,19 @@ export function MainLayout({ controller }: MainLayoutProps) {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => controller.deleteCard(cardId) },
     ]);
+  };
+
+  const confirmDeleteGroup = (cardId: string, title: string, childCount: number) => {
+    Alert.alert(
+      `Delete "${title}"?`,
+      childCount > 0
+        ? `This permanently deletes the group and the ${childCount} card${childCount > 1 ? "s" : ""} inside it.`
+        : "This permanently deletes the group.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete group", style: "destructive", onPress: () => controller.deleteCard(cardId, true) },
+      ]
+    );
   };
 
   const confirmDeleteCommand = (id: string, name: string) => {
@@ -171,6 +206,18 @@ export function MainLayout({ controller }: MainLayoutProps) {
   const dueCount = state.cards.filter(
     (c) => c.type === "question" && c.schedule && c.schedule.dueAt <= Date.now()
   ).length;
+
+  // Resolve a card's visual/behavioral type from the modular registry, so custom
+  // card types (and restyled built-ins) drive color, icon, and study behavior.
+  const typeOf = (card: { typeId?: string; type: string }) =>
+    resolveCardType(card.typeId ?? card.type, state.cardTypes);
+
+  // Seed the review input from the card under review (its saved elaboration, if any),
+  // resetting whenever the card changes.
+  const reviewCard = state.reviewQueue[state.reviewIndex];
+  React.useEffect(() => {
+    setReviewInput(reviewCard?.fields?.explanation ?? "");
+  }, [reviewCard?.id]);
 
 
 
@@ -322,20 +369,17 @@ export function MainLayout({ controller }: MainLayoutProps) {
                           <Text style={{ color: colors.text, fontWeight: 'bold', marginBottom: 4 }}>Error during generation</Text>
                           <Text style={{ color: colors.faint }}>{op.errorMessage}</Text>
                           <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                            <TouchableOpacity 
-                              onPress={() => {
-                                controller.removePendingOperation(op.id);
-                                controller.runPipeline(op.commandName);
-                              }} 
-                              style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: accent.primary, alignSelf: 'flex-start', borderRadius: 4 }}
+                            <TouchableOpacity
+                              onPress={() => controller.retryPipeline(op.id)}
+                              style={{ minHeight: 44, justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 18, backgroundColor: accent.primary, alignSelf: 'flex-start', borderRadius: 8 }}
                             >
-                              <Text style={{ color: colors.surface, fontSize: 12, fontWeight: 'bold' }}>Retry</Text>
+                              <Text style={{ color: colors.surface, fontSize: 13, fontWeight: 'bold' }}>↻ Rerun</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity 
-                              onPress={() => controller.removePendingOperation(op.id)} 
-                              style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: colors.lineSoft, alignSelf: 'flex-start', borderRadius: 4 }}
+                            <TouchableOpacity
+                              onPress={() => controller.removePendingOperation(op.id)}
+                              style={{ minHeight: 44, justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 16, backgroundColor: colors.lineSoft, alignSelf: 'flex-start', borderRadius: 8 }}
                             >
-                              <Text style={{ color: colors.text, fontSize: 12 }}>Dismiss</Text>
+                              <Text style={{ color: colors.text, fontSize: 13 }}>Dismiss</Text>
                             </TouchableOpacity>
                           </View>
                         </View>
@@ -373,12 +417,21 @@ export function MainLayout({ controller }: MainLayoutProps) {
                           <Text style={[styles.cardTypeLabel, { color: CARD_COLORS.group }]}>
                             group · {childCount} {childCount === 1 ? "card" : "cards"}
                           </Text>
-                          <TouchableOpacity
-                            style={[styles.selDot, isSelected && { backgroundColor: accent.primary, borderColor: accent.primary }]}
-                            onPress={() => controller.toggleSelect(card.id)}
-                          >
-                            {isSelected && <Text style={styles.selDotCheck}>✓</Text>}
-                          </TouchableOpacity>
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <TouchableOpacity
+                              style={styles.cardDeleteBtn}
+                              onPress={() => confirmDeleteGroup(card.id, card.title, childCount)}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Text style={{ color: "#E8829B", fontSize: 16, fontWeight: "600" }}>🗑</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.selDot, isSelected && { backgroundColor: accent.primary, borderColor: accent.primary }]}
+                              onPress={() => controller.toggleSelect(card.id)}
+                            >
+                              {isSelected && <Text style={styles.selDotCheck}>✓</Text>}
+                            </TouchableOpacity>
+                          </View>
                         </View>
                         <Text style={[styles.cardTitle, { color: colors.text }]}>📁 {card.title}</Text>
                         <Text style={[styles.cardBodyPreview, { color: colors.faint }]}>Tap to open ›</Text>
@@ -412,14 +465,14 @@ export function MainLayout({ controller }: MainLayoutProps) {
                           {
                             backgroundColor: isSpaced
                               ? CARD_COLORS.due
-                              : CARD_COLORS[card.type] || colors.muted,
+                              : typeOf(card).color,
                           },
                         ]}
                       />
 
                       <View style={styles.cardHeader}>
-                        <Text style={[styles.cardTypeLabel, { color: CARD_COLORS[card.type] || colors.muted }]}>
-                          {card.type} {isSpaced && "· spaced"}
+                        <Text style={[styles.cardTypeLabel, { color: typeOf(card).color }]}>
+                          {typeOf(card).icon} {typeOf(card).name}{isSpaced && " · spaced"}
                         </Text>
 
                         {/* Selection Checkbox */}
@@ -471,15 +524,15 @@ export function MainLayout({ controller }: MainLayoutProps) {
           {state.selection.size > 0 && (
             <View style={[styles.selBar, { backgroundColor: colors.surface2, borderColor: colors.line }]}>
               <Text style={{ color: colors.muted, fontSize: 13 }}>
-                <Text style={{ color: colors.text, fontWeight: "bold" }}>{state.selection.size}</Text> selected
+                <Text style={{ color: colors.text, fontWeight: "bold" }}>{state.selection.size}</Text> card{state.selection.size > 1 ? "s" : ""} selected
               </Text>
               <TouchableOpacity
                 style={[styles.selBarRunBtn, { backgroundColor: accent.primary }]}
                 onPress={() => controller.setModalOpen(true)}
               >
-                <Text style={styles.selBarRunBtnText}>Command ↑</Text>
+                <Text style={styles.selBarRunBtnText}>Pipe →</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => controller.clearSelection()}>
+              <TouchableOpacity onPress={() => controller.clearSelection()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Text style={[styles.selBarClearText, { color: colors.faint }]}>Clear</Text>
               </TouchableOpacity>
             </View>
@@ -508,7 +561,7 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 <Text style={[styles.modalSub, { color: colors.muted }]}>
                   {state.selection.size > 0 ? (
                     <Text>
-                      <Text style={{ color: accent.primary }}>{state.selection.size}</Text> cards in stdin
+                      Pipes <Text style={{ color: accent.primary }}>{state.selection.size}</Text> selected card{state.selection.size > 1 ? "s" : ""}
                     </Text>
                   ) : (
                     "No cards selected · runs fresh"
@@ -663,8 +716,8 @@ export function MainLayout({ controller }: MainLayoutProps) {
           return (
             <SafeAreaView style={[styles.fullCardContainer, { backgroundColor: colors.bg }]}>
               <View style={styles.fullCardHeader}>
-                <Text style={[styles.fullCardType, { color: CARD_COLORS[card.type] }]}>
-                  {card.type.toUpperCase()} {card.schedule && "· SPACED"}
+                <Text style={[styles.fullCardType, { color: typeOf(card).color }]}>
+                  {typeOf(card).icon} {typeOf(card).name.toUpperCase()} {card.schedule && "· SPACED"}
                 </Text>
                 <TouchableOpacity onPress={() => controller.closeCard()}>
                   <Text style={[styles.fullCardCloseText, { color: colors.muted }]}>Close</Text>
@@ -729,6 +782,54 @@ export function MainLayout({ controller }: MainLayoutProps) {
                       }
                     })()}
                   </View>
+                ) : typeOf(card).render === "html" ? (
+                  <View>
+                    {htmlEditMode ? (
+                      <View>
+                        <TextInput
+                          style={[styles.htmlEditor, { color: colors.text, backgroundColor: colors.surface2, borderColor: colors.line }]}
+                          multiline
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          value={htmlDraft}
+                          onChangeText={setHtmlDraft}
+                          placeholder="<html> … paste or write interactive HTML here"
+                          placeholderTextColor={colors.faint}
+                        />
+                        <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                          <TouchableOpacity
+                            style={{ backgroundColor: accent.primary, minHeight: 44, justifyContent: "center", paddingHorizontal: 18, borderRadius: 10 }}
+                            onPress={() => { controller.setCardBody(card.id, htmlDraft); setHtmlEditMode(false); }}
+                          >
+                            <Text style={{ color: "#fff", fontWeight: "bold" }}>Save & run</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{ borderColor: colors.line, borderWidth: 1, minHeight: 44, justifyContent: "center", paddingHorizontal: 18, borderRadius: 10 }}
+                            onPress={() => setHtmlEditMode(false)}
+                          >
+                            <Text style={{ color: colors.text }}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : card.body.trim().length === 0 ? (
+                      <TouchableOpacity
+                        style={[styles.veil, { backgroundColor: colors.surface, borderColor: colors.line }]}
+                        onPress={() => { setHtmlDraft(card.body); setHtmlEditMode(true); }}
+                      >
+                        <Text style={[styles.veilTitle, { color: colors.muted }]}>Empty interactive card</Text>
+                        <Text style={[styles.veilSub, { color: colors.faint }]}>Tap to add HTML</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={{ height: 460, borderRadius: 12, overflow: "hidden", borderWidth: 1, borderColor: colors.line }}>
+                        <WebView
+                          originWhitelist={["*"]}
+                          source={{ html: buildInteractiveHtml(card.body, colors.surface, colors.text, accent.primary) }}
+                          style={{ backgroundColor: colors.surface }}
+                          javaScriptEnabled
+                        />
+                      </View>
+                    )}
+                  </View>
                 ) : (
                   <View>
                     <Markdown
@@ -786,6 +887,23 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 >
                   <Text style={{ color: "#E8829B", fontWeight: "600" }}>Delete</Text>
                 </TouchableOpacity>
+
+                {/* Interactive HTML: edit existing, or convert a content card into one */}
+                {typeOf(card).render === "html" ? (
+                  <TouchableOpacity
+                    style={[styles.fullCardPipeBtn, { borderColor: accent.line }]}
+                    onPress={() => { setHtmlDraft(card.body); setHtmlEditMode(true); }}
+                  >
+                    <Text style={{ color: accent.primary, fontWeight: "600" }}>{"</> Edit HTML"}</Text>
+                  </TouchableOpacity>
+                ) : (card.type === "source" || card.type === "chunk" || card.type === "note") && (
+                  <TouchableOpacity
+                    style={[styles.fullCardPipeBtn, { borderColor: accent.line }]}
+                    onPress={() => controller.setCardType(card.id, "interactive")}
+                  >
+                    <Text style={{ color: accent.primary, fontWeight: "600" }}>{"</> Interactive"}</Text>
+                  </TouchableOpacity>
+                )}
 
                 {card.type === "source" && (
                   <TouchableOpacity
@@ -850,52 +968,105 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.reviewBody}>
-                <Text style={[styles.reviewTitleText, { color: CARD_COLORS.question }]}>Recall — don't peek</Text>
-                <Text style={[styles.reviewQuestionText, { color: colors.text }]}>{currentCard.title}</Text>
+              {(() => {
+                const behavior = typeOf(currentCard).learning;
+                const promptLabel =
+                  behavior === "cloze" ? "Fill in the blanks"
+                  : behavior === "elaboration" ? "Explain it in your own words"
+                  : "Recall — don't peek";
+                // For cloze, a loose check: did the typed answer mention the key term(s)?
+                const answerText = (currentCard.answer || "").toLowerCase();
+                const guess = reviewInput.trim().toLowerCase();
+                const clozeCorrect =
+                  behavior === "cloze" && guess.length > 0 &&
+                  answerText.split(",").some(term => {
+                    const t = term.trim();
+                    return t.length > 0 && (guess.includes(t) || t.includes(guess));
+                  });
 
-                {state.reviewRevealAnswer ? (
-                  <View style={{ marginTop: 24 }}>
-                    <Text style={[styles.reviewAnswerText, { color: accent.primary }]}>
-                      {currentCard.answer}
-                    </Text>
-                    {currentCard.cite && (
-                      <View style={[styles.citeBox, { backgroundColor: accent.soft, borderColor: accent.line, alignSelf: "flex-start", marginTop: 8 }]}>
-                        <Text style={[styles.citeText, { color: accent.primary }]}>◆ {currentCard.cite}</Text>
+                return (
+                  <View style={styles.reviewBody}>
+                    <Text style={[styles.reviewTitleText, { color: CARD_COLORS.question }]}>{promptLabel}</Text>
+                    <Text style={[styles.reviewQuestionText, { color: colors.text }]}>{currentCard.title}</Text>
+
+                    {/* Interactive input for cloze / elaboration cards */}
+                    {(behavior === "cloze" || behavior === "elaboration") && (
+                      <View style={[styles.reviewInputBox, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+                        <TextInput
+                          style={[styles.reviewInput, { color: colors.text }]}
+                          value={reviewInput}
+                          onChangeText={setReviewInput}
+                          multiline={behavior === "elaboration"}
+                          numberOfLines={behavior === "elaboration" ? 4 : 1}
+                          autoCapitalize="none"
+                          placeholder={behavior === "cloze" ? "type the missing term(s)…" : "write your explanation…"}
+                          placeholderTextColor={colors.faint}
+                          onBlur={() => {
+                            if (behavior === "elaboration") controller.setCardField(currentCard.id, "explanation", reviewInput);
+                          }}
+                        />
                       </View>
                     )}
+
+                    {state.reviewRevealAnswer ? (
+                      <View style={{ marginTop: 20 }}>
+                        {behavior === "cloze" && (
+                          <Text style={{ color: clozeCorrect ? "#5BC8A8" : "#E8829B", fontWeight: "700", marginBottom: 8 }}>
+                            {clozeCorrect ? "✓ Correct" : "✗ Not quite"}
+                          </Text>
+                        )}
+                        <Text style={{ color: colors.faint, fontSize: 12, marginBottom: 4 }}>
+                          {behavior === "elaboration" ? "Model answer" : "Answer"}
+                        </Text>
+                        <Text style={[styles.reviewAnswerText, { color: accent.primary }]}>
+                          {currentCard.answer}
+                        </Text>
+                        {currentCard.cite && (
+                          <View style={[styles.citeBox, { backgroundColor: accent.soft, borderColor: accent.line, alignSelf: "flex-start", marginTop: 8 }]}>
+                            <Text style={[styles.citeText, { color: accent.primary }]}>◆ {currentCard.cite}</Text>
+                          </View>
+                        )}
+                      </View>
+                    ) : null}
                   </View>
-                ) : null}
-              </View>
+                );
+              })()}
 
               {/* Buttons footer */}
               <View style={styles.reviewFooter}>
                 {!state.reviewRevealAnswer ? (
                   <TouchableOpacity
                     style={[styles.revealBtn, { backgroundColor: accent.primary }]}
-                    onPress={() => controller.revealReviewAnswer()}
+                    onPress={() => {
+                      if (typeOf(currentCard).learning === "elaboration") {
+                        controller.setCardField(currentCard.id, "explanation", reviewInput);
+                      }
+                      controller.revealReviewAnswer();
+                    }}
                   >
                     <Text style={styles.revealBtnText}>Reveal Answer</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={styles.gradingRow}>
-                    <TouchableOpacity
-                      style={[styles.gradeNoBtn, { backgroundColor: "rgba(232,130,155,0.1)", borderColor: "rgba(232,130,155,0.3)" }]}
-                      onPress={() => controller.gradeReview(false)}
-                    >
-                      <Text style={styles.gradeNoText}>Not yet</Text>
-                      <Text style={styles.gradeTimeSub}>~10 min</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.gradeYesBtn, { backgroundColor: accent.soft, borderColor: accent.line }]}
-                      onPress={() => controller.gradeReview(true)}
-                    >
-                      <Text style={styles.gradeYesText}>Got it</Text>
-                      <Text style={[styles.gradeTimeSub, { color: colors.muted }]}>
-                        +{Math.round((currentCard.schedule?.interval || 1) * 2.4) + 1}d
-                      </Text>
-                    </TouchableOpacity>
+                    {(() => {
+                      const iv = currentCard.schedule?.interval || 1;
+                      const grades = [
+                        { grade: "again" as const, label: "Again", sub: "~10m", color: "#E8829B" },
+                        { grade: "hard" as const, label: "Hard", sub: `+${Math.max(1, Math.round(iv * 1.2) + 1)}d`, color: "#E0A45E" },
+                        { grade: "good" as const, label: "Good", sub: `+${Math.round(iv * 2.4) + 1}d`, color: "#4EC7C0" },
+                        { grade: "easy" as const, label: "Easy", sub: `+${Math.round(iv * 3.2) + 2}d`, color: "#7FB2E8" },
+                      ];
+                      return grades.map(g => (
+                        <TouchableOpacity
+                          key={g.grade}
+                          style={[styles.gradeBtn, { borderColor: g.color + "55", backgroundColor: g.color + "16" }]}
+                          onPress={() => controller.gradeReview(g.grade)}
+                        >
+                          <Text style={[styles.gradeBtnText, { color: g.color }]}>{g.label}</Text>
+                          <Text style={[styles.gradeTimeSub, { color: colors.muted }]}>{g.sub}</Text>
+                        </TouchableOpacity>
+                      ));
+                    })()}
                   </View>
                 )}
               </View>
@@ -1055,6 +1226,25 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 </View>
               </View>
 
+              {/* Interleave reviews toggle */}
+              <View style={styles.settingsRow}>
+                <Text style={[styles.settingsLabel, { color: colors.text }]}>Interleave reviews</Text>
+                <View style={[styles.segmentedControl, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+                  <TouchableOpacity
+                    style={[styles.segment, state.interleaveReviews && { backgroundColor: colors.raised }]}
+                    onPress={() => controller.setInterleaveReviews(true)}
+                  >
+                    <Text style={{ color: state.interleaveReviews ? colors.text : colors.muted, fontSize: 13 }}>On</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segment, !state.interleaveReviews && { backgroundColor: colors.raised }]}
+                    onPress={() => controller.setInterleaveReviews(false)}
+                  >
+                    <Text style={{ color: !state.interleaveReviews ? colors.text : colors.muted, fontSize: 13 }}>Off</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {/* OpenRouter API Settings */}
               <View style={styles.formSection}>
                 <Text style={[styles.sectionLabel, { color: colors.muted }]}>OpenRouter API Configuration</Text>
@@ -1189,6 +1379,63 @@ export function MainLayout({ controller }: MainLayoutProps) {
                     }}
                   />
                 )}
+              </View>
+
+              {/* Prompt Presets (extendable instructions) */}
+              <View style={styles.formSection}>
+                <Text style={[styles.sectionLabel, { color: colors.muted, marginTop: 12 }]}>Prompt Presets</Text>
+                <Text style={[styles.sheetSub, { color: colors.faint, marginBottom: 8, fontSize: 13 }]}>
+                  Pick how cards get written. The strict response format is always enforced for you.
+                </Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {state.promptPresets.map((preset) => {
+                    const isActive = state.customSystemPrompt === preset.prompt;
+                    return (
+                      <TouchableOpacity
+                        key={preset.id}
+                        style={{
+                          minHeight: 40, justifyContent: "center", paddingVertical: 8, paddingHorizontal: 14,
+                          borderRadius: 20, borderWidth: 1,
+                          borderColor: isActive ? accent.primary : colors.line,
+                          backgroundColor: isActive ? accent.soft : colors.surface,
+                        }}
+                        onPress={() => controller.applyPromptPreset(preset.id)}
+                        onLongPress={() => {
+                          if (!preset.builtin) {
+                            Alert.alert(`Delete "${preset.name}"?`, "Removes this custom preset.", [
+                              { text: "Cancel", style: "cancel" },
+                              { text: "Delete", style: "destructive", onPress: () => controller.deletePromptPreset(preset.id) },
+                            ]);
+                          }
+                        }}
+                      >
+                        <Text style={{ color: isActive ? accent.primary : colors.text, fontSize: 13, fontWeight: "500" }}>
+                          {preset.name}{!preset.builtin ? " ✎" : ""}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {/* Save the current prompt as a new preset */}
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}>
+                  <TextInput
+                    style={[styles.formInput, { flex: 1, marginRight: 8, color: colors.text, borderColor: colors.line, backgroundColor: colors.surface }]}
+                    placeholder="name to save current prompt…"
+                    placeholderTextColor={colors.faint}
+                    value={newPresetName}
+                    onChangeText={setNewPresetName}
+                  />
+                  <TouchableOpacity
+                    style={{ backgroundColor: accent.primary, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 8, opacity: newPresetName.trim() ? 1 : 0.5 }}
+                    disabled={!newPresetName.trim()}
+                    onPress={() => {
+                      controller.saveCurrentAsPreset(newPresetName);
+                      setNewPresetName("");
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontWeight: "bold" }}>Save</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* System Prompt Customization */}
@@ -1425,9 +1672,34 @@ export function MainLayout({ controller }: MainLayoutProps) {
 
               <Text style={[styles.sheetTitle, { color: colors.text }]}>New command</Text>
               <Text style={[styles.sheetSub, { color: colors.muted }]}>
-                Runs the agent with your prompt, like <Text style={styles.monoText}>ask</Text>. Use it as{" "}
-                <Text style={styles.monoText}>{newCmdName.trim() ? newCmdName.trim().toLowerCase() : "name"} "your query"</Text>.
+                {newCmdKind === "agent" ? (
+                  <>Runs the agent with your prompt, like <Text style={styles.monoText}>ask</Text>. Use it as{" "}
+                  <Text style={styles.monoText}>{newCmdName.trim() ? newCmdName.trim().toLowerCase() : "name"} "your query"</Text>.</>
+                ) : (
+                  <>A saved pipeline macro. Use <Text style={styles.monoText}>$1</Text> for an argument, e.g.{" "}
+                  <Text style={styles.monoText}>ask "$1" | chunk | recall | space</Text>.</>
+                )}
               </Text>
+
+              {/* Command kind selector */}
+              <View style={{ flexDirection: "row", paddingHorizontal: 18, marginBottom: 12, gap: 8 }}>
+                {(["agent", "pipeline"] as const).map(k => (
+                  <TouchableOpacity
+                    key={k}
+                    style={{
+                      flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center",
+                      borderRadius: 12, borderWidth: 1,
+                      borderColor: newCmdKind === k ? accent.primary : colors.line,
+                      backgroundColor: newCmdKind === k ? accent.soft : colors.surface,
+                    }}
+                    onPress={() => setNewCmdKind(k)}
+                  >
+                    <Text style={{ color: newCmdKind === k ? accent.primary : colors.muted, fontWeight: "600", fontSize: 13 }}>
+                      {k === "agent" ? "Agent prompt" : "Pipeline macro"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               <View style={[styles.inputBoxField, { backgroundColor: colors.surface, borderColor: colors.line }]}>
                 <TextInput
@@ -1449,24 +1721,38 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 />
               </View>
               <View style={[styles.inputBoxField, { backgroundColor: colors.surface, borderColor: colors.line }]}>
-                <TextInput
-                  style={[styles.sheetTextArea, { color: colors.text }]}
-                  multiline={true}
-                  numberOfLines={4}
-                  placeholder="system prompt — how the agent should generate cards"
-                  placeholderTextColor={colors.faint}
-                  value={newCmdPrompt}
-                  onChangeText={setNewCmdPrompt}
-                />
+                {newCmdKind === "agent" ? (
+                  <TextInput
+                    style={[styles.sheetTextArea, { color: colors.text }]}
+                    multiline={true}
+                    numberOfLines={4}
+                    placeholder="system prompt — how the agent should generate cards"
+                    placeholderTextColor={colors.faint}
+                    value={newCmdPrompt}
+                    onChangeText={setNewCmdPrompt}
+                  />
+                ) : (
+                  <TextInput
+                    style={[styles.sheetTextArea, { color: colors.text, fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" }]}
+                    multiline={true}
+                    numberOfLines={3}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder='pipeline — e.g. ask "$1" | chunk | recall | space'
+                    placeholderTextColor={colors.faint}
+                    value={newCmdBody}
+                    onChangeText={setNewCmdBody}
+                  />
+                )}
               </View>
 
               <TouchableOpacity
                 style={[
                   styles.sheetPrimaryBtn,
-                  { backgroundColor: accent.primary, opacity: newCmdName.trim() && newCmdPrompt.trim() ? 1 : 0.5 },
+                  { backgroundColor: accent.primary, opacity: newCmdName.trim() && newCmdPayloadValid ? 1 : 0.5 },
                 ]}
                 onPress={handleCreateCommand}
-                disabled={!newCmdName.trim() || !newCmdPrompt.trim()}
+                disabled={!newCmdName.trim() || !newCmdPayloadValid}
               >
                 <Text style={styles.sheetPrimaryBtnText}>Create command</Text>
               </TouchableOpacity>
@@ -1534,9 +1820,9 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1640,17 +1926,24 @@ const styles = StyleSheet.create({
     letterSpacing: 1.3,
     textTransform: "uppercase",
   },
+  cardDeleteBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+  },
   selDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1.5,
     borderColor: "#5A5F6B",
     alignItems: "center",
     justifyContent: "center",
   },
   selDotCheck: {
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: "bold",
     color: "#06120f",
   },
@@ -1784,8 +2077,9 @@ const styles = StyleSheet.create({
   cmdChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    minHeight: 44,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 13,
     borderWidth: 1,
     marginBottom: 4,
@@ -1804,7 +2098,8 @@ const styles = StyleSheet.create({
   cmdRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 13,
+    minHeight: 52,
+    paddingVertical: 14,
     paddingHorizontal: 12,
     borderRadius: 13,
   },
@@ -1827,8 +2122,8 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   pinStarBtn: {
-    width: 30,
-    height: 30,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1993,6 +2288,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 28,
   },
+  htmlEditor: {
+    minHeight: 220,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 13,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    textAlignVertical: "top",
+  },
+  reviewInputBox: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  reviewInput: {
+    fontSize: 17,
+    minHeight: 28,
+    textAlignVertical: "top",
+  },
   reviewFooter: {
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -2009,35 +2325,25 @@ const styles = StyleSheet.create({
   },
   gradingRow: {
     flexDirection: "row",
-    gap: 11,
+    gap: 8,
   },
-  gradeNoBtn: {
+  gradeBtn: {
     flex: 1,
-    padding: 15,
-    borderRadius: 16,
+    minHeight: 60,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    borderRadius: 14,
     borderWidth: 1,
     alignItems: "center",
+    justifyContent: "center",
   },
-  gradeNoText: {
+  gradeBtnText: {
     fontSize: 15,
-    fontWeight: "600",
-    color: "#E8829B",
-  },
-  gradeYesBtn: {
-    flex: 1,
-    padding: 15,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  gradeYesText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#4EC7C0",
+    fontWeight: "700",
   },
   gradeTimeSub: {
     fontSize: 10,
-    marginTop: 2,
+    marginTop: 3,
   },
   bottomSheet: {
     position: "absolute",

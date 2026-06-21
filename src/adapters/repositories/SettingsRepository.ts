@@ -16,6 +16,8 @@ export interface AppSettings {
   customChunkSystemPrompt?: string;
   /** When true, pipelines auto-organize their output into a group per command. */
   autoGroupByCommand: boolean;
+  /** When true, review sessions interleave cards across topics/groups (vs blocking). */
+  interleaveReviews?: boolean;
   /** Configurable Unix-like site flags for the search command (e.g., wiki: wikipedia.org) */
   searchSiteFlags?: Record<string, string>;
 }
