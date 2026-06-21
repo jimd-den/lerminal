@@ -74,6 +74,7 @@ const COMMANDS_INFO = {
   recall: { dot: CARD_COLORS.question, desc: "Make active-recall questions" },
   cloze: { dot: CARD_COLORS.cloze, desc: "Make fill-in-the-blank cards" },
   elaborate: { dot: CARD_COLORS.elaboration, desc: "Explain it in your own words" },
+  chat: { dot: "#6FA8FF", desc: "Talk to the agent with this group as context" },
   space: { dot: CARD_COLORS.due, desc: "Schedule with spaced repetition" },
   review: { dot: CARD_COLORS.due, desc: "Run today's due reviews" },
   move: { dot: CARD_COLORS.source, desc: "Send cards to another workspace" },
@@ -124,6 +125,8 @@ export function MainLayout({ controller }: MainLayoutProps) {
   // HTML editing state for interactive cards in the card detail overlay.
   const [htmlEditMode, setHtmlEditMode] = useState(false);
   const [htmlDraft, setHtmlDraft] = useState("");
+  // Chat composer text for chat cards.
+  const [chatInput, setChatInput] = useState("");
 
   // Custom command creation sheet state
   const [isCreateCmdOpen, setIsCreateCmdOpen] = useState(false);
@@ -494,6 +497,15 @@ export function MainLayout({ controller }: MainLayoutProps) {
                             } catch { return "Search results"; }
                           })()}
                         </Text>
+                      ) : card.type === "chat" ? (
+                        <Text numberOfLines={2} style={[styles.cardBodyPreview, { color: colors.muted }]}>
+                          {(() => {
+                            try {
+                              const msgs = JSON.parse(card.body);
+                              return msgs.length > 0 ? `${msgs.length} messages · tap to continue` : "Tap to start chatting ›";
+                            } catch { return "Tap to start chatting ›"; }
+                          })()}
+                        </Text>
                       ) : card.type !== "question" && (
                         <Text numberOfLines={2} style={[styles.cardBodyPreview, { color: colors.muted }]}>
                           {card.body}
@@ -712,6 +724,90 @@ export function MainLayout({ controller }: MainLayoutProps) {
 
           const isQuestion = card.type === "question";
           const revealed = cardVeilRevealed[card.id];
+
+          // Chat cards get a dedicated conversational layout with a streamed feed.
+          if (card.type === "chat") {
+            const messages: { role: string; content: string }[] = (() => {
+              try { return JSON.parse(card.body || "[]"); } catch { return []; }
+            })();
+            const isStreaming = state.chatStreamingCardId === card.id;
+            return (
+              <SafeAreaView style={[styles.fullCardContainer, { backgroundColor: colors.bg }]}>
+                <View style={styles.fullCardHeader}>
+                  <Text style={[styles.fullCardType, { color: typeOf(card).color }]}>💬 {card.title.toUpperCase()}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+                    <TouchableOpacity onPress={() => confirmDeleteCard(card.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={{ color: "#E8829B" }}>Delete</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => controller.closeCard()}>
+                      <Text style={[styles.fullCardCloseText, { color: colors.muted }]}>Close</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <KeyboardAvoidingView
+                  behavior={Platform.OS === "ios" ? "padding" : undefined}
+                  style={{ flex: 1 }}
+                  keyboardVerticalOffset={8}
+                >
+                  <ScrollView style={{ flex: 1, paddingHorizontal: 16 }} contentContainerStyle={{ paddingVertical: 12 }}>
+                    {messages.length === 0 && (
+                      <Text style={{ color: colors.faint, textAlign: "center", marginTop: 40 }}>
+                        Ask anything — the agent answers using this group's cards as context.
+                      </Text>
+                    )}
+                    {messages.map((m, i) => {
+                      const isUser = m.role === "user";
+                      return (
+                        <View
+                          key={i}
+                          style={{
+                            alignSelf: isUser ? "flex-end" : "flex-start",
+                            maxWidth: "88%",
+                            backgroundColor: isUser ? accent.primary : colors.surface,
+                            borderColor: isUser ? accent.primary : colors.line,
+                            borderWidth: 1,
+                            borderRadius: 14,
+                            paddingVertical: 9,
+                            paddingHorizontal: 13,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Text style={{ color: isUser ? "#06120f" : colors.text, fontSize: 15, lineHeight: 21 }}>
+                            {m.content || (isStreaming && i === messages.length - 1 ? "▍" : "")}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                    {isStreaming && (
+                      <View style={{ flexDirection: "row", alignItems: "center", marginLeft: 4 }}>
+                        <ActivityIndicator size="small" color={accent.primary} />
+                        <Text style={{ color: colors.faint, marginLeft: 8, fontSize: 12 }}>streaming…</Text>
+                      </View>
+                    )}
+                  </ScrollView>
+
+                  <View style={[styles.cmdLine, { backgroundColor: colors.surface, borderTopColor: colors.line }]}>
+                    <TextInput
+                      style={[styles.cmdTextInput, { color: colors.text, fontFamily: undefined }]}
+                      placeholder="Message the agent…"
+                      placeholderTextColor={colors.faint}
+                      value={chatInput}
+                      onChangeText={setChatInput}
+                      multiline
+                    />
+                    <TouchableOpacity
+                      style={[styles.cmdGoBtn, { backgroundColor: accent.primary, opacity: chatInput.trim() && !isStreaming ? 1 : 0.5 }]}
+                      disabled={!chatInput.trim() || isStreaming}
+                      onPress={() => { controller.sendChatMessage(card.id, chatInput); setChatInput(""); }}
+                    >
+                      <Text style={styles.cmdGoText}>➔</Text>
+                    </TouchableOpacity>
+                  </View>
+                </KeyboardAvoidingView>
+              </SafeAreaView>
+            );
+          }
 
           return (
             <SafeAreaView style={[styles.fullCardContainer, { backgroundColor: colors.bg }]}>

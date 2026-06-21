@@ -169,6 +169,7 @@ interface UiState {
   toastMessage: string;
   isLoadingModels: boolean;
   pendingOperations: PendingOperation[];
+  chatStreamingCardId: string | null;
 }
 
 export interface LearnimalControllerDeps {
@@ -310,6 +311,7 @@ export class LearnimalController {
       toastMessage: "",
       isLoadingModels: false,
       pendingOperations: [],
+      chatStreamingCardId: null,
     };
   }
 
@@ -416,6 +418,7 @@ export class LearnimalController {
       isLoadingModels: this.ui.isLoadingModels,
       pendingOperations: this.ui.pendingOperations,
       searchSiteFlags: this.domain.searchSiteFlags,
+      chatStreamingCardId: this.ui.chatStreamingCardId,
     };
   }
 
@@ -769,6 +772,98 @@ export class LearnimalController {
     await this.cardRepo.saveCard(updated);
     this.domain.cards = this.domain.cards.map(c => (c.id === cardId ? updated : c));
     this.emit();
+  }
+
+  // --- Chat (streamed, group-aware) ---
+
+  /** Parses a chat card's body into its message list (empty on any malformed body). */
+  private parseChat(body: string): ChatMessage[] {
+    try {
+      const parsed = JSON.parse(body || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Writes the message list back into the chat card (in-memory + persisted). */
+  private async writeChat(cardId: string, messages: ChatMessage[], persist: boolean): Promise<void> {
+    const card = this.domain.cards.find(c => c.id === cardId);
+    if (!card) return;
+    const updated: Card = { ...card, body: JSON.stringify(messages) };
+    this.domain.cards = this.domain.cards.map(c => (c.id === cardId ? updated : c));
+    if (persist) await this.cardRepo.saveCard(updated);
+    this.emit();
+  }
+
+  /**
+   * Builds the system context for a chat card from the workspace name and the other
+   * cards in the same group, so the agent answers grounded in what the user is studying.
+   */
+  private buildChatContext(card: Card): string {
+    const ws = this.domain.workspaces.find(w => w.id === this.domain.activeWorkspaceId);
+    const groupCards = this.domain.cards.filter(
+      c => c.parentId === card.parentId && c.id !== card.id && c.type !== "group" && c.type !== "chat"
+    );
+    const cardList = groupCards.length > 0
+      ? groupCards.map(c => `- ${c.title}: ${(c.body || c.answer || "").substring(0, 400)}`).join("\n")
+      : "(no other cards in this group yet)";
+    return `You are a focused study tutor helping the user learn. They are in the workspace "${ws?.name ?? "Untitled"}". Use the following cards from the current group as the primary context for your answers; be accurate and concise, and say when something isn't covered by them.\n\nCards in context:\n${cardList}`;
+  }
+
+  /**
+   * Sends a user message in a chat card and streams the agent's reply token-by-token,
+   * updating the card live. The group's cards + workspace name are supplied as context.
+   */
+  async sendChatMessage(cardId: string, userText: string): Promise<void> {
+    const text = userText.trim();
+    if (!text) return;
+    const card = this.domain.cards.find(c => c.id === cardId);
+    if (!card) return;
+
+    if (!this.agentGateway.streamChat) {
+      this.showToast("This model gateway can't stream chat");
+      return;
+    }
+    if (!this.domain.openRouterKey?.trim()) {
+      this.showToast("Add your OpenRouter key in Settings");
+      return;
+    }
+
+    const history = this.parseChat(card.body);
+    history.push({ role: "user", content: text });
+    history.push({ role: "assistant", content: "" });
+    const assistantIdx = history.length - 1;
+    await this.writeChat(cardId, history, true);
+
+    this.ui.chatStreamingCardId = cardId;
+    this.emit();
+
+    const requestMessages: ChatMessage[] = [
+      { role: "system", content: this.buildChatContext(card) },
+      ...history.slice(0, assistantIdx), // everything up to (not incl.) the empty assistant
+    ];
+
+    try {
+      await this.agentGateway.streamChat(
+        requestMessages,
+        this.domain.openRouterKey,
+        this.domain.selectedModel,
+        (delta) => {
+          history[assistantIdx].content += delta;
+          // Update in-memory + emit for a live feed; persistence happens once at the end.
+          void this.writeChat(cardId, history, false);
+        }
+      );
+      await this.writeChat(cardId, history, true);
+    } catch (err: any) {
+      history[assistantIdx].content += `\n\n_[error: ${err?.message || "stream failed"}]_`;
+      await this.writeChat(cardId, history, true);
+      this.showToast("Chat failed");
+    } finally {
+      this.ui.chatStreamingCardId = null;
+      this.emit();
+    }
   }
 
   // --- Search & Extraction ---
