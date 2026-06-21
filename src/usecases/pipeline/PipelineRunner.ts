@@ -18,6 +18,7 @@ export interface PipelineEnvironment {
   apiKey: string;
   model: string;
   systemPrompt: string;
+  chunkSystemPrompt: string;
   /**
    * When true, a content-producing pipeline auto-organizes its output by composing
    * a trailing `group "<command>"` stage — keeping grouping a matter of command
@@ -87,6 +88,7 @@ export class PipelineRunner {
         apiKey: env.apiKey,
         model: env.model,
         systemPrompt: env.systemPrompt,
+        chunkSystemPrompt: env.chunkSystemPrompt,
       };
 
       const result = await command.execute(arg, ctx);

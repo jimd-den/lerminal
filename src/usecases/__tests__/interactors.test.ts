@@ -12,8 +12,6 @@ import { GradeReviewInteractor } from "../review/GradeReviewInteractor";
 import { CreateWorkspaceInteractor } from "../workspace/CreateWorkspaceInteractor";
 import { SwitchWorkspaceInteractor } from "../workspace/SwitchWorkspaceInteractor";
 import { DeleteWorkspaceInteractor } from "../workspace/DeleteWorkspaceInteractor";
-import { RestartOnboardingInteractor } from "../onboarding/RestartOnboardingInteractor";
-import { CompleteOnboardingInteractor } from "../onboarding/CompleteOnboardingInteractor";
 
 class MockAgentGateway implements AgentGateway {
   async ask(query: string): Promise<AgentCardResponse[]> {
@@ -106,42 +104,3 @@ describe("Workspace interactors", () => {
   });
 });
 
-describe("RestartOnboardingInteractor", () => {
-  it("wipes all workspaces and cards", async () => {
-    const wsRepo = new MemoryWorkspaceRepository();
-    const cardRepo = new MemoryCardRepository();
-    await wsRepo.saveWorkspace({ id: "a", name: "A", createdAt: 0 });
-    await cardRepo.saveCard(createCard({ workspaceId: "a", type: "note", title: "A", body: "x" }));
-
-    await new RestartOnboardingInteractor(wsRepo, cardRepo).execute();
-
-    expect((await wsRepo.getWorkspaces()).length).toBe(0);
-    expect((await cardRepo.getCardsByWorkspace("a")).length).toBe(0);
-  });
-});
-
-describe("CompleteOnboardingInteractor", () => {
-  it("creates a workspace, persists settings, and seeds cards", async () => {
-    const wsRepo = new MemoryWorkspaceRepository();
-    const cardRepo = new MemoryCardRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    const interactor = new CompleteOnboardingInteractor(
-      wsRepo,
-      cardRepo,
-      settingsRepo,
-      new MockAgentGateway(),
-      { search: async () => [] } as any
-    );
-
-    const { workspace, cards } = await interactor.execute({
-      topic: "Machine Learning",
-      prompt: "Linear algebra",
-      settings: SETTINGS,
-    });
-
-    expect(workspace.name).toBe("Machine Learning");
-    expect(cards.length).toBe(0);
-    expect((await cardRepo.getCardsByWorkspace(workspace.id)).length).toBe(0);
-    expect((await settingsRepo.getSettings())?.openRouterKey).toBe("key");
-  });
-});

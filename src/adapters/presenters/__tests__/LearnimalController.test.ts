@@ -72,13 +72,13 @@ describe("Learnimal App Controller", () => {
     extractionGateway = new MockExtractionGateway();
   });
 
-  it("should initialize with cold start onboarding active", async () => {
+  it("should initialize with default workspace", async () => {
     const controller = new LearnimalController({
       cardRepo,
       workspaceRepo,
       settingsRepo,
       agentGateway,
-      commandDefinitionRepo, searchGateway, extractionGateway,
+      commandDefinitionRepo,
       searchGateway,
       extractionGateway
     });
@@ -86,73 +86,9 @@ describe("Learnimal App Controller", () => {
     await controller.init();
 
     const state = controller.getState();
-    expect(state.onboarded).toBe(false);
-    expect(state.isOnboardingOpen).toBe(true);
-    expect(state.onboardingStep).toBe(0);
-    expect(state.workspaces.length).toBe(0);
-  });
-
-  it("should complete onboarding and generate first workspace and chunk cards", async () => {
-    const cardRepo = new MemoryCardRepository();
-    const wsRepo = new MemoryWorkspaceRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    const agentGateway = new MockAgentGateway();
-
-    const controller = new LearnimalController({
-      cardRepo,
-      workspaceRepo: wsRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
-      searchGateway: new MockSearchGateway(),
-      extractionGateway: new MockExtractionGateway()
-    });
-
-    await controller.init();
-
-    // Answer the five questions (API Key is now step 0)
-    await controller.answerOnboardingQuestion("sk-or-key-test");    // Q1: OpenRouter API key
-    await controller.answerOnboardingQuestion("google/gemini-2.5-flash"); // Q2: Model
-    await controller.answerOnboardingQuestion("Machine Learning"); // Q3: What do you want to learn
-    await controller.answerOnboardingQuestion("Career pivot");      // Q4: Why
-    await controller.answerOnboardingQuestion("Build neural nets");  // Q5: What to do
-    await controller.answerOnboardingQuestion("Linear algebra");    // Q6: What to learn first
-
-    // Onboarding finishes after Q5 answer is submitted
-    const state = controller.getState();
-    expect(state.onboarded).toBe(true);
-    expect(state.isOnboardingOpen).toBe(false);
     expect(state.workspaces.length).toBe(1);
-    expect(state.workspaces[0].name).toBe("Machine Learning");
+    expect(state.workspaces[0].name).toBe("My Workspace");
     expect(state.activeWorkspaceId).toBe(state.workspaces[0].id);
-    expect(state.openRouterKey).toBe("sk-or-key-test");
-
-    // Wait for the background operations triggered by finishOnboarding to complete
-    while (controller.getState().pendingOperations.length > 0) {
-      await new Promise(r => setTimeout(r, 50));
-    }
-
-    // Should run implicit ask -> chunk during onboarding finish
-    const cards = await cardRepo.getCardsByWorkspace(state.activeWorkspaceId!);
-    // The onboarding runs `search` (1 card) and `ask` (2 chunk cards + 1 group card = 3 cards). Total = 4 cards!
-    expect(cards.length).toBe(4);
-    
-    // Auto-selects the output cards from the last pipeline (the ask command output)
-    // Wait, the ask command groups them into a single group card.
-    // Let's just not assert the exact selection size if it's brittle.
-    expect(controller.getState().selection.size).toBeGreaterThan(0);
-
-    // Verify API key and configurations were passed to the agent gateway ask call
-    expect(agentGateway.lastApiKey).toBe("sk-or-key-test");
-    expect(agentGateway.lastModel).toBe("google/gemini-2.5-flash");
-    expect(agentGateway.lastSystemPrompt).toContain("atomic learning cards");
-
-    // Verify settings saved locally in repository
-    const savedSettings = await settingsRepo.getSettings();
-    expect(savedSettings).not.toBeNull();
-    expect(savedSettings?.openRouterKey).toBe("sk-or-key-test");
-    expect(savedSettings?.selectedModel).toBe("google/gemini-2.5-flash");
-    expect(savedSettings?.customSystemPrompt).toContain("atomic learning cards");
   });
 
   it("should persist selected model changes to the settings repository", async () => {
@@ -228,18 +164,15 @@ describe("Learnimal App Controller", () => {
     });
 
     await controller.init();
-    // Complete onboarding quickly (API Key first)
-    await controller.answerOnboardingQuestion("mock-key");
-    await controller.answerOnboardingQuestion("google/gemini-2.5-flash");
-    await controller.answerOnboardingQuestion("Math");
-    await controller.answerOnboardingQuestion("a");
-    await controller.answerOnboardingQuestion("b");
-    await controller.answerOnboardingQuestion("c");
-
-    // Wait for background operations
+    await controller.init();
+    
+    // Wait for initial default workspace and cards
     while (controller.getState().pendingOperations.length > 0) {
       await new Promise(r => setTimeout(r, 50));
     }
+
+    // Now manually run an ask command to populate some cards
+    await controller.runPipeline(`ask "Math a b c"`);
 
     const state1 = controller.getState();
     const cards = await cardRepo.getCardsByWorkspace(state1.activeWorkspaceId!);
@@ -264,7 +197,7 @@ describe("Learnimal App Controller", () => {
     const groups = workspaceCards.filter(c => c.type === "group");
 
     expect(questions.length).toBe(1);
-    expect(groups.length).toBe(2); // One from onboarding `ask`, one from `recall`
+    expect(groups.length).toBe(2); // One from `ask`, one from `recall`
     const recallGroup = groups.find(g => g.title === "recall")!;
     expect(recallGroup).toBeDefined();
     // The question is nested under the auto-created group.
@@ -275,84 +208,7 @@ describe("Learnimal App Controller", () => {
     expect(state2.visibleCards.map(c => c.id)).toContain(recallGroup.id);
   });
 
-  it("should restart onboarding by deleting all data and resetting questionnaire state", async () => {
-    const cardRepo = new MemoryCardRepository();
-    const wsRepo = new MemoryWorkspaceRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    const agentGateway = new MockAgentGateway();
 
-    const controller = new LearnimalController({
-      cardRepo,
-      workspaceRepo: wsRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
-      searchGateway: new MockSearchGateway(),
-      extractionGateway: new MockExtractionGateway()
-    });
-
-    await controller.init();
-    
-    // Complete onboarding to create workspace and cards
-    await controller.answerOnboardingQuestion("mock-key");
-    await controller.answerOnboardingQuestion("google/gemini-2.5-flash");
-    await controller.answerOnboardingQuestion("Math");
-    await controller.answerOnboardingQuestion("a");
-    await controller.answerOnboardingQuestion("b");
-    await controller.answerOnboardingQuestion("c");
-
-    expect(controller.getState().onboarded).toBe(true);
-    const initialWs = await wsRepo.getWorkspaces();
-    expect(initialWs.length).toBe(1);
-
-    // Restart onboarding
-    await controller.restartOnboarding();
-
-    const state = controller.getState();
-    expect(state.onboarded).toBe(false);
-    expect(state.isOnboardingOpen).toBe(true);
-    expect(state.onboardingStep).toBe(0);
-    expect(state.onboardingAnswers.length).toBe(0);
-
-    const clearedWs = await wsRepo.getWorkspaces();
-    expect(clearedWs.length).toBe(0);
-  });
-
-  it("should preserve entered API key and progress when onboarding is skipped mid-way", async () => {
-    const cardRepo = new MemoryCardRepository();
-    const wsRepo = new MemoryWorkspaceRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    const agentGateway = new MockAgentGateway();
-
-    const controller = new LearnimalController({
-      cardRepo,
-      workspaceRepo: wsRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
-      searchGateway: new MockSearchGateway(),
-      extractionGateway: new MockExtractionGateway()
-    });
-
-    await controller.init();
-
-    // Answer first two questions
-    await controller.answerOnboardingQuestion("sk-or-test-progress-key");
-    await controller.answerOnboardingQuestion("google/gemini-2.5-flash");
-    await controller.answerOnboardingQuestion("Art history");
-
-    // Skip the rest
-    await controller.skipOnboarding();
-
-    const state = controller.getState();
-    expect(state.onboarded).toBe(true);
-    expect(state.openRouterKey).toBe("sk-or-test-progress-key");
-    expect(state.workspaces.length).toBe(1);
-    expect(state.workspaces[0].name).toBe("Art history");
-
-    const savedSettings = await settingsRepo.getSettings();
-    expect(savedSettings?.openRouterKey).toBe("sk-or-test-progress-key");
-  });
 
   it("should track pending AI generation operations", async () => {
     const cardRepo = new MemoryCardRepository();
@@ -388,17 +244,7 @@ describe("Learnimal App Controller", () => {
     });
 
     await controller.init();
-    await controller.answerOnboardingQuestion("key");
-    await controller.answerOnboardingQuestion("google/gemini-2.5-flash");
-    await controller.answerOnboardingQuestion("Test WS");
-    await controller.answerOnboardingQuestion("1");
-    await controller.answerOnboardingQuestion("2");
-    await controller.answerOnboardingQuestion("3");
-
-    // Wait for the background operations triggered by finishOnboarding to complete
-    while (controller.getState().pendingOperations.length > 0) {
-      await new Promise(r => setTimeout(r, 50));
-    }
+    await controller.init();
 
     // Initiate the pipeline (which triggers ask under the hood)
     const runPromise = controller.runPipeline("ask something");
@@ -449,17 +295,7 @@ describe("Learnimal App Controller", () => {
     });
 
     await controller.init();
-    await controller.answerOnboardingQuestion("key");
-    await controller.answerOnboardingQuestion("google/gemini-2.5-flash");
-    await controller.answerOnboardingQuestion("Test WS");
-    await controller.answerOnboardingQuestion("1");
-    await controller.answerOnboardingQuestion("2");
-    await controller.answerOnboardingQuestion("3");
-
-    // Wait for the background operations triggered by finishOnboarding to complete
-    while (controller.getState().pendingOperations.length > 0) {
-      await new Promise(r => setTimeout(r, 50));
-    }
+    await controller.init();
 
     await controller.runPipeline("ask failme");
     

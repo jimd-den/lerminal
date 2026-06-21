@@ -13,8 +13,11 @@ export interface AppSettings {
   openRouterKey: string;
   selectedModel: string;
   customSystemPrompt: string;
+  customChunkSystemPrompt?: string;
   /** When true, pipelines auto-organize their output into a group per command. */
   autoGroupByCommand: boolean;
+  /** Configurable Unix-like site flags for the search command (e.g., wiki: wikipedia.org) */
+  searchSiteFlags?: Record<string, string>;
 }
 
 export interface SettingsRepository {

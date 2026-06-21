@@ -3,12 +3,12 @@ import { chunkCard, recallCard } from "../commands";
 import { createCard } from "../../entities/card";
 
 describe("Command Use Cases", () => {
-  it("should split a source card into multiple chunk cards based on sentences", () => {
+  it("should split a source card into multiple chunk cards based on paragraphs", () => {
     const sourceCard = createCard({
       workspaceId: "ws-1",
       type: "source",
       title: "Introduction to React",
-      body: "React is a UI library. It is developed by Meta. You can build web apps with it.",
+      body: "React is a UI library.\n\nIt is developed by Meta.\n\nYou can build web apps with it.",
       cite: "reactjs.org",
     });
 
@@ -50,5 +50,23 @@ describe("Command Use Cases", () => {
 
     const question2 = recallCard(chunk2);
     expect(question2.title).toBe("How does redux architecture work?");
+  });
+
+  it("should preserve the original sourceRef when chunking an already chunked card", () => {
+    const originalSource = createCard({
+      workspaceId: "ws-1",
+      type: "source",
+      title: "Original Source",
+      body: "This is the original source. It has multiple sentences.",
+    });
+
+    const chunks1 = chunkCard(originalSource);
+    const firstChunk = chunks1[0];
+    
+    // Now we chunk the first chunk again
+    const chunks2 = chunkCard(firstChunk);
+    
+    // The resulting chunk should point to originalSource.id, NOT firstChunk.id
+    expect(chunks2[0].sourceRef).toBe(originalSource.id);
   });
 });

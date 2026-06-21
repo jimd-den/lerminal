@@ -37,7 +37,7 @@ function buildRunner(cardRepo: MemoryCardRepository): PipelineRunner {
   return new PipelineRunner([
     new AskCommand(gw, cardRepo),
     new SourceCommand(cardRepo),
-    new ChunkCommand(cardRepo),
+    new ChunkCommand(gw, cardRepo),
     new RecallCommand(cardRepo),
     new SpaceCommand(cardRepo),
     new MoveCommand(cardRepo),

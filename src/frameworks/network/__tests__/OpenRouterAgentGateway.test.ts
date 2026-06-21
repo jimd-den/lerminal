@@ -134,3 +134,67 @@ describe("OpenRouter Agent Gateway", () => {
     }
   });
 });
+
+describe("OpenRouter Agent Gateway - fetchModels", () => {
+  it("should return parsed models on successful fetch", async () => {
+    const mockModelsResponse = {
+      data: [
+        { id: "model/1", name: "Model One" },
+        { id: "model/2:free", name: "Model Two" },
+      ]
+    };
+
+    const originalFetch = global.fetch;
+    global.fetch = mock(async (url: any) => {
+      expect(url).toBe("https://openrouter.ai/api/v1/models");
+      return {
+        ok: true,
+        json: async () => mockModelsResponse
+      } as Response;
+    });
+
+    try {
+      const gateway = new OpenRouterAgentGateway();
+      const models = await gateway.fetchModels();
+      expect(models.length).toBe(2);
+      expect(models[0].id).toBe("model/1");
+      expect(models[0].free).toBe(false);
+      expect(models[1].id).toBe("model/2:free");
+      expect(models[1].free).toBe(true);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("should log a warning and return default list on fetch failure", async () => {
+    const originalFetch = global.fetch;
+    const originalWarn = console.warn;
+    const originalError = console.error;
+    
+    let warnCalled = false;
+    let errorCalled = false;
+    
+    console.warn = mock((...args: any[]) => { warnCalled = true; });
+    console.error = mock((...args: any[]) => { errorCalled = true; });
+
+    global.fetch = mock(async () => {
+      throw new Error("fetch failed: java.net.UnknownHostException");
+    });
+
+    try {
+      const gateway = new OpenRouterAgentGateway();
+      const models = await gateway.fetchModels();
+      
+      expect(models.length).toBeGreaterThan(0);
+      expect(models[0].id).toBe("google/gemini-2.5-flash:free");
+      
+      // We expect a warning to be logged, not an error, because it's an expected fallback scenario
+      expect(warnCalled).toBe(true);
+      expect(errorCalled).toBe(false);
+    } finally {
+      global.fetch = originalFetch;
+      console.warn = originalWarn;
+      console.error = originalError;
+    }
+  });
+});

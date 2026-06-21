@@ -26,10 +26,11 @@ class MockAgentGateway implements AgentGateway {
 const WS = "ws-1";
 
 function buildRunner(repo: MemoryCardRepository): PipelineRunner {
+  const gw = new MockAgentGateway();
   return new PipelineRunner([
-    new AskCommand(new MockAgentGateway(), repo),
+    new AskCommand(gw, repo),
     new SourceCommand(repo),
-    new ChunkCommand(repo),
+    new ChunkCommand(gw, repo),
     new RecallCommand(repo),
     new SpaceCommand(repo),
     new MoveCommand(repo),

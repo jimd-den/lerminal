@@ -1,0 +1,119 @@
+bun test v1.3.14 (0d9b296a)
+[2026-06-20T02:19:05.274Z] [createWorkspace] INPUTS: params={"name":"Machine Learning"} | OUTPUT: {"id":"z7wtkpvj","name":"Machine Learning","createdAt":1781921945275}
+[2026-06-20T02:19:05.275Z] [createWorkspace] INPUTS: params={"name":"Very Long Workspace Name That Exceeds Screen Real Estate Constraints"} | OUTPUT: {"id":"qs1213fn","name":"Very Long Workspace Na…","createdAt":1781921945275}
+[2026-06-20T02:19:05.277Z] [createCard] INPUTS: params={"workspaceId":"ws-123","type":"chunk","title":"Core Concept","body":"This is the body of the chunk.","cite":"Source Book"} | OUTPUT: {"id":"3mbndzod","workspaceId":"ws-123","type":"chunk","title":"Core Concept","body":"This is the body of the chunk.","createdAt":1781921945277,"tags":[],"cite":"Source Book"}
+[2026-06-20T02:19:05.278Z] [createCard] INPUTS: params={"id":"custom-id-999","workspaceId":"ws-123","type":"source","title":"My Source","body":"File content","createdAt":1623823200000} | OUTPUT: {"id":"custom-id-999","workspaceId":"ws-123","type":"source","title":"My Source","body":"File content","createdAt":1623823200000,"tags":[]}
+[2026-06-20T02:19:05.281Z] [createInitialSchedule] INPUTS: now=1718582400000 | OUTPUT: {"dueAt":1718668800000,"interval":1,"reps":0}
+[2026-06-20T02:19:05.281Z] [createInitialSchedule] INPUTS: now=1718582400000 | OUTPUT: {"dueAt":1718668800000,"interval":1,"reps":0}
+[2026-06-20T02:19:05.282Z] [updateSchedule] INPUTS: current={"dueAt":1718668800000,"interval":1,"reps":0}, ok=true, now=1718582400000 | OUTPUT: {"dueAt":1718841600000,"interval":3,"reps":1}
+[2026-06-20T02:19:05.282Z] [updateSchedule] INPUTS: current={"dueAt":1718841600000,"interval":3,"reps":1}, ok=true, now=1718582400000 | OUTPUT: {"dueAt":1719273600000,"interval":8,"reps":2}
+[2026-06-20T02:19:05.282Z] [updateSchedule] INPUTS: current={"interval":8,"reps":2,"dueAt":1718582400000}, ok=false, now=1718582400000 | OUTPUT: {"dueAt":1718583000000,"interval":1,"reps":2}
+[2026-06-20T02:19:05.284Z] [createCard] INPUTS: params={"id":"g1","workspaceId":"w","type":"group","title":"G1","body":""} | OUTPUT: {"id":"g1","workspaceId":"w","type":"group","title":"G1","body":"","createdAt":1781921945284,"tags":[]}
+[2026-06-20T02:19:05.284Z] [createCard] INPUTS: params={"id":"a","workspaceId":"w","type":"chunk","title":"A","body":"x","parentId":"g1"} | OUTPUT: {"id":"a","workspaceId":"w","type":"chunk","title":"A","body":"x","createdAt":1781921945284,"tags":[],"parentId":"g1"}
+[2026-06-20T02:19:05.284Z] [createCard] INPUTS: params={"id":"g2","workspaceId":"w","type":"group","title":"G2","body":"","parentId":"g1"} | OUTPUT: {"id":"g2","workspaceId":"w","type":"group","title":"G2","body":"","createdAt":1781921945284,"tags":[],"parentId":"g1"}
+[2026-06-20T02:19:05.284Z] [createCard] INPUTS: params={"id":"b","workspaceId":"w","type":"chunk","title":"B","body":"y","parentId":"g2"} | OUTPUT: {"id":"b","workspaceId":"w","type":"chunk","title":"B","body":"y","createdAt":1781921945284,"tags":[],"parentId":"g2"}
+[2026-06-20T02:19:05.284Z] [createCard] INPUTS: params={"id":"r","workspaceId":"w","type":"note","title":"R","body":"z"} | OUTPUT: {"id":"r","workspaceId":"w","type":"note","title":"R","body":"z","createdAt":1781921945284,"tags":[]}
+[2026-06-20T02:19:05.289Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"source","title":"Introduction to React","body":"React is a UI library. It is developed by Meta. You can build web apps with it.","cite":"reactjs.org"} | OUTPUT: {"id":"qwpqj20e","workspaceId":"ws-1","type":"source","title":"Introduction to React","body":"React is a UI library. It is developed by Meta. You can build web apps with it.","createdAt":1781921945289,"tags":[],"cite":"reactjs.org"}
+[2026-06-20T02:19:05.290Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"Introduction to React · 1","body":"React is a UI library.","sourceRef":"qwpqj20e","cite":"reactjs.org"} | OUTPUT: {"id":"74ecrx1p","workspaceId":"ws-1","type":"chunk","title":"Introduction to React · 1","body":"React is a UI library.","createdAt":1781921945290,"tags":[],"sourceRef":"qwpqj20e","cite":"reactjs.org"}
+[2026-06-20T02:19:05.290Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"Introduction to React · 2","body":"It is developed by Meta.","sourceRef":"qwpqj20e","cite":"reactjs.org"} | OUTPUT: {"id":"x9mt7fqg","workspaceId":"ws-1","type":"chunk","title":"Introduction to React · 2","body":"It is developed by Meta.","createdAt":1781921945290,"tags":[],"sourceRef":"qwpqj20e","cite":"reactjs.org"}
+[2026-06-20T02:19:05.290Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"Introduction to React · 3","body":"You can build web apps with it.","sourceRef":"qwpqj20e","cite":"reactjs.org"} | OUTPUT: {"id":"1uumvr3a","workspaceId":"ws-1","type":"chunk","title":"Introduction to React · 3","body":"You can build web apps with it.","createdAt":1781921945290,"tags":[],"sourceRef":"qwpqj20e","cite":"reactjs.org"}
+[2026-06-20T02:19:05.289Z] [chunkCard] INPUT: cardId=qwpqj20e | OUTPUT: generated 3 chunks
+[2026-06-20T02:19:05.291Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"State Management","body":"State matters because it changes what you can render on screen.","cite":"React docs"} | OUTPUT: {"id":"7y3wihei","workspaceId":"ws-1","type":"chunk","title":"State Management","body":"State matters because it changes what you can render on screen.","createdAt":1781921945291,"tags":[],"cite":"React docs"}
+[2026-06-20T02:19:05.291Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"question","title":"Why does state management matter?","body":"","answer":"State matters because it changes what you can render on screen.","sourceRef":"7y3wihei","cite":"React docs"} | OUTPUT: {"id":"130o2l71","workspaceId":"ws-1","type":"question","title":"Why does state management matter?","body":"","createdAt":1781921945291,"tags":[],"sourceRef":"7y3wihei","cite":"React docs","answer":"State matters because it changes what you can render on screen."}
+[2026-06-20T02:19:05.291Z] [recallCard] INPUT: cardId=7y3wihei | OUTPUT: questionCardId=130o2l71
+[2026-06-20T02:19:05.291Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"Redux Architecture","body":"Redux works by dispatching actions to a central store containing state."} | OUTPUT: {"id":"b4eoctlt","workspaceId":"ws-1","type":"chunk","title":"Redux Architecture","body":"Redux works by dispatching actions to a central store containing state.","createdAt":1781921945291,"tags":[]}
+[2026-06-20T02:19:05.291Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"question","title":"How does redux architecture work?","body":"","answer":"Redux works by dispatching actions to a central store containing state.","sourceRef":"b4eoctlt"} | OUTPUT: {"id":"gqrmx4w3","workspaceId":"ws-1","type":"question","title":"How does redux architecture work?","body":"","createdAt":1781921945291,"tags":[],"sourceRef":"b4eoctlt","answer":"Redux works by dispatching actions to a central store containing state."}
+[2026-06-20T02:19:05.291Z] [recallCard] INPUT: cardId=b4eoctlt | OUTPUT: questionCardId=gqrmx4w3
+[2026-06-20T02:19:05.302Z] [createCard] INPUTS: params={"workspaceId":"ws-a","type":"chunk","title":"C1","body":"B1"} | OUTPUT: {"id":"vdse903v","workspaceId":"ws-a","type":"chunk","title":"C1","body":"B1","createdAt":1781921945302,"tags":[]}
+[2026-06-20T02:19:05.302Z] [createCard] INPUTS: params={"workspaceId":"ws-a","type":"chunk","title":"C2","body":"B2"} | OUTPUT: {"id":"pi48xzm4","workspaceId":"ws-a","type":"chunk","title":"C2","body":"B2","createdAt":1781921945302,"tags":[]}
+[2026-06-20T02:19:05.302Z] [createCard] INPUTS: params={"workspaceId":"ws-b","type":"chunk","title":"C3","body":"B3"} | OUTPUT: {"id":"vj2n59nw","workspaceId":"ws-b","type":"chunk","title":"C3","body":"B3","createdAt":1781921945302,"tags":[]}
+[2026-06-20T02:19:05.303Z] [MemoryCardRepository.saveCard] cardId=vdse903v
+[2026-06-20T02:19:05.303Z] [MemoryCardRepository.saveCards] count=2
+[2026-06-20T02:19:05.303Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=ws-a -> returned 2 cards
+[2026-06-20T02:19:05.303Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=ws-b -> returned 1 cards
+[2026-06-20T02:19:05.304Z] [createWorkspace] INPUTS: params={"name":"W1"} | OUTPUT: {"id":"vsjr3bq4","name":"W1","createdAt":1781921945304}
+[2026-06-20T02:19:05.304Z] [createWorkspace] INPUTS: params={"name":"W2"} | OUTPUT: {"id":"438pj3g8","name":"W2","createdAt":1781921945304}
+[2026-06-20T02:19:05.305Z] [MemoryWorkspaceRepository.saveWorkspace] workspaceId=vsjr3bq4
+[2026-06-20T02:19:05.305Z] [MemoryWorkspaceRepository.saveWorkspace] workspaceId=438pj3g8
+[2026-06-20T02:19:05.305Z] [MemoryWorkspaceRepository.getWorkspaces] -> returned 2 workspaces
+Found KeyboardAvoidingView tag: <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, width: "100%" }}
+          >
+[2026-06-20T02:19:05.333Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"source","title":"React Intro","body":"React is a JavaScript library."} | OUTPUT: {"id":"uptdojly","workspaceId":"ws-1","type":"source","title":"React Intro","body":"React is a JavaScript library.","createdAt":1781921945333,"tags":[]}
+[2026-06-20T02:19:05.334Z] [OpenRouterAgentGateway.ask] query="explain state and props" | contextCardsCount=1 | model="google/gemini-2.5-flash" | apiKey="test-api-k... (len: 12)"
+[2026-06-20T02:19:05.334Z] [OpenRouterAgentGateway] OpenRouter SUCCESS: model=google/gemini-2.5-flash | generated 2 cards
+[2026-06-20T02:19:05.335Z] [OpenRouterAgentGateway.ask] query="test" | contextCardsCount=0 | model="" | apiKey="key... (len: 3)"
+[2026-06-20T02:19:05.335Z] [OpenRouterAgentGateway] OpenRouter SUCCESS: model= | generated 0 cards
+[2026-06-20T02:19:05.338Z] [OpenRouterAgentGateway.ask] query="test-query" | contextCardsCount=0 | model="google/gemini-2.5-flash" | apiKey="key... (len: 3)"
+[2026-06-20T02:19:05.338Z] [OpenRouterAgentGateway] OpenRouter SUCCESS: model=google/gemini-2.5-flash | generated 0 cards
+[2026-06-20T02:19:05.339Z] [OpenRouterAgentGateway.ask] query="test-query" | contextCardsCount=0 | model="google/gemini-2.5-flash" | apiKey="key... (len: 3)"
+[2026-06-20T02:19:05.339Z] [OpenRouterAgentGateway] OpenRouter SUCCESS: model=google/gemini-2.5-flash | generated 0 cards
+[2026-06-20T02:19:05.348Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"A","body":"Answer for react","cite":"react"} | OUTPUT: {"id":"a8b055d5","workspaceId":"ws-1","type":"chunk","title":"A","body":"Answer for react","createdAt":1781921945348,"tags":[],"cite":"react"}
+[2026-06-20T02:19:05.349Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"B","body":"More detail","cite":"react"} | OUTPUT: {"id":"kzjseus9","workspaceId":"ws-1","type":"chunk","title":"B","body":"More detail","createdAt":1781921945349,"tags":[],"cite":"react"}
+[2026-06-20T02:19:05.353Z] [MemoryCardRepository.saveCards] count=2
+[2026-06-20T02:19:05.353Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=ws-1 -> returned 2 cards
+[2026-06-20T02:19:05.354Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"A","body":"Answer for react","cite":"react"} | OUTPUT: {"id":"7vz3pnqn","workspaceId":"ws-1","type":"chunk","title":"A","body":"Answer for react","createdAt":1781921945354,"tags":[],"cite":"react"}
+[2026-06-20T02:19:05.354Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"B","body":"More detail","cite":"react"} | OUTPUT: {"id":"o92umfm1","workspaceId":"ws-1","type":"chunk","title":"B","body":"More detail","createdAt":1781921945354,"tags":[],"cite":"react"}
+[2026-06-20T02:19:05.354Z] [MemoryCardRepository.saveCards] count=2
+[2026-06-20T02:19:05.354Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"A · 1","body":"Answer for react","sourceRef":"7vz3pnqn","cite":"react"} | OUTPUT: {"id":"f468x3rl","workspaceId":"ws-1","type":"chunk","title":"A · 1","body":"Answer for react","createdAt":1781921945355,"tags":[],"sourceRef":"7vz3pnqn","cite":"react"}
+[2026-06-20T02:19:05.354Z] [chunkCard] INPUT: cardId=7vz3pnqn | OUTPUT: generated 1 chunks
+[2026-06-20T02:19:05.355Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"B · 1","body":"More detail","sourceRef":"o92umfm1","cite":"react"} | OUTPUT: {"id":"q8w2v7yx","workspaceId":"ws-1","type":"chunk","title":"B · 1","body":"More detail","createdAt":1781921945355,"tags":[],"sourceRef":"o92umfm1","cite":"react"}
+[2026-06-20T02:19:05.355Z] [chunkCard] INPUT: cardId=o92umfm1 | OUTPUT: generated 1 chunks
+[2026-06-20T02:19:05.355Z] [MemoryCardRepository.saveCards] count=2
+[2026-06-20T02:19:05.356Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"T","body":"Body text here."} | OUTPUT: {"id":"02wozpyr","workspaceId":"ws-1","type":"chunk","title":"T","body":"Body text here.","createdAt":1781921945356,"tags":[]}
+[2026-06-20T02:19:05.356Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"question","title":"Recall: T","body":"","answer":"Body text here.","sourceRef":"02wozpyr"} | OUTPUT: {"id":"sstq58o1","workspaceId":"ws-1","type":"question","title":"Recall: T","body":"","createdAt":1781921945356,"tags":[],"sourceRef":"02wozpyr","answer":"Body text here."}
+[2026-06-20T02:19:05.356Z] [recallCard] INPUT: cardId=02wozpyr | OUTPUT: questionCardId=sstq58o1
+[2026-06-20T02:19:05.357Z] [MemoryCardRepository.saveCards] count=1
+[2026-06-20T02:19:05.357Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"question","title":"Q?","body":"","answer":"a"} | OUTPUT: {"id":"l6xegzev","workspaceId":"ws-1","type":"question","title":"Q?","body":"","createdAt":1781921945357,"tags":[],"answer":"a"}
+[2026-06-20T02:19:05.358Z] [createInitialSchedule] INPUTS: now=1781921945358 | OUTPUT: {"dueAt":1782008345358,"interval":1,"reps":0}
+[2026-06-20T02:19:05.358Z] [MemoryCardRepository.saveCard] cardId=l6xegzev
+[2026-06-20T02:19:05.359Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"T","body":"b"} | OUTPUT: {"id":"rf3qhdaq","workspaceId":"ws-1","type":"chunk","title":"T","body":"b","createdAt":1781921945359,"tags":[]}
+[2026-06-20T02:19:05.360Z] [MemoryCardRepository.saveCard] cardId=rf3qhdaq
+[2026-06-20T02:19:05.360Z] [MemoryCardRepository.saveCard] cardId=rf3qhdaq
+[2026-06-20T02:19:05.360Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=ws-2 -> returned 1 cards
+[2026-06-20T02:19:05.361Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"question","title":"Q?","body":""} | OUTPUT: {"id":"qolkmhjv","workspaceId":"ws-1","type":"question","title":"Q?","body":"","createdAt":1781921945361,"tags":[]}
+[2026-06-20T02:19:05.362Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"T","body":"b"} | OUTPUT: {"id":"gy5w7o9b","workspaceId":"ws-1","type":"chunk","title":"T","body":"b","createdAt":1781921945362,"tags":[]}
+[2026-06-20T02:19:05.370Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"C1","body":"x"} | OUTPUT: {"id":"7gaeel0h","workspaceId":"ws-1","type":"chunk","title":"C1","body":"x","createdAt":1781921945370,"tags":[]}
+[2026-06-20T02:19:05.370Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"C2","body":"y"} | OUTPUT: {"id":"clqev95q","workspaceId":"ws-1","type":"chunk","title":"C2","body":"y","createdAt":1781921945370,"tags":[]}
+[2026-06-20T02:19:05.370Z] [MemoryCardRepository.saveCards] count=2
+[2026-06-20T02:19:05.371Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"group","title":"My Group","body":""} | OUTPUT: {"id":"i93396lv","workspaceId":"ws-1","type":"group","title":"My Group","body":"","createdAt":1781921945371,"tags":[]}
+[2026-06-20T02:19:05.371Z] [MemoryCardRepository.saveCard] cardId=i93396lv
+[2026-06-20T02:19:05.372Z] [MemoryCardRepository.saveCard] cardId=7gaeel0h
+[2026-06-20T02:19:05.372Z] [MemoryCardRepository.saveCard] cardId=clqev95q
+[2026-06-20T02:19:05.372Z] [MemoryCardRepository.getCard] cardId=7gaeel0h -> found=true
+[2026-06-20T02:19:05.372Z] [MemoryCardRepository.getCard] cardId=clqev95q -> found=true
+[2026-06-20T02:19:05.373Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"source","title":"S","body":"One. Two. Three things here."} | OUTPUT: {"id":"02691b6j","workspaceId":"ws-1","type":"source","title":"S","body":"One. Two. Three things here.","createdAt":1781921945373,"tags":[]}
+[2026-06-20T02:19:05.373Z] [MemoryCardRepository.saveCard] cardId=02691b6j
+[2026-06-20T02:19:05.373Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"S · 1","body":"Three things here.","sourceRef":"02691b6j"} | OUTPUT: {"id":"n48hwhh9","workspaceId":"ws-1","type":"chunk","title":"S · 1","body":"Three things here.","createdAt":1781921945373,"tags":[],"sourceRef":"02691b6j"}
+[2026-06-20T02:19:05.373Z] [chunkCard] INPUT: cardId=02691b6j | OUTPUT: generated 1 chunks
+[2026-06-20T02:19:05.373Z] [MemoryCardRepository.saveCards] count=1
+[2026-06-20T02:19:05.373Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"group","title":"chunk","body":""} | OUTPUT: {"id":"xrkkexft","workspaceId":"ws-1","type":"group","title":"chunk","body":"","createdAt":1781921945373,"tags":[]}
+[2026-06-20T02:19:05.373Z] [MemoryCardRepository.saveCard] cardId=xrkkexft
+[2026-06-20T02:19:05.373Z] [MemoryCardRepository.saveCard] cardId=n48hwhh9
+[2026-06-20T02:19:05.373Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=ws-1 -> returned 3 cards
+[2026-06-20T02:19:05.374Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"A","body":"a"} | OUTPUT: {"id":"aikz9iho","workspaceId":"ws-1","type":"chunk","title":"A","body":"a","createdAt":1781921945374,"tags":[]}
+[2026-06-20T02:19:05.374Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"group","title":"explain-simply","body":""} | OUTPUT: {"id":"vd25s9x4","workspaceId":"ws-1","type":"group","title":"explain-simply","body":"","createdAt":1781921945374,"tags":[]}
+[2026-06-20T02:19:05.374Z] [MemoryCardRepository.saveCard] cardId=vd25s9x4
+[2026-06-20T02:19:05.375Z] [MemoryCardRepository.saveCard] cardId=aikz9iho
+[2026-06-20T02:19:05.375Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"source","title":"S","body":"One. Two."} | OUTPUT: {"id":"fyid4d6q","workspaceId":"ws-1","type":"source","title":"S","body":"One. Two.","createdAt":1781921945375,"tags":[]}
+[2026-06-20T02:19:05.375Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"S · 1","body":"One. Two.","sourceRef":"fyid4d6q"} | OUTPUT: {"id":"nkjjspl3","workspaceId":"ws-1","type":"chunk","title":"S · 1","body":"One. Two.","createdAt":1781921945375,"tags":[],"sourceRef":"fyid4d6q"}
+[2026-06-20T02:19:05.375Z] [chunkCard] INPUT: cardId=fyid4d6q | OUTPUT: generated 1 chunks
+[2026-06-20T02:19:05.375Z] [MemoryCardRepository.saveCards] count=1
+[2026-06-20T02:19:05.375Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=ws-1 -> returned 1 cards
+[2026-06-20T02:19:05.376Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"source","title":"example.com","body":"https://example.com","cite":"user source","parentId":"g-current"} | OUTPUT: {"id":"fskpbidf","workspaceId":"ws-1","type":"source","title":"example.com","body":"https://example.com","createdAt":1781921945376,"tags":[],"parentId":"g-current","cite":"user source"}
+[2026-06-20T02:19:05.376Z] [MemoryCardRepository.saveCard] cardId=fskpbidf
+[2026-06-20T02:19:05.376Z] [createCard] INPUTS: params={"id":"g","workspaceId":"ws-1","type":"group","title":"G","body":""} | OUTPUT: {"id":"g","workspaceId":"ws-1","type":"group","title":"G","body":"","createdAt":1781921945376,"tags":[]}
+[2026-06-20T02:19:05.376Z] [createCard] INPUTS: params={"workspaceId":"ws-1","type":"chunk","title":"C","body":"x","parentId":"g"} | OUTPUT: {"id":"4ar22pgz","workspaceId":"ws-1","type":"chunk","title":"C","body":"x","createdAt":1781921945376,"tags":[],"parentId":"g"}
+[2026-06-20T02:19:05.376Z] [MemoryCardRepository.saveCards] count=2
+[2026-06-20T02:19:05.377Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=ws-1 -> returned 2 cards
+[2026-06-20T02:19:05.377Z] [MemoryCardRepository.saveCard] cardId=4ar22pgz
+[2026-06-20T02:19:05.377Z] [MemoryCardRepository.deleteCard] cardId=g
+[2026-06-20T02:19:05.377Z] [MemoryCardRepository.getCard] cardId=g -> found=false
+[2026-06-20T02:19:05.377Z] [MemoryCardRepository.getCard] cardId=4ar22pgz -> found=true
+[2026-06-20T02:19:05.381Z] [createCommandDefinition] OUTPUT: {"id":"wdy6d1ti","name":"explain-simply","description":"ELI5","kind":"agent","systemPrompt":"(23 chars)","createdAt":1781921945381}
+[2026-06-20T02:19:05.382Z] [createCommandDefinition] OUTPUT: {"id":"7gp6mvfz","name":"explain","description":"Custom agent command","kind":"agent","systemPrompt":"(1 chars)","createdAt":1781921945382}
+[2026-06-20T02:19:05.383Z] [createCommandDefinition] OUTPUT: {"id":"4kl1xryw","name":"explain","description":"Custom agent command","kind":"agent","systemPrompt":"(1 chars)","createdAt":1781921945383}
+[2026-06-20T02:19:05.384Z] [createCard] INPUTS: params={"workspaceId":"w","type":"chunk","title":"T","body":"B","cite":"photosynthesis","parentId":"g1"} | OUTPUT: {"id":"txx0ap41","workspaceId":"w","type":"chunk","title":"T","body":"B","createdAt":1781921945384,"tags":[],"parentId":"g1","cite":"photosynthesis"}
+[2026-06-20T02:19:05.385Z] [MemoryCardRepository.saveCards] count=1
+[2026-06-20T02:19:05.385Z] [MemoryCardRepository.getCardsByWorkspace] workspaceId=w -> returned 1 cards

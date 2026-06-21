@@ -32,6 +32,8 @@ export interface CommandContext {
   model: string;
   /** System prompt for agent-backed commands. */
   systemPrompt: string;
+  /** System prompt for chunking commands. */
+  chunkSystemPrompt: string;
 }
 
 /**

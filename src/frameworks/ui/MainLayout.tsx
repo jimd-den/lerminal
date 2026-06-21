@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppState, LearnimalController } from "../../adapters/presenters/LearnimalController";
 import { useControllerState } from "./useControllerState";
+import Markdown from "react-native-markdown-display";
 
 // Accent and card type color definitions conforming to prototype specs
 const ACCENTS = {
@@ -64,6 +65,7 @@ const THEMES = {
 const COMMANDS_INFO = {
   ask: { dot: CARD_COLORS.chunk, desc: "Ask the agent · returns chunked cards" },
   source: { dot: CARD_COLORS.source, desc: "Bring in text or a link" },
+  search: { dot: CARD_COLORS.source, desc: "Search the web for links and text" },
   chunk: { dot: CARD_COLORS.chunk, desc: "Split into atomic cards" },
   recall: { dot: CARD_COLORS.question, desc: "Make active-recall questions" },
   space: { dot: CARD_COLORS.due, desc: "Schedule with spaced repetition" },
@@ -73,22 +75,21 @@ const COMMANDS_INFO = {
   ungroup: { dot: CARD_COLORS.group, desc: "Dissolve a group, freeing its cards" },
 };
 
-const DEFAULT_SYSTEM_PROMPT = `You generate atomic learning cards. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
-- "title": string (max 6 words, representing the atomic concept)
-- "body": string (1-2 clear, simple sentences explaining the concept)
+const DEFAULT_SYSTEM_PROMPT = `You answer questions directly. Respond ONLY with a valid JSON array containing EXACTLY ONE object (no prose, no markdown code block formatting). The object must have:
+- "title": string (max 6 words, representing the topic)
+- "body": string (a direct, clear answer to the user's query)
+
+Your response must be a single card.`;
+
+const DEFAULT_CHUNK_SYSTEM_PROMPT = `You break down text into memorable, sequenced atomic learning cards that are detailed. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
+- "title": string (max 6 words, representing the concept)
+- "body": string (a detailed, memorable explanation clearly sequenced for learning)
 
 Each card must be a distinct, recall-ready idea.`;
 
 
 
-const ONBOARDING_QUESTIONS = [
-  { eyebrow: "API Key", q: "What is your OpenRouter API Key?", ph: "sk-or-... (optional, press Continue to skip)" },
-  { eyebrow: "AI Model", q: "Which model would you like to use?", ph: "" },
-  { eyebrow: "New workspace", q: "What do you want to learn?", ph: "e.g. linear algebra" },
-  { eyebrow: "The why", q: "Why?", ph: "what's it for?" },
-  { eyebrow: "The goal", q: "What do you want to do with it?", ph: "the thing you're aiming at" },
-  { eyebrow: "The gap", q: "What will you need to learn first?", ph: "where to start" },
-];
+
 
 interface MainLayoutProps {
   controller: LearnimalController;
@@ -106,9 +107,9 @@ export function MainLayout({ controller }: MainLayoutProps) {
   const [sheetInput, setSheetInput] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState(state.openRouterKey);
   const [modelInput, setModelInput] = useState(state.selectedModel);
-  const [onboardingInput, setOnboardingInput] = useState("");
   const [cardVeilRevealed, setCardVeilRevealed] = useState<Record<string, boolean>>({});
   const [systemPromptInput, setSystemPromptInput] = useState(state.customSystemPrompt);
+  const [chunkSystemPromptInput, setChunkSystemPromptInput] = useState(state.customChunkSystemPrompt);
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
 
   // Custom command creation sheet state
@@ -116,6 +117,8 @@ export function MainLayout({ controller }: MainLayoutProps) {
   const [newCmdName, setNewCmdName] = useState("");
   const [newCmdDesc, setNewCmdDesc] = useState("");
   const [newCmdPrompt, setNewCmdPrompt] = useState("");
+  const [newFlagName, setNewFlagName] = useState("");
+  const [newFlagDomain, setNewFlagDomain] = useState("");
 
   const openCreateCommand = () => {
     setNewCmdName("");
@@ -160,12 +163,16 @@ export function MainLayout({ controller }: MainLayoutProps) {
     setSystemPromptInput(state.customSystemPrompt);
   }, [state.customSystemPrompt]);
 
+  React.useEffect(() => {
+    setChunkSystemPromptInput(state.customChunkSystemPrompt);
+  }, [state.customChunkSystemPrompt]);
+
   const activeWs = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
   const dueCount = state.cards.filter(
     (c) => c.type === "question" && c.schedule && c.schedule.dueAt <= Date.now()
   ).length;
 
-  const currentOnboardingQ = ONBOARDING_QUESTIONS[state.onboardingStep];
+
 
   const activeModel = state.availableModels.find((m) => m.id === state.selectedModel);
   const selectedModelName = activeModel ? activeModel.name : `Custom: ${state.selectedModel}`;
@@ -188,11 +195,6 @@ export function MainLayout({ controller }: MainLayoutProps) {
     setSheetInput("");
   };
 
-  const handleOnboardingSubmit = () => {
-    if (!onboardingInput.trim() && state.onboardingStep !== 0) return;
-    controller.answerOnboardingQuestion(onboardingInput);
-    setOnboardingInput("");
-  };
 
   return (
     <View style={[styles.outerContainer, { backgroundColor: colors.bg }]}>
@@ -219,6 +221,20 @@ export function MainLayout({ controller }: MainLayoutProps) {
               <Text style={{ color: colors.muted, fontSize: 18 }}>⚙</Text>
             </TouchableOpacity>
           </View>
+
+          {!state.openRouterKey && (
+            <TouchableOpacity 
+              style={{ backgroundColor: 'rgba(232, 130, 155, 0.1)', padding: 12, marginHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#E8829B', flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}
+              onPress={() => controller.setSettingsSheetOpen(true)}
+            >
+              <Text style={{ fontSize: 16, marginRight: 8 }}>⚠️</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontWeight: 'bold', fontSize: 13, marginBottom: 2 }}>Missing API Key</Text>
+                <Text style={{ color: colors.faint, fontSize: 12 }}>Tap here to configure your OpenRouter key to enable AI features.</Text>
+              </View>
+              <Text style={{ color: '#E8829B', fontWeight: 'bold' }}>→</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Breadcrumb trail (drill-in navigation) */}
           {state.breadcrumb.length > 0 && (
@@ -715,7 +731,37 @@ export function MainLayout({ controller }: MainLayoutProps) {
                   </View>
                 ) : (
                   <View>
-                    <Text style={[styles.fullCardText, { color: colors.text }]}>{card.body}</Text>
+                    <Markdown
+                      style={{
+                        body: { color: colors.text, fontSize: 16, lineHeight: 24 },
+                        heading1: { fontSize: 24, fontWeight: "bold", color: colors.text, marginVertical: 10 },
+                        heading2: { fontSize: 20, fontWeight: "bold", color: colors.text, marginVertical: 8 },
+                        heading3: { fontSize: 18, fontWeight: "bold", color: colors.text, marginVertical: 6 },
+                        link: { color: accent.primary, textDecorationLine: "none", fontWeight: "bold" },
+                        code_inline: { backgroundColor: colors.surface2, color: accent.primary, borderRadius: 4 },
+                        code_block: { backgroundColor: colors.surface2, color: colors.text, padding: 12, borderRadius: 8 },
+                        list_item: { marginVertical: 4 }
+                      }}
+                      rules={{
+                        // Override the default image rule to completely bypass FitImage
+                        // This prevents React 18 "key being spread" warnings and RN layout errors
+                        image: () => null
+                      }}
+                      onLinkPress={(url) => {
+                        let absoluteUrl = url;
+                        try {
+                          // Resolve relative paths against the card's original URL (stored in cite)
+                          absoluteUrl = new URL(url, card.cite || "https://en.wikipedia.org").toString();
+                        } catch (e) {
+                          console.warn("Failed to resolve URL:", url);
+                        }
+
+                        controller.extractUrlToCard(absoluteUrl, absoluteUrl, card.parentId ?? undefined, card.id);
+                        return false; // prevent default browser open
+                      }}
+                    >
+                      {card.body}
+                    </Markdown>
                     {card.cite && (
                       <View style={[styles.citeBox, { backgroundColor: accent.soft, borderColor: accent.line }]}>
                         <Text style={[styles.citeText, { color: accent.primary }]}>◆ {card.cite}</Text>
@@ -867,7 +913,12 @@ export function MainLayout({ controller }: MainLayoutProps) {
       >
         <View style={styles.scrim}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => controller.setWorkspaceSheetOpen(false)} />
-          <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, width: "100%" }}
+            pointerEvents="box-none"
+          >
+            <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
             <View style={[styles.sheetGrab, { backgroundColor: colors.line }]} />
             <Text style={[styles.sheetTitle, { color: colors.text }]}>Workspaces</Text>
             <Text style={[styles.sheetSub, { color: colors.muted }]}>Each holds the cards for one goal.</Text>
@@ -921,6 +972,7 @@ export function MainLayout({ controller }: MainLayoutProps) {
               )}
             </ScrollView>
           </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -933,7 +985,12 @@ export function MainLayout({ controller }: MainLayoutProps) {
       >
         <View style={styles.scrim}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => controller.setSettingsSheetOpen(false)} />
-          <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, width: "100%" }}
+            pointerEvents="box-none"
+          >
+            <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
             <View style={[styles.sheetGrab, { backgroundColor: colors.line }]} />
             <Text style={[styles.sheetTitle, { color: colors.text }]}>Make it yours</Text>
             <Text style={[styles.sheetSub, { color: colors.muted }]}>Calm by default. Tune to taste.</Text>
@@ -1013,7 +1070,18 @@ export function MainLayout({ controller }: MainLayoutProps) {
                   }}
                 />
 
-                <Text style={[styles.sectionLabel, { color: colors.muted, marginTop: 12 }]}>Model Selection</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 8 }}>
+                  <Text style={[styles.sectionLabel, { color: colors.muted, marginTop: 0 }]}>Model Selection</Text>
+                  <TouchableOpacity
+                    style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }}
+                    onPress={() => controller.loadAvailableModels()}
+                    disabled={state.isLoadingModels}
+                  >
+                    <Text style={{ color: state.isLoadingModels ? colors.faint : accent.primary, fontSize: 12, fontWeight: "500" }}>
+                      {state.isLoadingModels ? "Loading..." : "Fetch Models"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
                 
                 {/* Custom Model Selector Dropdown */}
                 <TouchableOpacity
@@ -1151,20 +1219,92 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 </TouchableOpacity>
               </View>
 
-              {/* Onboarding Restart option */}
-              <TouchableOpacity
-                style={styles.onbRestartBtn}
-                onPress={() => {
-                  controller.setSettingsSheetOpen(false);
-                  controller.restartOnboarding();
-                }}
-              >
-                <Text style={{ color: accent.primary, fontSize: 14, fontWeight: "600" }}>
-                  Restart onboarding questionnaire ➔
+              {/* Chunk System Prompt Customization */}
+              <View style={styles.formSection}>
+                <Text style={[styles.sectionLabel, { color: colors.muted, marginTop: 12 }]}>Chunk System Prompt</Text>
+                <View style={[styles.systemPromptBox, { backgroundColor: colors.surface, borderColor: colors.line }]}>
+                  <TextInput
+                    style={[styles.systemPromptInput, { color: colors.text }]}
+                    multiline={true}
+                    numberOfLines={5}
+                    placeholder="Custom instructions for chunk generation..."
+                    placeholderTextColor={colors.faint}
+                    value={chunkSystemPromptInput}
+                    onChangeText={(val) => {
+                      setChunkSystemPromptInput(val);
+                      controller.setCustomChunkSystemPrompt(val);
+                    }}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={{ marginTop: 6, alignSelf: "flex-end" }}
+                  onPress={() => {
+                    setChunkSystemPromptInput(DEFAULT_CHUNK_SYSTEM_PROMPT);
+                    controller.setCustomChunkSystemPrompt(DEFAULT_CHUNK_SYSTEM_PROMPT);
+                  }}
+                >
+                  <Text style={{ color: accent.primary, fontSize: 12 }}>Reset to default</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Search Preset Flags */}
+              <View style={styles.formSection}>
+                <Text style={[styles.sectionLabel, { color: colors.muted, marginTop: 12 }]}>Search Site Flags</Text>
+                <Text style={[styles.sheetSub, { color: colors.faint, marginBottom: 8, fontSize: 13 }]}>
+                  Map custom flags like "--wiki" to specific domains for the search command.
                 </Text>
-              </TouchableOpacity>
+                {Object.entries(state.searchSiteFlags || {}).map(([flag, domain]) => (
+                  <View key={flag} style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                    <Text style={{ color: colors.text, flex: 1, fontFamily: "monospace" }}>--{flag}</Text>
+                    <Text style={{ color: colors.muted, flex: 2 }} numberOfLines={1} ellipsizeMode="middle">{domain}</Text>
+                    <TouchableOpacity
+                      style={{ padding: 4 }}
+                      onPress={() => {
+                        const newFlags = { ...state.searchSiteFlags };
+                        delete newFlags[flag];
+                        controller.updateSearchSiteFlags(newFlags);
+                      }}
+                    >
+                      <Text style={{ color: "#ef4444", fontSize: 20, fontWeight: "bold" }}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                
+                {/* Add new flag row */}
+                <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
+                  <TextInput
+                    style={[styles.formInput, { flex: 1, marginRight: 8, color: colors.text, borderColor: colors.line, backgroundColor: colors.surface }]}
+                    placeholder="flag (e.g. wiki)"
+                    placeholderTextColor={colors.faint}
+                    value={newFlagName}
+                    onChangeText={setNewFlagName}
+                  />
+                  <TextInput
+                    style={[styles.formInput, { flex: 2, marginRight: 8, color: colors.text, borderColor: colors.line, backgroundColor: colors.surface }]}
+                    placeholder="domain (e.g. wikipedia.org)"
+                    placeholderTextColor={colors.faint}
+                    value={newFlagDomain}
+                    onChangeText={setNewFlagDomain}
+                  />
+                  <TouchableOpacity
+                    style={{ backgroundColor: accent.primary, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 6 }}
+                    onPress={() => {
+                      if (newFlagName.trim() && newFlagDomain.trim()) {
+                        const newFlags = { ...state.searchSiteFlags, [newFlagName.trim().replace(/^--/, "")]: newFlagDomain.trim() };
+                        controller.updateSearchSiteFlags(newFlags);
+                        setNewFlagName("");
+                        setNewFlagDomain("");
+                      }
+                    }}
+                  >
+                    <Text style={{ color: "#fff", fontWeight: "bold" }}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
             </ScrollView>
           </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1177,7 +1317,12 @@ export function MainLayout({ controller }: MainLayoutProps) {
       >
         <View style={styles.scrim}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => controller.setInputSheetOpen(false)} />
-          <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={{ flex: 1, width: "100%" }}
+            pointerEvents="box-none"
+          >
+            <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
             <View style={[styles.sheetGrab, { backgroundColor: colors.line }]} />
             
             <Text style={[styles.sheetTitle, { color: colors.text }]}>
@@ -1192,6 +1337,42 @@ export function MainLayout({ controller }: MainLayoutProps) {
                 ? "What do you want chunked into cards?"
                 : "Paste raw text or a link. It becomes a source card."}
             </Text>
+
+            {/* PRESET FLAGS FOR SEARCH */}
+            {state.pendingCommandName === "search" && Object.keys(state.searchSiteFlags || {}).length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: 18, marginBottom: 12, maxHeight: 32 }}>
+                {Object.keys(state.searchSiteFlags || {}).map(flag => {
+                  const flagStr = `--${flag}`;
+                  const isActive = sheetInput.includes(flagStr);
+                  return (
+                    <TouchableOpacity
+                      key={flag}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 16,
+                        borderWidth: 1,
+                        borderColor: isActive ? accent.primary : colors.line,
+                        backgroundColor: isActive ? accent.primary + "20" : colors.surface,
+                        marginRight: 8,
+                        justifyContent: "center"
+                      }}
+                      onPress={() => {
+                        if (isActive) {
+                          setSheetInput(sheetInput.replace(new RegExp(`\\s*${flagStr}\\b`, "g"), ""));
+                        } else {
+                          setSheetInput(sheetInput ? `${sheetInput} ${flagStr}` : flagStr);
+                        }
+                      }}
+                    >
+                      <Text style={{ color: isActive ? accent.primary : colors.muted, fontSize: 13, fontWeight: "500" }}>
+                        {flagStr}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
 
             <View style={[styles.inputBoxField, { backgroundColor: colors.surface, borderColor: colors.line }]}>
               <TextInput
@@ -1216,6 +1397,7 @@ export function MainLayout({ controller }: MainLayoutProps) {
               <Text style={styles.sheetPrimaryBtnText}>Add</Text>
             </TouchableOpacity>
           </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -1236,6 +1418,7 @@ export function MainLayout({ controller }: MainLayoutProps) {
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             style={{ flex: 1, width: "100%" }}
+            pointerEvents="box-none"
           >
             <View style={[styles.bottomSheet, { backgroundColor: colors.surface2, borderTopColor: colors.line }]}>
               <View style={[styles.sheetGrab, { backgroundColor: colors.line }]} />
@@ -1290,94 +1473,6 @@ export function MainLayout({ controller }: MainLayoutProps) {
             </View>
           </KeyboardAvoidingView>
         </View>
-      </Modal>
-
-      {/* ONBOARDING QUESTIONNAIRE SCREEN */}
-      <Modal visible={state.isOnboardingOpen} animationType="slide">
-        <SafeAreaView style={[styles.onbContainer, { backgroundColor: colors.bg }]}>
-          <View style={styles.onbPipsRow}>
-            {ONBOARDING_QUESTIONS.map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.onbPip,
-                  { backgroundColor: colors.line },
-                  i <= state.onboardingStep && { backgroundColor: accent.primary },
-                ]}
-              />
-            ))}
-          </View>
-
-          <View style={styles.onbBody}>
-            <Text style={[styles.onbEyebrow, { color: accent.primary }]}>{currentOnboardingQ.eyebrow}</Text>
-            <Text style={[styles.onbQuestionText, { color: colors.text }]}>{currentOnboardingQ.q}</Text>
-            
-            {state.onboardingStep === 1 ? (
-              <ScrollView style={{ maxHeight: 240, width: '100%', marginTop: 12, borderRadius: 8, backgroundColor: colors.surface }}>
-                {state.isLoadingModels ? (
-                  <ActivityIndicator style={{ padding: 20 }} color={accent.primary} />
-                ) : (
-                  <View>
-                    <Text style={{ color: colors.muted, padding: 8, fontSize: 12, fontWeight: 'bold' }}>Free Models</Text>
-                    {freeModels.map(m => {
-                      const defaultModel = freeModels[0]?.id || state.availableModels[0]?.id;
-                      const isSelected = onboardingInput === m.id || (!onboardingInput && state.selectedModel === m.id) || (!onboardingInput && !state.selectedModel && m.id === defaultModel);
-                      return (
-                        <TouchableOpacity
-                          key={m.id}
-                          style={{ padding: 12, backgroundColor: isSelected ? colors.raised : 'transparent', borderBottomWidth: 1, borderBottomColor: colors.line }}
-                          onPress={() => setOnboardingInput(m.id)}
-                        >
-                          <Text style={{ color: isSelected ? accent.primary : colors.text }}>{m.name}</Text>
-                        </TouchableOpacity>
-                      )
-                    })}
-                    {paidModels.length > 0 && <Text style={{ color: colors.muted, padding: 8, fontSize: 12, fontWeight: 'bold' }}>Paid Models</Text>}
-                    {paidModels.map(m => {
-                      const defaultModel = freeModels[0]?.id || state.availableModels[0]?.id;
-                      const isSelected = onboardingInput === m.id || (!onboardingInput && state.selectedModel === m.id) || (!onboardingInput && !state.selectedModel && m.id === defaultModel);
-                      return (
-                        <TouchableOpacity
-                          key={m.id}
-                          style={{ padding: 12, backgroundColor: isSelected ? colors.raised : 'transparent', borderBottomWidth: 1, borderBottomColor: colors.line }}
-                          onPress={() => setOnboardingInput(m.id)}
-                        >
-                          <Text style={{ color: isSelected ? accent.primary : colors.text }}>{m.name}</Text>
-                        </TouchableOpacity>
-                      )
-                    })}
-                  </View>
-                )}
-              </ScrollView>
-            ) : (
-              <TextInput
-                style={[styles.onbInput, { color: colors.text, borderColor: colors.line }]}
-                placeholder={currentOnboardingQ.ph}
-                placeholderTextColor={colors.faint}
-                value={onboardingInput}
-                onChangeText={setOnboardingInput}
-                onSubmitEditing={() => handleOnboardingSubmit()}
-                autoFocus={true}
-                secureTextEntry={state.onboardingStep === 0}
-              />
-            )}
-          </View>
-
-          <View style={styles.onbFooter}>
-            <TouchableOpacity
-              style={[styles.onbNextBtn, { backgroundColor: accent.primary }]}
-              onPress={() => handleOnboardingSubmit()}
-            >
-              <Text style={styles.onbNextBtnText}>
-                {state.onboardingStep === ONBOARDING_QUESTIONS.length - 1 ? "Build my workspace" : "Continue"}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.onbSkipBtn} onPress={() => controller.skipOnboarding()}>
-              <Text style={{ color: colors.faint, fontSize: 13 }}>Skip for now</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
       </Modal>
 
       {/* TOAST MESSAGE ELEMENT */}

@@ -44,11 +44,11 @@ export class OpenRouterAgentGateway implements AgentGateway {
       .join("\n\n")
       .substring(0, 3000); // Restrict length for token budgets
 
-    const defaultSystemPrompt = `You generate atomic learning cards. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
-- "title": string (max 6 words, representing the atomic concept)
-- "body": string (1-2 clear, simple sentences explaining the concept)
+    const defaultSystemPrompt = `You answer questions directly. Respond ONLY with a valid JSON array containing EXACTLY ONE object (no prose, no markdown code block formatting). The object must have:
+- "title": string (max 6 words, representing the topic)
+- "body": string (a direct, clear answer to the user's query)
 
-Each card must be a distinct, recall-ready idea.`;
+Your response must be a single card.`;
 
     let activeSystemPrompt = systemPrompt || defaultSystemPrompt;
 
@@ -151,8 +151,10 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       }
 
       const models: AgentModel[] = json.data.map((m: any) => {
-        const isFree = m.id.endsWith(":free") || 
-          (m.pricing && parseFloat(m.pricing.prompt) === 0 && parseFloat(m.pricing.completion) === 0);
+        const isFree = Boolean(
+          m.id.endsWith(":free") || 
+          (m.pricing && parseFloat(m.pricing.prompt) === 0 && parseFloat(m.pricing.completion) === 0)
+        );
         return {
           id: m.id,
           name: m.name || m.id,
@@ -163,7 +165,7 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       console.log(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Retrieved ${models.length} models dynamically`);
       return models;
     } catch (err: any) {
-      console.error(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Error: ${err.message}. Falling back to default list.`);
+      console.warn(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Warning: ${err.message}. Falling back to default list.`);
       return [
         { id: "google/gemini-2.5-flash:free", name: "Gemini 2.5 Flash (Free)", free: true },
         { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B (Free)", free: true },

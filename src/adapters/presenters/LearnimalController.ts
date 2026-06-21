@@ -33,15 +33,20 @@ import { GradeReviewInteractor } from "../../usecases/review/GradeReviewInteract
 import { CreateWorkspaceInteractor } from "../../usecases/workspace/CreateWorkspaceInteractor";
 import { SwitchWorkspaceInteractor } from "../../usecases/workspace/SwitchWorkspaceInteractor";
 import { DeleteWorkspaceInteractor } from "../../usecases/workspace/DeleteWorkspaceInteractor";
-import { RestartOnboardingInteractor } from "../../usecases/onboarding/RestartOnboardingInteractor";
-import { CompleteOnboardingInteractor } from "../../usecases/onboarding/CompleteOnboardingInteractor";
+
 import { SaveSettingsInteractor } from "../../usecases/settings/SaveSettingsInteractor";
 import { LoadModelsInteractor } from "../../usecases/models/LoadModelsInteractor";
 import { ExtractUrlInteractor } from "../../usecases/card/ExtractUrlInteractor";
 
-const DEFAULT_SYSTEM_PROMPT = `You generate atomic learning cards. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
-- "title": string (max 6 words, representing the atomic concept)
-- "body": string (1-2 clear, simple sentences explaining the concept)
+export const DEFAULT_SYSTEM_PROMPT = `You answer questions directly. Respond ONLY with a valid JSON array containing EXACTLY ONE object (no prose, no markdown code block formatting). The object must have:
+- "title": string (max 6 words, representing the topic)
+- "body": string (a direct, clear answer to the user's query)
+
+Your response must be a single card.`;
+
+export const DEFAULT_CHUNK_SYSTEM_PROMPT = `You break down text into memorable, sequenced atomic learning cards that are detailed. Respond ONLY with a valid JSON array of objects (no prose, no markdown code block formatting). Each object must have:
+- "title": string (max 6 words, representing the concept)
+- "body": string (a detailed, memorable explanation clearly sequenced for learning)
 
 Each card must be a distinct, recall-ready idea.`;
 
@@ -89,7 +94,6 @@ export interface AppState {
   commandDefinitions: CommandDefinition[];
   /** Command awaiting input in the input sheet (so submit re-runs the right one). */
   pendingCommandName: string;
-  onboarded: boolean;
   openCardId: string | null;
   reviewQueue: Card[];
   reviewIndex: number;
@@ -101,16 +105,15 @@ export interface AppState {
   isSettingsSheetOpen: boolean;
   isInputSheetOpen: boolean;
   inputSheetMode: "source" | "ask";
-  onboardingStep: number;
-  onboardingAnswers: string[];
-  isOnboardingOpen: boolean;
   toastMessage: string;
   openRouterKey: string;
   selectedModel: string;
   customSystemPrompt: string;
+  customChunkSystemPrompt: string;
   availableModels: AgentModel[];
   isLoadingModels: boolean;
   pendingOperations: PendingOperation[];
+  searchSiteFlags: Record<string, string>;
 }
 
 /** Business/domain state: persisted or derivable data, free of UI concerns. */
@@ -120,6 +123,7 @@ interface DomainState {
   openRouterKey: string;
   selectedModel: string;
   customSystemPrompt: string;
+  customChunkSystemPrompt: string;
   availableModels: AgentModel[];
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
@@ -129,11 +133,9 @@ interface DomainState {
   pinnedCommands: string[];
   autoGroupByCommand: boolean;
   commandDefinitions: CommandDefinition[];
-  onboarded: boolean;
-  onboardingStep: number;
-  onboardingAnswers: string[];
   reviewQueue: Card[];
   reviewIndex: number;
+  searchSiteFlags: Record<string, string>;
 }
 
 /** Ephemeral presentation state: open sheets, toasts, and transient toggles. */
@@ -148,7 +150,6 @@ interface UiState {
   isInputSheetOpen: boolean;
   inputSheetMode: "source" | "ask";
   pendingCommandName: string;
-  isOnboardingOpen: boolean;
   toastMessage: string;
   isLoadingModels: boolean;
   pendingOperations: PendingOperation[];
@@ -187,14 +188,13 @@ export class LearnimalController {
   private createWorkspaceInteractor: CreateWorkspaceInteractor;
   private switchWorkspaceInteractor: SwitchWorkspaceInteractor;
   private deleteWorkspaceInteractor: DeleteWorkspaceInteractor;
-  private restartOnboardingInteractor: RestartOnboardingInteractor;
-  private completeOnboardingInteractor: CompleteOnboardingInteractor;
   private saveSettingsInteractor: SaveSettingsInteractor;
   private loadModelsInteractor: LoadModelsInteractor;
   private createCommandDefinitionInteractor: CreateCommandDefinitionInteractor;
   private deleteCommandDefinitionInteractor: DeleteCommandDefinitionInteractor;
   private deleteCardInteractor: DeleteCardInteractor;
   private extractUrlInteractor: ExtractUrlInteractor;
+  private groupCardsInteractor: GroupCardsInteractor;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
   private builtinCommands: PipelineCommand[];
@@ -212,19 +212,19 @@ export class LearnimalController {
 
     // Compose built-in pipeline commands from the injected ports. Custom commands
     // are layered on top by rebuildPipeline() once their definitions are loaded.
-    const groupCardsInteractor = new GroupCardsInteractor(deps.cardRepo);
+    this.groupCardsInteractor = new GroupCardsInteractor(deps.cardRepo);
     this.builtinCommands = [
       new AskCommand(deps.agentGateway, deps.cardRepo),
       new SourceCommand(deps.cardRepo),
-      new ChunkCommand(deps.cardRepo),
+      new ChunkCommand(deps.agentGateway, deps.cardRepo),
       new RecallCommand(deps.cardRepo),
       new SpaceCommand(deps.cardRepo),
       new MoveCommand(deps.cardRepo),
       new ReviewCommand(),
-      new GroupCommand(groupCardsInteractor),
+      new GroupCommand(this.groupCardsInteractor),
       new UngroupCommand(deps.cardRepo),
       new DeleteCommand(deps.cardRepo),
-      new SearchCommand(deps.searchGateway, deps.cardRepo),
+      new SearchCommand(deps.searchGateway, deps.cardRepo, deps.settingsRepo),
     ];
     this.pipeline = new PipelineRunner(this.builtinCommands);
 
@@ -236,12 +236,6 @@ export class LearnimalController {
     this.createWorkspaceInteractor = new CreateWorkspaceInteractor(deps.workspaceRepo);
     this.switchWorkspaceInteractor = new SwitchWorkspaceInteractor(deps.cardRepo);
     this.deleteWorkspaceInteractor = new DeleteWorkspaceInteractor(deps.workspaceRepo, deps.cardRepo);
-    this.restartOnboardingInteractor = new RestartOnboardingInteractor(deps.workspaceRepo, deps.cardRepo);
-    this.completeOnboardingInteractor = new CompleteOnboardingInteractor(
-      deps.workspaceRepo,
-      deps.cardRepo,
-      deps.settingsRepo
-    );
     this.saveSettingsInteractor = new SaveSettingsInteractor(deps.settingsRepo);
     this.loadModelsInteractor = new LoadModelsInteractor(deps.agentGateway);
     this.extractUrlInteractor = new ExtractUrlInteractor(deps.extractionGateway, deps.cardRepo);
@@ -252,20 +246,22 @@ export class LearnimalController {
       openRouterKey: "",
       selectedModel: DEFAULT_MODELS[0]?.id || "",
       customSystemPrompt: DEFAULT_SYSTEM_PROMPT,
+      customChunkSystemPrompt: DEFAULT_CHUNK_SYSTEM_PROMPT,
       availableModels: [...DEFAULT_MODELS],
       workspaces: [],
       activeWorkspaceId: null,
       cards: [],
       currentGroupId: null,
       selection: new Set(),
-      pinnedCommands: ["ask", "chunk", "recall", "space", "review"],
+      pinnedCommands: ["ask", "search", "chunk", "recall", "space", "review"],
       autoGroupByCommand: true,
       commandDefinitions: [],
-      onboarded: false,
-      onboardingStep: 0,
-      onboardingAnswers: [],
       reviewQueue: [],
       reviewIndex: 0,
+      searchSiteFlags: {
+        "wiki": "wikipedia.org",
+        "nature": "nature.com"
+      },
     };
 
     this.ui = {
@@ -279,7 +275,6 @@ export class LearnimalController {
       isInputSheetOpen: false,
       inputSheetMode: "source",
       pendingCommandName: "",
-      isOnboardingOpen: true,
       toastMessage: "",
       isLoadingModels: false,
       pendingOperations: [],
@@ -301,26 +296,30 @@ export class LearnimalController {
         this.domain.openRouterKey = settings.openRouterKey || "";
         this.domain.selectedModel = settings.selectedModel || DEFAULT_MODELS[0]?.id || "";
         this.domain.customSystemPrompt = settings.customSystemPrompt || DEFAULT_SYSTEM_PROMPT;
+        this.domain.customChunkSystemPrompt = settings.customChunkSystemPrompt || DEFAULT_CHUNK_SYSTEM_PROMPT;
         this.domain.autoGroupByCommand = settings.autoGroupByCommand ?? true;
+        if (settings.searchSiteFlags) {
+          this.domain.searchSiteFlags = settings.searchSiteFlags;
+        }
       } else {
         this.domain.customSystemPrompt = DEFAULT_SYSTEM_PROMPT;
+        this.domain.customChunkSystemPrompt = DEFAULT_CHUNK_SYSTEM_PROMPT;
       }
 
       this.domain.commandDefinitions = await this.commandDefinitionRepo.getDefinitions();
       this.rebuildPipeline();
 
-      if (this.domain.workspaces.length > 0) {
-        this.domain.onboarded = true;
-        this.ui.isOnboardingOpen = false;
-        this.domain.activeWorkspaceId = this.domain.workspaces[0].id;
-        await this.loadCardsForActiveWorkspace();
+      if (this.domain.workspaces.length === 0) {
+        const defaultWs = await this.createWorkspaceInteractor.execute("My Workspace");
+        this.domain.workspaces.push(defaultWs);
+        this.domain.activeWorkspaceId = defaultWs.id;
       } else {
-        this.domain.onboarded = false;
-        this.ui.isOnboardingOpen = true;
+        this.domain.activeWorkspaceId = this.domain.workspaces[0].id;
       }
+      await this.loadCardsForActiveWorkspace();
       this.loadAvailableModels();
       this.emit();
-      console.log(`[${logTimestamp}] [LearnimalController.init] SUCCESS | onboarded=${this.domain.onboarded}`);
+      console.log(`[${logTimestamp}] [LearnimalController.init] SUCCESS`);
     } catch (err: any) {
       console.error(`[${logTimestamp}] [LearnimalController.init] ERROR: ${err.message}`);
       this.showToast("Initialization failed");
@@ -359,14 +358,12 @@ export class LearnimalController {
       autoGroupByCommand: this.domain.autoGroupByCommand,
       commandDefinitions: [...this.domain.commandDefinitions],
       pendingCommandName: this.ui.pendingCommandName,
-      onboarded: this.domain.onboarded,
       reviewQueue: [...this.domain.reviewQueue],
       reviewIndex: this.domain.reviewIndex,
-      onboardingStep: this.domain.onboardingStep,
-      onboardingAnswers: [...this.domain.onboardingAnswers],
       openRouterKey: this.domain.openRouterKey,
       selectedModel: this.domain.selectedModel,
       customSystemPrompt: this.domain.customSystemPrompt,
+      customChunkSystemPrompt: this.domain.customChunkSystemPrompt,
       availableModels: [...this.domain.availableModels],
       openCardId: this.ui.openCardId,
       isReviewOpen: this.ui.isReviewOpen,
@@ -377,102 +374,11 @@ export class LearnimalController {
       isSettingsSheetOpen: this.ui.isSettingsSheetOpen,
       isInputSheetOpen: this.ui.isInputSheetOpen,
       inputSheetMode: this.ui.inputSheetMode,
-      isOnboardingOpen: this.ui.isOnboardingOpen,
       toastMessage: this.ui.toastMessage,
       isLoadingModels: this.ui.isLoadingModels,
       pendingOperations: this.ui.pendingOperations,
+      searchSiteFlags: this.domain.searchSiteFlags,
     };
-  }
-
-  // --- Onboarding Flow ---
-
-  /**
-   * Submits an answer for the current onboarding question and advances the flow.
-   */
-  async answerOnboardingQuestion(answer: string): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    const cleanAnswer = answer.trim();
-
-    this.domain.onboardingAnswers.push(cleanAnswer);
-    const nextStep = this.domain.onboardingStep + 1;
-
-    console.log(`[${logTimestamp}] [LearnimalController.answerOnboardingQuestion] step=${this.domain.onboardingStep} -> answer="${cleanAnswer}"`);
-
-    if (nextStep >= 6) {
-      await this.finishOnboarding();
-    } else {
-      this.domain.onboardingStep = nextStep;
-      this.emit();
-    }
-  }
-
-  async skipOnboarding(): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    console.log(`[${logTimestamp}] [LearnimalController.skipOnboarding] Skipping remaining onboarding steps.`);
-
-    const defaultModel = this.domain.availableModels.find(m => m.free)?.id || this.domain.availableModels[0]?.id || "";
-    const defaults = [
-      "",                               // Step 0: API Key (default empty if not entered)
-      this.domain.selectedModel || defaultModel, // Step 1: Model
-      "My learning goal",               // Step 2: Topic
-      "curiosity",                      // Step 3: Why
-      "experiment",                     // Step 4: What to do
-      "basics",                         // Step 5: What to learn first
-    ];
-
-    for (let i = 0; i < 6; i++) {
-      if (this.domain.onboardingAnswers[i] === undefined || this.domain.onboardingAnswers[i] === "") {
-        this.domain.onboardingAnswers[i] = defaults[i];
-      }
-    }
-
-    await this.finishOnboarding();
-  }
-
-  private async finishOnboarding(): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    const answers = this.domain.onboardingAnswers;
-    const apiKey = answers[0] || "";
-    const defaultModel = this.domain.availableModels.find(m => m.free)?.id || this.domain.availableModels[0]?.id || "";
-    const selectedModel = answers[1] || defaultModel;
-    const topic = answers[2] || "My first topic";
-    const why = answers[3] || "curiosity";
-    const whatToDo = answers[4] || "experiment";
-    const firstLearn = answers[5] || answers[2];
-
-    const combinedPrompt = `Generate foundational learning cards for the following topic.\nTopic: ${topic}\nWhy I want to learn: ${why}\nWhat I want to do with it: ${whatToDo}\nWhat I want to learn first: ${firstLearn}`;
-
-    // Close onboarding immediately so the user sees the workspace being built.
-    this.domain.openRouterKey = apiKey;
-    this.domain.selectedModel = selectedModel;
-    this.domain.onboarded = true;
-    this.ui.isOnboardingOpen = false;
-    this.domain.selection.clear();
-    this.showToast(`Creating "${topic.substring(0, 22)}"…`);
-
-    try {
-      const { workspace, cards } = await this.completeOnboardingInteractor.execute({
-        topic,
-        prompt: combinedPrompt,
-        settings: this.currentSettings(),
-      });
-
-      this.domain.workspaces.push(workspace);
-      this.domain.activeWorkspaceId = workspace.id;
-      this.domain.currentGroupId = null;
-      this.domain.selection = new Set(cards.map(c => c.id));
-      await this.loadCardsForActiveWorkspace();
-
-      console.log(`[${logTimestamp}] [LearnimalController.finishOnboarding] SUCCESS | wsId=${workspace.id}`);
-      this.emit();
-
-      // Trigger async operations independently so they appear as loading cards
-      this.runPipeline(`search "${topic.replace(/"/g, '\\"')}"`);
-      this.runPipeline(`ask "${combinedPrompt.replace(/"/g, '\\"')}"`);
-    } catch (err: any) {
-      console.error(`[${logTimestamp}] [LearnimalController.finishOnboarding] ERROR: ${err.message}`);
-      this.showToast(err instanceof UseCaseError ? err.userMessage : "Onboarding setup failed");
-    }
   }
 
   // --- Selection Methods ---
@@ -573,10 +479,22 @@ export class LearnimalController {
     this.emit();
   }
 
+  setCustomChunkSystemPrompt(prompt: string): void {
+    this.domain.customChunkSystemPrompt = prompt;
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
   setAutoGroupByCommand(enabled: boolean): void {
     this.domain.autoGroupByCommand = enabled;
     this.saveCurrentSettings();
     this.emit();
+  }
+
+  async updateSearchSiteFlags(flags: Record<string, string>): Promise<void> {
+    this.domain.searchSiteFlags = flags;
+    this.emit();
+    await this.saveCurrentSettings();
   }
 
   // --- Group Navigation (drill-in) ---
@@ -660,7 +578,7 @@ export class LearnimalController {
 
   // --- Search & Extraction ---
 
-  async extractUrlToCard(url: string, title: string, parentId?: string): Promise<void> {
+  async extractUrlToCard(url: string, title: string, parentId?: string, sourceCardIdForGrouping?: string): Promise<void> {
     const logTimestamp = new Date().toISOString();
     const workspaceId = this.domain.activeWorkspaceId;
     if (!workspaceId) return;
@@ -668,17 +586,33 @@ export class LearnimalController {
     const opId = this.addPendingOperation(`Extracting ${url}...`);
 
     try {
+      let finalParentId = parentId || this.domain.currentGroupId || undefined;
+
       const card = await this.extractUrlInteractor.execute({
         url,
         title,
         workspaceId,
-        parentId: parentId || this.domain.currentGroupId || undefined,
+        parentId: finalParentId,
       });
+
+      // If requested to group with the source article, and no parent group exists yet, create one!
+      if (sourceCardIdForGrouping && !finalParentId) {
+        const sourceCard = this.domain.cards.find(c => c.id === sourceCardIdForGrouping);
+        if (sourceCard) {
+          const group = await this.groupCardsInteractor.execute({
+            workspaceId,
+            parentId: sourceCard.parentId || null,
+            name: "Related Sources",
+            cards: [sourceCard, card]
+          });
+          finalParentId = group.id;
+        }
+      }
 
       this.domain.selection = new Set([card.id]);
       await this.loadCardsForActiveWorkspace();
       this.removePendingOperation(opId);
-      this.showToast("Extracted to new card");
+      this.showToast(finalParentId ? "Extracted to related group" : "Extracted to new card");
       console.log(`[${logTimestamp}] [LearnimalController.extractUrlToCard] SUCCESS | cardId=${card.id}`);
     } catch (err: any) {
       console.error(`[${logTimestamp}] [LearnimalController.extractUrlToCard] ERROR: ${err.message}`);
@@ -694,7 +628,9 @@ export class LearnimalController {
       openRouterKey: this.domain.openRouterKey,
       selectedModel: this.domain.selectedModel,
       customSystemPrompt: this.domain.customSystemPrompt,
+      customChunkSystemPrompt: this.domain.customChunkSystemPrompt,
       autoGroupByCommand: this.domain.autoGroupByCommand,
+      searchSiteFlags: this.domain.searchSiteFlags,
     };
   }
 
@@ -742,12 +678,10 @@ export class LearnimalController {
       this.domain.activeWorkspaceId = this.domain.workspaces[0].id;
       await this.loadCardsForActiveWorkspace();
     } else {
-      this.domain.activeWorkspaceId = null;
-      this.domain.cards = [];
-      this.domain.onboarded = false;
-      this.ui.isOnboardingOpen = true;
-      this.domain.onboardingStep = 0;
-      this.domain.onboardingAnswers = [];
+      const defaultWs = await this.createWorkspaceInteractor.execute("My Workspace");
+      this.domain.workspaces.push(defaultWs);
+      this.domain.activeWorkspaceId = defaultWs.id;
+      await this.loadCardsForActiveWorkspace();
     }
     this.emit();
     this.showToast("Workspace deleted");
@@ -789,6 +723,7 @@ export class LearnimalController {
         apiKey: this.domain.openRouterKey,
         model: this.domain.selectedModel,
         systemPrompt: this.domain.customSystemPrompt,
+        chunkSystemPrompt: this.domain.customChunkSystemPrompt,
         autoGroup: this.domain.autoGroupByCommand,
       });
 
@@ -911,29 +846,6 @@ export class LearnimalController {
     }
   }
 
-  /**
-   * Clears all workspaces and cards from local storage and restarts onboarding.
-   */
-  async restartOnboarding(): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    try {
-      await this.restartOnboardingInteractor.execute();
-      this.domain.workspaces = [];
-      this.domain.activeWorkspaceId = null;
-      this.domain.currentGroupId = null;
-      this.domain.cards = [];
-      this.domain.selection.clear();
-      this.domain.onboarded = false;
-      this.ui.isOnboardingOpen = true;
-      this.domain.onboardingStep = 0;
-      this.domain.onboardingAnswers = [];
-      this.emit();
-      console.log(`[${logTimestamp}] [LearnimalController.restartOnboarding] SUCCESS`);
-      this.showToast("Onboarding restarted");
-    } catch (err: any) {
-      console.error(`[${logTimestamp}] [LearnimalController.restartOnboarding] ERROR: ${err.message}`);
-    }
-  }
 
   // --- Internal Utilities ---
 

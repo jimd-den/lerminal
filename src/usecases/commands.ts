@@ -47,15 +47,15 @@ export function makeQuestion(body: string, title: string): string {
 export function chunkCard(card: Card): Card[] {
   const logTimestamp = new Date().toISOString();
   
-  // Split by sentence endings (.?! followed by spaces) or line breaks
-  const sentences = card.body
-    .split(/(?<=[.!?])\s+|\n+/)
+  // Split by double line breaks to preserve Markdown paragraphs, lists, and code blocks.
+  // This prevents tearing apart bullet points or code snippets like single-newline splitting does.
+  const blocks = card.body
+    .split(/\n\s*\n/)
     .map(s => s.trim())
-    .filter(s => s.length > 12); // Ignore very short fragments
+    .filter(s => s.length > 12); // Ignore empty or trivially short fragments
 
-  const itemsToCreate = sentences.length > 0 ? sentences : [card.body];
+  const itemsToCreate = blocks.length > 0 ? blocks : [card.body];
   
-  // Limit to a maximum of 6 chunks per card for mobile visibility limits
   const results = itemsToCreate.slice(0, 6).map((paragraph, index) => {
     const parentTitle = card.title.substring(0, 30);
     return createCard({
@@ -63,7 +63,7 @@ export function chunkCard(card: Card): Card[] {
       type: "chunk",
       title: `${parentTitle} · ${index + 1}`,
       body: paragraph,
-      sourceRef: card.id,
+      sourceRef: card.sourceRef || card.id,
       cite: card.cite,
     });
   });
