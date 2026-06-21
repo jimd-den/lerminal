@@ -20,6 +20,12 @@ export interface AgentModel {
   free: boolean;
 }
 
+/** A single turn in a chat conversation. */
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 export interface AgentGateway {
   /**
    * Queries the agent model for cards based on a prompt and context.
@@ -42,4 +48,19 @@ export interface AgentGateway {
    * Fetches the list of available models from the agent provider.
    */
   fetchModels(): Promise<AgentModel[]>;
+
+  /**
+   * Streams a chat completion token-by-token. Optional so existing/mocked gateways
+   * remain valid; the chat feature checks for its presence.
+   *
+   * @param messages The full conversation (including any system context message).
+   * @param onToken Called with each incremental text delta as it arrives.
+   * @returns A promise resolving to the complete assistant message text.
+   */
+  streamChat?(
+    messages: ChatMessage[],
+    apiKey: string,
+    model: string,
+    onToken: (delta: string) => void
+  ): Promise<string>;
 }

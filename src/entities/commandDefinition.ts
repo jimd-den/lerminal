@@ -67,6 +67,7 @@ export const RESERVED_COMMAND_NAMES: readonly string[] = [
   "search",
   "cloze",
   "elaborate",
+  "chat",
 ];
 
 /** A command name must be a single lowercase token (letters, digits, hyphens). */

@@ -79,6 +79,7 @@ export const BUILTIN_CARD_TYPES: CardTypeDefinition[] = [
   { id: "search", name: "Search", color: "#E0A45E", icon: "⌕", builtin: true, learning: "none", fields: [] },
   { id: "cloze", name: "Cloze", color: "#5BC8A8", icon: "▭", builtin: true, learning: "cloze", fields: [] },
   { id: "interactive", name: "Interactive", color: "#8FD16A", icon: "◧", builtin: true, learning: "none", render: "html", fields: [] },
+  { id: "chat", name: "Chat", color: "#6FA8FF", icon: "💬", builtin: true, learning: "none", fields: [] },
   {
     id: "elaboration",
     name: "Elaboration",

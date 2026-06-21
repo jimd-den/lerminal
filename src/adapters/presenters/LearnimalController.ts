@@ -19,6 +19,8 @@ import { DeleteCommand } from "../../usecases/pipeline/DeleteCommand";
 import { SearchCommand } from "../../usecases/pipeline/SearchCommand";
 import { ClozeCommand } from "../../usecases/pipeline/ClozeCommand";
 import { ElaborateCommand } from "../../usecases/pipeline/ElaborateCommand";
+import { ChatCommand } from "../../usecases/pipeline/ChatCommand";
+import { ChatMessage } from "../gateways/AgentGateway";
 import { SearchGateway } from "../gateways/SearchGateway";
 import { ExtractionGateway } from "../gateways/ExtractionGateway";
 import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
@@ -123,6 +125,8 @@ export interface AppState {
   isLoadingModels: boolean;
   pendingOperations: PendingOperation[];
   searchSiteFlags: Record<string, string>;
+  /** The chat card currently streaming an assistant reply (null = none). */
+  chatStreamingCardId: string | null;
 }
 
 /** Business/domain state: persisted or derivable data, free of UI concerns. */
@@ -247,6 +251,7 @@ export class LearnimalController {
       new SearchCommand(deps.searchGateway, deps.cardRepo, deps.settingsRepo),
       new ClozeCommand(deps.cardRepo),
       new ElaborateCommand(deps.cardRepo),
+      new ChatCommand(deps.cardRepo),
     ];
     this.pipeline = new PipelineRunner(this.builtinCommands);
 

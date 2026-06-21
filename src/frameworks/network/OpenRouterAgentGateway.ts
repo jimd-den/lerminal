@@ -1,5 +1,5 @@
 import { Card } from "../../entities/card";
-import { AgentCardResponse, AgentGateway, AgentModel } from "../../adapters/gateways/AgentGateway";
+import { AgentCardResponse, AgentGateway, AgentModel, ChatMessage } from "../../adapters/gateways/AgentGateway";
 import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
 
 /**
@@ -117,6 +117,71 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       console.error(`[${logTimestamp}] [OpenRouterAgentGateway] request failed: ${err.message}. Falling back to local generation.`);
       return this.generateLocalFallback(query);
     }
+  }
+
+  /**
+   * Streams a chat completion using SSE. React Native's `fetch` can't read a
+   * streaming body, so this uses `XMLHttpRequest` and parses the incremental
+   * `responseText` for `data:` lines, emitting each content delta as it arrives.
+   */
+  streamChat(
+    messages: ChatMessage[],
+    apiKey: string,
+    model: string,
+    onToken: (delta: string) => void
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const cleanKey = apiKey?.trim();
+      if (!cleanKey) {
+        reject(new Error("Missing OpenRouter API key"));
+        return;
+      }
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "https://openrouter.ai/api/v1/chat/completions");
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.setRequestHeader("Authorization", `Bearer ${cleanKey}`);
+      xhr.setRequestHeader("HTTP-Referer", "https://github.com/dbslim/lerminal");
+      xhr.setRequestHeader("X-Title", "Learnimal");
+
+      let processed = 0;   // index in responseText up to which lines are consumed
+      let full = "";
+
+      const drain = () => {
+        const data = xhr.responseText;
+        let nl: number;
+        while ((nl = data.indexOf("\n", processed)) !== -1) {
+          const line = data.substring(processed, nl).trim();
+          processed = nl + 1;
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "" || payload === "[DONE]") continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta = json.choices?.[0]?.delta?.content || "";
+            if (delta) {
+              full += delta;
+              onToken(delta);
+            }
+          } catch {
+            // Ignore keep-alive comments / partial fragments.
+          }
+        }
+      };
+
+      xhr.onprogress = drain;
+      xhr.onload = () => {
+        drain();
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(full);
+        } else {
+          reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText?.substring(0, 200) || xhr.statusText}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Network error while streaming"));
+
+      xhr.send(JSON.stringify({ model, stream: true, messages }));
+    });
   }
 
   async fetchModels(): Promise<AgentModel[]> {
