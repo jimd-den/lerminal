@@ -144,6 +144,18 @@ export const BUILTIN_ASSISTANT_PROFILES: AssistantProfile[] = [
     builtin: true,
   },
   {
+    id: "builtin-status-reporter",
+    name: "Status Reporter",
+    description: "Adds a short qualitative read on top of the deterministic gap report",
+    goal: "Comment on momentum and the single most useful next move, grounded in the supplied facts",
+    capability: "generate-cards",
+    outputContract: "cards-v1",
+    systemPrompt: "You are a status-report assistant. You will be given the deterministic facts of a gap report (mission, evidence counts, gaps, blockers) already computed without you. Add ONE short qualitative assessment card: comment on momentum and name the single most useful next move. Do not restate the counts verbatim, do not invent facts not present in what's supplied, and do not claim more precision than the supplied heuristic labels already state.",
+    createdAt: 1718582400000,
+    updatedAt: 1718582400000,
+    builtin: true,
+  },
+  {
     id: "builtin-capstone-planner",
     name: "Capstone Planner",
     description: "Turns a workspace mission and current material into milestone/task/deliverable cards",

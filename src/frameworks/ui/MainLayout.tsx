@@ -30,6 +30,8 @@ import {
 } from "./learningDeck/CommandConsoleModal";
 import { AiPreflightSheet } from "./learningDeck/AiPreflightSheet";
 import { ResearchResultsSheet } from "./learningDeck/ResearchResultsSheet";
+import { MissionEditorSheet } from "./learningDeck/MissionEditorSheet";
+import { GapReportSheet } from "./learningDeck/GapReportSheet";
 import { SettingsScreen } from "./learningDeck/SettingsScreen";
 
 type LibraryLevel = "index" | "space" | "document";
@@ -351,6 +353,8 @@ export function MainLayout({ controller }: MainLayoutProps) {
       />
       <AiPreflightSheet controller={controller} state={state} theme={theme} />
       <ResearchResultsSheet controller={controller} state={state} theme={theme} />
+      <MissionEditorSheet controller={controller} state={state} theme={theme} />
+      <GapReportSheet controller={controller} state={state} theme={theme} />
       <PendingInputModal
         controller={controller}
         state={state}

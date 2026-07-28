@@ -3,7 +3,7 @@ import { createCard } from "../../../entities/card";
 import { buildAgentRunRequest, buildPipelineText, findOperationPreset, OPERATION_PRESETS } from "../operationPresets";
 
 describe("OPERATION_PRESETS", () => {
-  it("declares exactly the six canonical operation presets", () => {
+  it("declares exactly the seven canonical operation presets", () => {
     const ids = OPERATION_PRESETS.map(p => p.id).sort();
     expect(ids).toEqual([
       "explain-selected",
@@ -12,6 +12,7 @@ describe("OPERATION_PRESETS", () => {
       "plan-capstone",
       "plan-experiment",
       "research-web",
+      "status-report",
     ]);
   });
 

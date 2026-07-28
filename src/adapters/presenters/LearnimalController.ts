@@ -93,6 +93,8 @@ import { ResearchResult } from "../../entities/research";
 import { RunResearchInteractor } from "../../usecases/research/RunResearchInteractor";
 import { ExtractResearchResultInteractor } from "../../usecases/research/ExtractResearchResultInteractor";
 import { CreateResearchBriefInteractor } from "../../usecases/research/CreateResearchBriefInteractor";
+import { GapReport, GapReportInteractor } from "../../usecases/report/GapReportInteractor";
+import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission } from "../../entities/workspace";
 
 // Default prompts are now *instructions* (the strict JSON format contract is appended
 // by the gateway via composeCardPrompt), so users can edit them freely.
@@ -131,6 +133,21 @@ export interface OperationResult {
   };
   primaryActionLabel: string;
 }
+
+/** Editable draft used while creating/editing a workspace's mission. */
+export interface MissionDraft {
+  goalTitle: string;
+  goalDescription: string;
+  successCriteria: string[];
+  targetDeliverable: string;
+}
+
+const EMPTY_MISSION_DRAFT: MissionDraft = {
+  goalTitle: "",
+  goalDescription: "",
+  successCriteria: [],
+  targetDeliverable: "",
+};
 
 export interface AppState {
   theme: "dark" | "light";
@@ -200,6 +217,14 @@ export interface AppState {
   researchError: string | null;
   /** True while a cited brief is being synthesized. */
   isCreatingBrief: boolean;
+  /** Deterministic gap/status report for the active workspace, or null with no active workspace. */
+  gapReport: GapReport | null;
+  /** Whether the full gap report sheet is open (the compact Mission Control module needs no open state). */
+  isGapReportOpen: boolean;
+  /** Whether the mission editor sheet is open. */
+  isMissionEditorOpen: boolean;
+  /** The in-progress mission edit, valid while `isMissionEditorOpen`. */
+  missionDraft: MissionDraft;
 }
 
 /** Business/domain state: persisted or derivable data, free of UI concerns. */
@@ -254,6 +279,9 @@ interface UiState {
   researchLoading: boolean;
   researchError: string | null;
   isCreatingBrief: boolean;
+  isGapReportOpen: boolean;
+  isMissionEditorOpen: boolean;
+  missionDraft: MissionDraft;
 }
 
 export interface LearnimalControllerDeps {
@@ -311,6 +339,7 @@ export class LearnimalController {
   private runResearchInteractor: RunResearchInteractor;
   private extractResearchResultInteractor: ExtractResearchResultInteractor;
   private createResearchBriefInteractor: CreateResearchBriefInteractor;
+  private gapReportInteractor: GapReportInteractor;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
   private builtinCommands: PipelineCommand[] = [];
@@ -404,6 +433,7 @@ export class LearnimalController {
       deps.agentGateway,
       deps.cardRepo,
     );
+    this.gapReportInteractor = new GapReportInteractor();
 
     this.domain = {
       theme: "dark",
@@ -471,6 +501,9 @@ export class LearnimalController {
       researchLoading: false,
       researchError: null,
       isCreatingBrief: false,
+      isGapReportOpen: false,
+      isMissionEditorOpen: false,
+      missionDraft: { ...EMPTY_MISSION_DRAFT },
     };
   }
 
@@ -605,6 +638,10 @@ export class LearnimalController {
       researchLoading: this.ui.researchLoading,
       researchError: this.ui.researchError,
       isCreatingBrief: this.ui.isCreatingBrief,
+      gapReport: this.computeGapReport(),
+      isGapReportOpen: this.ui.isGapReportOpen,
+      isMissionEditorOpen: this.ui.isMissionEditorOpen,
+      missionDraft: { ...this.ui.missionDraft, successCriteria: [...this.ui.missionDraft.successCriteria] },
     };
   }
 
@@ -1671,10 +1708,10 @@ export class LearnimalController {
    * The sheet itself is rendered by presenting the current state through
    * `presentAgentPreflight` — this only tracks which preset is open and its query text.
    */
-  openPreflight(presetId: string): void {
+  openPreflight(presetId: string, initialQuery?: string): void {
     if (!findOperationPreset(presetId)) return;
     this.ui.activePreflightPresetId = presetId;
-    this.ui.preflightQuery = "";
+    this.ui.preflightQuery = initialQuery ?? "";
     this.emit();
   }
 
@@ -1845,6 +1882,108 @@ export class LearnimalController {
     this.ui.researchQuery = "";
     this.ui.researchError = null;
     this.emit();
+  }
+
+  // --- Mission Control & Gap Report (Phase 4) ---
+
+  /** Deterministic, model-free; computed fresh on every getState() call, never stored. */
+  private computeGapReport(): GapReport | null {
+    const workspace = this.domain.workspaces.find(
+      (w) => w.id === this.domain.activeWorkspaceId,
+    );
+    if (!workspace) return null;
+    return this.gapReportInteractor.execute(workspace, this.domain.cards);
+  }
+
+  openGapReport(): void {
+    this.ui.isGapReportOpen = true;
+    this.emit();
+  }
+
+  closeGapReport(): void {
+    this.ui.isGapReportOpen = false;
+    this.emit();
+  }
+
+  openMissionEditor(): void {
+    const workspace = this.domain.workspaces.find(
+      (w) => w.id === this.domain.activeWorkspaceId,
+    );
+    const mission = workspace?.mission;
+    this.ui.missionDraft = mission
+      ? {
+          goalTitle: mission.goalTitle,
+          goalDescription: mission.goalDescription,
+          successCriteria: [...mission.successCriteria],
+          targetDeliverable: mission.targetDeliverable,
+        }
+      : { ...EMPTY_MISSION_DRAFT };
+    this.ui.isMissionEditorOpen = true;
+    this.emit();
+  }
+
+  closeMissionEditor(): void {
+    this.ui.isMissionEditorOpen = false;
+    this.emit();
+  }
+
+  updateMissionDraft(patch: Partial<MissionDraft>): void {
+    this.ui.missionDraft = { ...this.ui.missionDraft, ...patch };
+    this.emit();
+  }
+
+  addMissionCriterion(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    this.ui.missionDraft = {
+      ...this.ui.missionDraft,
+      successCriteria: [...this.ui.missionDraft.successCriteria, trimmed],
+    };
+    this.emit();
+  }
+
+  removeMissionCriterion(index: number): void {
+    this.ui.missionDraft = {
+      ...this.ui.missionDraft,
+      successCriteria: this.ui.missionDraft.successCriteria.filter((_, i) => i !== index),
+    };
+    this.emit();
+  }
+
+  /** Persists the current mission draft onto the active workspace. Requires a non-empty goal title. */
+  async saveMission(): Promise<void> {
+    const workspace = this.domain.workspaces.find(
+      (w) => w.id === this.domain.activeWorkspaceId,
+    );
+    if (!workspace) return;
+    const draft = this.ui.missionDraft;
+    if (!draft.goalTitle.trim()) {
+      this.showToast("Give the mission a goal title first");
+      return;
+    }
+
+    const mission = workspace.mission
+      ? updateWorkspaceMission(workspace.mission, {
+          goalTitle: draft.goalTitle,
+          goalDescription: draft.goalDescription,
+          successCriteria: draft.successCriteria,
+          targetDeliverable: draft.targetDeliverable,
+        })
+      : createWorkspaceMission({
+          goalTitle: draft.goalTitle,
+          goalDescription: draft.goalDescription,
+          successCriteria: draft.successCriteria,
+          targetDeliverable: draft.targetDeliverable,
+        });
+
+    const updated: Workspace = { ...workspace, mission };
+    await this.workspaceRepo.saveWorkspace(updated);
+    this.domain.workspaces = this.domain.workspaces.map((w) =>
+      w.id === workspace.id ? updated : w,
+    );
+    this.ui.isMissionEditorOpen = false;
+    this.emit();
+    this.showToast(`Mission saved: ${mission.goalTitle}`);
   }
 
   // --- Spaced Repetition Review Flow ---

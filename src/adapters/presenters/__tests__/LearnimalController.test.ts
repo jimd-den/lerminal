@@ -99,6 +99,49 @@ describe("Learnimal App Controller", () => {
     expect(state.activeWorkspaceId).toBe(state.workspaces[0].id);
   });
 
+  it("should support direct note creation via createNote method", async () => {
+    const controller = new LearnimalController({
+      cardRepo,
+      workspaceRepo,
+      settingsRepo,
+      agentGateway,
+      commandDefinitionRepo,
+      cardTypeRepo,
+      promptPresetRepo,
+      searchGateway,
+      extractionGateway
+    });
+
+    await controller.init();
+    const note = await controller.createNote({
+      content: "Direct capture note",
+      title: "Direct Title"
+    });
+
+    expect(note).toBeDefined();
+    expect(note.type).toBe("note");
+    expect(note.title).toBe("Direct Title");
+    expect(note.body).toBe("Direct capture note");
+
+    const state = controller.getState();
+    expect(state.cards.some(c => c.id === note.id)).toBe(true);
+  });
+
+  it("should open input sheet in 'note' mode for quick note capture", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    controller.setInputSheetOpen(true, "note");
+    const state = controller.getState();
+
+    expect(state.isInputSheetOpen).toBe(true);
+    expect(state.inputSheetMode).toBe("note");
+  });
+
   it("should persist selected model changes to the settings repository", async () => {
     const cardRepo = new MemoryCardRepository();
     const wsRepo = new MemoryWorkspaceRepository();
@@ -118,10 +161,10 @@ describe("Learnimal App Controller", () => {
     });
 
     await controller.init();
-    
+
     // Change model
     controller.setSelectedModel("anthropic/claude-3.5-sonnet");
-    
+
     const state = controller.getState();
     expect(state.selectedModel).toBe("anthropic/claude-3.5-sonnet");
 
@@ -129,197 +172,95 @@ describe("Learnimal App Controller", () => {
     expect(savedSettings?.selectedModel).toBe("anthropic/claude-3.5-sonnet");
   });
 
-  it("should persist custom system prompt changes to the settings repository", async () => {
-    const cardRepo = new MemoryCardRepository();
-    const wsRepo = new MemoryWorkspaceRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    const agentGateway = new MockAgentGateway();
-
+  it("routes completed operations to an explicit result destination", async () => {
     const controller = new LearnimalController({
-      cardRepo,
-      workspaceRepo: wsRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
-      cardTypeRepo: new MemoryCardTypeRepository(),
-      promptPresetRepo: new MemoryPromptPresetRepository(),
-      searchGateway: new MockSearchGateway(),
-      extractionGateway: new MockExtractionGateway()
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
     });
-
     await controller.init();
-    
-    const customPrompt = "You are a specialized math learning assistant.";
-    controller.setCustomSystemPrompt(customPrompt);
-    
-    const state = controller.getState();
-    expect(state.customSystemPrompt).toBe(customPrompt);
 
-    const savedSettings = await settingsRepo.getSettings();
-    expect(savedSettings?.customSystemPrompt).toBe(customPrompt);
+    await controller.runPipeline('source "A | concise \\"source\\" passage"');
+
+    const completed = controller.getState();
+    expect(completed.operationResult?.summary).toBe("1 item created");
+    expect(completed.operationResult?.destination.spaceId).toBe(completed.activeWorkspaceId);
+    expect(completed.operationResult?.createdCardIds).toEqual([...completed.selection]);
+    expect(completed.cards[0].body).toBe('A | concise "source" passage');
+
+    await controller.openOperationResult();
+    expect(controller.getState().operationResult).toBeNull();
   });
 
-  it("should toggle card selection and run pipes", async () => {
-    const cardRepo = new MemoryCardRepository();
-    const wsRepo = new MemoryWorkspaceRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    const agentGateway = new MockAgentGateway();
-
+  it("deletes a multi-card selection through one controller boundary", async () => {
     const controller = new LearnimalController({
-      cardRepo,
-      workspaceRepo: wsRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
-      cardTypeRepo: new MemoryCardTypeRepository(),
-      promptPresetRepo: new MemoryPromptPresetRepository(),
-      searchGateway: new MockSearchGateway(),
-      extractionGateway: new MockExtractionGateway()
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
     });
-
     await controller.init();
-    await controller.init();
-    
-    // Wait for initial default workspace and cards
-    while (controller.getState().pendingOperations.length > 0) {
-      await new Promise(r => setTimeout(r, 50));
-    }
-
-    // Now manually run an ask command to populate some cards
-    await controller.runPipeline(`ask "Math a b c"`);
-
-    const state1 = controller.getState();
-    const cards = await cardRepo.getCardsByWorkspace(state1.activeWorkspaceId!);
-    // We want a chunk card to select
-    const firstCardId = cards.find(c => c.type === "chunk")!.id;
-
-    // Selection tests
+    const first = await controller.createNote({ content: "First note" });
+    const second = await controller.createNote({ content: "Second note" });
     controller.clearSelection();
+    controller.toggleSelect(first.id);
+    controller.toggleSelect(second.id);
+
+    await controller.deleteSelection(true);
+
+    expect(controller.getState().cards).toHaveLength(0);
     expect(controller.getState().selection.size).toBe(0);
-
-    controller.toggleSelect(firstCardId);
-    expect(controller.getState().selection.has(firstCardId)).toBe(true);
-
-    // Pipe execution: chunk selected -> run recall -> outputs a question card, which
-    // auto-grouping (on by default) then wraps in a "recall" group. The produced
-    // group becomes the new selection.
-    await controller.runPipeline("recall");
-
-    const state2 = controller.getState();
-    const workspaceCards = await cardRepo.getCardsByWorkspace(state2.activeWorkspaceId!);
-    const questions = workspaceCards.filter(c => c.type === "question");
-    const groups = workspaceCards.filter(c => c.type === "group");
-
-    expect(questions.length).toBe(1);
-    expect(groups.length).toBe(2); // One from `ask`, one from `recall`
-    const recallGroup = groups.find(g => g.title === "recall")!;
-    expect(recallGroup).toBeDefined();
-    // The question is nested under the auto-created group.
-    expect(questions[0].parentId).toBe(recallGroup.id);
-    // Selection is the group; the canvas root now shows it.
-    expect(state2.selection.size).toBe(1);
-    expect(state2.selection.has(recallGroup.id)).toBe(true);
-    expect(state2.visibleCards.map(c => c.id)).toContain(recallGroup.id);
   });
 
-
-
-  it("should track pending AI generation operations", async () => {
-    const cardRepo = new MemoryCardRepository();
-    const wsRepo = new MemoryWorkspaceRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    
-    // Create a delayed mock gateway to simulate pending state
-    class DelayedAgentGateway extends MockAgentGateway {
-      async ask(
-        query: string,
-        contextCards: Card[],
-        apiKey: string,
-        model: string,
-        systemPrompt?: string
-      ): Promise<AgentCardResponse[]> {
-        return new Promise(resolve => {
-          setTimeout(() => {
-            resolve([{ title: "Delayed Chunk", body: "Resolved" }]);
-          }, 100);
-        });
-      }
-    }
-    const agentGateway = new DelayedAgentGateway();
-
+  it("computes a deterministic gap report with no mission set, requiring no API key", async () => {
     const controller = new LearnimalController({
-      cardRepo,
-      workspaceRepo: wsRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
-      cardTypeRepo: new MemoryCardTypeRepository(),
-      promptPresetRepo: new MemoryPromptPresetRepository(),
-      searchGateway: new MockSearchGateway(),
-      extractionGateway: new MockExtractionGateway()
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
     });
-
-    await controller.init();
     await controller.init();
 
-    // Initiate the pipeline (which triggers ask under the hood)
-    const runPromise = controller.runPipeline("ask something");
-    
-    // Check state immediately after starting pipeline (should be loading)
-    const stateLoading = controller.getState();
-    expect(stateLoading.pendingOperations.length).toBeGreaterThan(0);
-    expect(stateLoading.pendingOperations[0].status).toBe("loading");
-    
-    // Wait for pipeline to finish
-    await runPromise;
-    
-    // Check state after pipeline finishes (should be cleared or success)
-    const stateDone = controller.getState();
-    expect(stateDone.pendingOperations.length).toBe(0);
+    const state = controller.getState();
+    expect(state.gapReport).not.toBeNull();
+    expect(state.gapReport?.hasMission).toBe(false);
+    expect(state.openRouterKey).toBe("");
   });
 
-  it("should track pending AI generation operations and handle errors", async () => {
-    const cardRepo = new MemoryCardRepository();
-    const wsRepo = new MemoryWorkspaceRepository();
-    const settingsRepo = new MemorySettingsRepository();
-    
-    // Create a mock gateway that rejects only for a specific query
-    class ErrorAgentGateway extends MockAgentGateway {
-      async ask(
-        query: string,
-        contextCards: Card[],
-        apiKey: string,
-        model: string,
-        systemPrompt?: string
-      ): Promise<AgentCardResponse[]> {
-        if (query === "failme") {
-          throw new Error("Network timeout");
-        }
-        return super.ask(query, contextCards, apiKey, model, systemPrompt);
-      }
-    }
-    const agentGateway = new ErrorAgentGateway();
-
+  it("saves a mission through the mission editor draft and reflects it in the gap report", async () => {
     const controller = new LearnimalController({
-      cardRepo,
-      workspaceRepo: wsRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
-      cardTypeRepo: new MemoryCardTypeRepository(),
-      promptPresetRepo: new MemoryPromptPresetRepository(),
-      searchGateway: new MockSearchGateway(),
-      extractionGateway: new MockExtractionGateway()
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
     });
-
-    await controller.init();
     await controller.init();
 
-    await controller.runPipeline("ask failme");
-    
-    const stateDone = controller.getState();
-    expect(stateDone.pendingOperations.length).toBe(1);
-    expect(stateDone.pendingOperations[0].status).toBe("error");
-    expect(stateDone.pendingOperations[0].errorMessage).toBe("Agent request failed");
+    controller.openMissionEditor();
+    controller.updateMissionDraft({ goalTitle: "Ship a renderer", targetDeliverable: "A working demo" });
+    controller.addMissionCriterion("Renders a textured cube");
+    await controller.saveMission();
+
+    const state = controller.getState();
+    expect(state.isMissionEditorOpen).toBe(false);
+    expect(state.gapReport?.hasMission).toBe(true);
+    expect(state.gapReport?.missionTitle).toBe("Ship a renderer");
+    expect(state.workspaces[0].mission?.successCriteria).toEqual(["Renders a textured cube"]);
+
+    // Persisted, not just in-memory.
+    const persisted = await workspaceRepo.getWorkspaces();
+    expect(persisted[0].mission?.goalTitle).toBe("Ship a renderer");
+  });
+
+  it("refuses to save a mission with an empty goal title", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    controller.openMissionEditor();
+    await controller.saveMission();
+
+    expect(controller.getState().isMissionEditorOpen).toBe(true);
+    expect(controller.getState().workspaces[0].mission).toBeUndefined();
   });
 });

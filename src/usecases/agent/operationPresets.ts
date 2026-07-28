@@ -95,6 +95,18 @@ export const OPERATION_PRESETS: OperationPreset[] = [
     outputDescription: "Recall question cards (not yet enrolled in spaced repetition)",
   },
   {
+    id: "status-report",
+    label: "Status (AI enrichment)",
+    purpose: "Add a short qualitative read on top of the deterministic gap report — momentum and the single best next move.",
+    defaultScope: "selected-only",
+    requiresSelection: false,
+    requiresQuery: false,
+    defaultQuery: "Assess momentum and suggest the single most useful next move.",
+    command: "ask",
+    profileId: "builtin-status-reporter",
+    outputDescription: "One qualitative assessment card",
+  },
+  {
     id: "plan-capstone",
     label: "Plan capstone",
     purpose: "Turn the workspace mission and current material into milestones and tasks.",
