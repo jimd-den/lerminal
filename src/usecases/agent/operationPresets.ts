@@ -14,8 +14,11 @@ import { AgentScopeKind, ScopeBudget, resolveScopedContext } from "./AgentScope"
  * that request object is exactly what the preflight UI renders and the run receipt records.
  */
 
-/** Which existing pipeline command a preset dispatches to. */
-export type PresetCommand = "ask" | "search" | "recall";
+/**
+ * Which existing pipeline command (or, for `research`, the dedicated research flow —
+ * see `RunResearchInteractor`/`LearnimalController.startResearch`) a preset dispatches to.
+ */
+export type PresetCommand = "ask" | "search" | "recall" | "research";
 
 export interface OperationPreset {
   id: string;
@@ -54,8 +57,8 @@ export const OPERATION_PRESETS: OperationPreset[] = [
     defaultScope: "web",
     requiresSelection: false,
     requiresQuery: true,
-    command: "search",
-    outputDescription: "Search result cards — nothing here is model-generated",
+    command: "research",
+    outputDescription: "Inspectable source candidates — keep/reject/extract, then optionally create a cited brief",
   },
   {
     id: "find-prerequisites",
@@ -187,5 +190,7 @@ export function buildPipelineText(preset: OperationPreset, query?: string): stri
       return `search "${escapePipelineArg(resolvedQuery)}"`;
     case "recall":
       return "recall";
+    case "research":
+      throw new Error("research-flow presets dispatch via LearnimalController.startResearch, not a pipeline string");
   }
 }

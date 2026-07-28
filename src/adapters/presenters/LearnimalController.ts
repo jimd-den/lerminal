@@ -89,6 +89,10 @@ import {
 import { ReviewLogRepository } from "../repositories/ReviewLogRepository";
 import { DEFAULT_FSRS_CONFIG } from "../../entities/workspace";
 import { buildAgentRunRequest, buildPipelineText, findOperationPreset } from "../../usecases/agent/operationPresets";
+import { ResearchResult } from "../../entities/research";
+import { RunResearchInteractor } from "../../usecases/research/RunResearchInteractor";
+import { ExtractResearchResultInteractor } from "../../usecases/research/ExtractResearchResultInteractor";
+import { CreateResearchBriefInteractor } from "../../usecases/research/CreateResearchBriefInteractor";
 
 // Default prompts are now *instructions* (the strict JSON format contract is appended
 // by the gateway via composeCardPrompt), so users can edit them freely.
@@ -184,6 +188,18 @@ export interface AppState {
   searchSiteFlags: Record<string, string>;
   /** The chat card currently streaming an assistant reply (null = none). */
   chatStreamingCardId: string | null;
+  /** The query the active research session was run with (see startResearch). */
+  researchQuery: string;
+  /** Inspectable source candidates from the active research session. */
+  researchResults: ResearchResult[];
+  /** Whether the research results sheet is open. */
+  isResearchOpen: boolean;
+  /** True while the initial search or an extraction is in flight. */
+  researchLoading: boolean;
+  /** Set when the search itself failed/returned nothing; shown instead of results. */
+  researchError: string | null;
+  /** True while a cited brief is being synthesized. */
+  isCreatingBrief: boolean;
 }
 
 /** Business/domain state: persisted or derivable data, free of UI concerns. */
@@ -232,6 +248,12 @@ interface UiState {
   pendingOperations: PendingOperation[];
   operationResult: OperationResult | null;
   chatStreamingCardId: string | null;
+  researchQuery: string;
+  researchResults: ResearchResult[];
+  isResearchOpen: boolean;
+  researchLoading: boolean;
+  researchError: string | null;
+  isCreatingBrief: boolean;
 }
 
 export interface LearnimalControllerDeps {
@@ -286,6 +308,9 @@ export class LearnimalController {
   private groupCardsInteractor: GroupCardsInteractor;
   private fsrsScheduler: FsrsScheduler;
   private reviewLogRepo?: ReviewLogRepository;
+  private runResearchInteractor: RunResearchInteractor;
+  private extractResearchResultInteractor: ExtractResearchResultInteractor;
+  private createResearchBriefInteractor: CreateResearchBriefInteractor;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
   private builtinCommands: PipelineCommand[] = [];
@@ -371,6 +396,14 @@ export class LearnimalController {
       deps.extractionGateway,
       deps.cardRepo,
     );
+    this.runResearchInteractor = new RunResearchInteractor(deps.searchGateway);
+    this.extractResearchResultInteractor = new ExtractResearchResultInteractor(
+      deps.extractionGateway,
+    );
+    this.createResearchBriefInteractor = new CreateResearchBriefInteractor(
+      deps.agentGateway,
+      deps.cardRepo,
+    );
 
     this.domain = {
       theme: "dark",
@@ -432,6 +465,12 @@ export class LearnimalController {
       pendingOperations: [],
       operationResult: null,
       chatStreamingCardId: null,
+      researchQuery: "",
+      researchResults: [],
+      isResearchOpen: false,
+      researchLoading: false,
+      researchError: null,
+      isCreatingBrief: false,
     };
   }
 
@@ -560,6 +599,12 @@ export class LearnimalController {
       operationResult: this.ui.operationResult,
       searchSiteFlags: this.domain.searchSiteFlags,
       chatStreamingCardId: this.ui.chatStreamingCardId,
+      researchQuery: this.ui.researchQuery,
+      researchResults: [...this.ui.researchResults],
+      isResearchOpen: this.ui.isResearchOpen,
+      researchLoading: this.ui.researchLoading,
+      researchError: this.ui.researchError,
+      isCreatingBrief: this.ui.isCreatingBrief,
     };
   }
 
@@ -1657,6 +1702,15 @@ export class LearnimalController {
     if (!preset) return false;
 
     const query = this.ui.preflightQuery;
+
+    if (preset.command === "research") {
+      this.ui.activePreflightPresetId = null;
+      this.ui.preflightQuery = "";
+      this.emit();
+      await this.startResearch(query);
+      return true;
+    }
+
     const selectedCards = expandForPipe(this.domain.cards, this.domain.selection);
     const request = buildAgentRunRequest({
       preset,
@@ -1679,6 +1733,118 @@ export class LearnimalController {
       this.emit();
     }
     return ok;
+  }
+
+  // --- Web Research Flow (Phase 3: real search, inspectable candidates, cited briefs) ---
+
+  /**
+   * Runs an actual web search via `SearchGateway` (never asks the model to pretend it
+   * searched) and opens the research sheet with normalized, inspectable candidates.
+   * On failure, `researchError` is set and shown instead of fabricated results.
+   */
+  async startResearch(query: string): Promise<void> {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    this.ui.researchQuery = trimmed;
+    this.ui.researchLoading = true;
+    this.ui.researchError = null;
+    this.ui.researchResults = [];
+    this.ui.isResearchOpen = true;
+    this.emit();
+
+    try {
+      const results = await this.runResearchInteractor.execute(trimmed);
+      this.ui.researchResults = results;
+    } catch (err: any) {
+      this.ui.researchError =
+        err instanceof UseCaseError ? err.userMessage : "Search failed";
+    } finally {
+      this.ui.researchLoading = false;
+      this.emit();
+    }
+  }
+
+  /** Marks a research candidate kept or rejected (or resets it to undecided). */
+  setResearchKeepState(url: string, keepState: ResearchResult["keepState"]): void {
+    this.ui.researchResults = this.ui.researchResults.map((r) =>
+      r.url === url ? { ...r, keepState } : r,
+    );
+    this.emit();
+  }
+
+  /** Fetches a candidate's full text via `ExtractionGateway`. Failure is surfaced as a toast, not fabricated content. */
+  async extractResearchResult(url: string): Promise<void> {
+    const target = this.ui.researchResults.find((r) => r.url === url);
+    if (!target) return;
+    this.ui.researchLoading = true;
+    this.emit();
+    try {
+      const extracted = await this.extractResearchResultInteractor.execute(target);
+      this.ui.researchResults = this.ui.researchResults.map((r) =>
+        r.url === url ? extracted : r,
+      );
+    } catch (err: any) {
+      this.showToast(
+        err instanceof UseCaseError ? err.userMessage : "Extraction failed",
+      );
+    } finally {
+      this.ui.researchLoading = false;
+      this.emit();
+    }
+  }
+
+  /**
+   * Synthesizes a cited brief from exactly the kept candidates. Requires a configured
+   * API key and at least one kept result — see `CreateResearchBriefInteractor` for the
+   * honesty guards (no key -> refuses up front; an uncited response -> rejected, nothing
+   * saved) that keep this from silently fabricating a "successful" result.
+   */
+  async createResearchBrief(): Promise<boolean> {
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) return false;
+
+    this.ui.isCreatingBrief = true;
+    this.emit();
+    try {
+      const created = await this.createResearchBriefInteractor.execute({
+        query: this.ui.researchQuery,
+        results: this.ui.researchResults,
+        workspaceId,
+        parentId: this.domain.currentGroupId,
+        apiKey: this.domain.openRouterKey,
+        model: this.domain.selectedModel,
+      });
+
+      this.ui.isResearchOpen = false;
+      this.ui.operationResult = {
+        summary: `${created.length} cited claim${created.length === 1 ? "" : "s"} created from ${this.ui.researchResults.filter((r) => r.keepState === "kept").length} kept source(s)`,
+        createdCardIds: created.map((c) => c.id),
+        destination: { spaceId: workspaceId, groupId: this.domain.currentGroupId ?? undefined },
+        primaryActionLabel: "Open result",
+      };
+      if (this.domain.activeWorkspaceId === workspaceId) {
+        this.domain.selection = new Set(created.map((c) => c.id));
+        await this.loadCardsForActiveWorkspace();
+      }
+      this.emit();
+      return true;
+    } catch (err: any) {
+      this.showToast(
+        err instanceof UseCaseError ? err.userMessage : "Could not create brief",
+      );
+      return false;
+    } finally {
+      this.ui.isCreatingBrief = false;
+      this.emit();
+    }
+  }
+
+  closeResearch(): void {
+    this.ui.isResearchOpen = false;
+    this.ui.researchResults = [];
+    this.ui.researchQuery = "";
+    this.ui.researchError = null;
+    this.emit();
   }
 
   // --- Spaced Repetition Review Flow ---

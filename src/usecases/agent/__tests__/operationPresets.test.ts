@@ -106,11 +106,10 @@ describe("buildPipelineText", () => {
     expect(text).toContain(preset.defaultQuery!);
   });
 
-  it("builds a search pipeline for research-web", () => {
+  it("refuses to build a pipeline string for research-web (it dispatches to the research flow instead)", () => {
     const preset = findOperationPreset("research-web")!;
-    const text = buildPipelineText(preset, "eigenvectors");
 
-    expect(text).toBe('search "eigenvectors"');
+    expect(() => buildPipelineText(preset, "eigenvectors")).toThrow();
   });
 
   it("builds a bare recall pipeline for make-study-cards (no query, no profile)", () => {

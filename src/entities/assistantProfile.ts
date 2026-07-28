@@ -132,6 +132,18 @@ export const BUILTIN_ASSISTANT_PROFILES: AssistantProfile[] = [
     builtin: true,
   },
   {
+    id: "builtin-research-brief",
+    name: "Research Brief Synthesizer",
+    description: "Writes a cited brief strictly from retained web sources",
+    goal: "Summarize only what the retained source excerpts actually say, with a citation for every claim",
+    capability: "chunk-document",
+    outputContract: "chunks-v1",
+    systemPrompt: "You are a research brief synthesizer. You will be given source excerpts, each tagged with its title and source URL. Using ONLY what is stated in the supplied excerpts, write a set of concise, cited claim cards. Every card MUST cite the exact source card id and a short supporting quote via the required sourceCardId/sourceExcerpt fields. Never state anything not directly supported by a supplied excerpt; never fill gaps from general knowledge. If the excerpts don't support a useful claim, return fewer cards rather than inventing one.",
+    createdAt: 1718582400000,
+    updatedAt: 1718582400000,
+    builtin: true,
+  },
+  {
     id: "builtin-capstone-planner",
     name: "Capstone Planner",
     description: "Turns a workspace mission and current material into milestone/task/deliverable cards",

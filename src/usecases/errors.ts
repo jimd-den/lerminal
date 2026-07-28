@@ -124,3 +124,31 @@ export class PipelineCycleError extends UseCaseError {
     super(`Pipeline "${name}" can't call itself`);
   }
 }
+
+/** Raised when a web search returns no usable results (network failure or a true empty result set). */
+export class ResearchNoResultsError extends UseCaseError {
+  constructor(query: string) {
+    super(`No results found for "${query}". Check your connection or try a different query.`);
+  }
+}
+
+/** Raised when extracting a research candidate's full text fails. */
+export class ResearchExtractionFailedError extends UseCaseError {
+  constructor(technicalMessage?: string) {
+    super("Couldn't extract this source's content", technicalMessage);
+  }
+}
+
+/** Raised when an operation requires a configured OpenRouter API key and none is set. */
+export class MissingApiKeyError extends UseCaseError {
+  constructor(context: string) {
+    super(`${context} needs an OpenRouter API key — add one in Settings.`);
+  }
+}
+
+/** Raised when a model response claiming to synthesize a cited brief cites no retained source. */
+export class UngroundedBriefError extends UseCaseError {
+  constructor() {
+    super("The model didn't ground its answer in the retained sources, so nothing was saved.");
+  }
+}

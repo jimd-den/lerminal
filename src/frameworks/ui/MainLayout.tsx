@@ -29,6 +29,7 @@ import {
   PendingInputModal,
 } from "./learningDeck/CommandConsoleModal";
 import { AiPreflightSheet } from "./learningDeck/AiPreflightSheet";
+import { ResearchResultsSheet } from "./learningDeck/ResearchResultsSheet";
 import { SettingsScreen } from "./learningDeck/SettingsScreen";
 
 type LibraryLevel = "index" | "space" | "document";
@@ -349,6 +350,7 @@ export function MainLayout({ controller }: MainLayoutProps) {
         theme={theme}
       />
       <AiPreflightSheet controller={controller} state={state} theme={theme} />
+      <ResearchResultsSheet controller={controller} state={state} theme={theme} />
       <PendingInputModal
         controller={controller}
         state={state}
