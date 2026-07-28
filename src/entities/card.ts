@@ -1,4 +1,5 @@
 import { ScheduleState } from "./schedule";
+import { Provenance } from "./provenance";
 
 /**
  * # Card Entity Domain Model
@@ -19,7 +20,45 @@ import { ScheduleState } from "./schedule";
  *   organize cards into infinite subgroups.
  */
 
-export type CardType = "source" | "chunk" | "question" | "note" | "group" | "search" | "chat";
+export type CardType =
+  | "source"
+  | "chunk"
+  | "question"
+  | "note"
+  | "group"
+  | "search"
+  | "chat"
+  | "cloze"
+  | "elaboration"
+  | "interactive";
+
+/**
+ * Optional user-facing semantic role describing a card's place in the learner's goal,
+ * independent of `CardType`/`typeId` (which govern rendering and study mechanics). A
+ * `question`-type card can be a `concept` in one workspace and a `task` in another;
+ * setting a role never changes whether a card is reviewable — see `isSchedulable` in
+ * `cardTypeDefinition.ts`, which is driven solely by the type registry's `learning` field.
+ */
+export type SemanticRole =
+  | "goal"
+  | "question"
+  | "concept"
+  | "source"
+  | "experiment"
+  | "claim"
+  | "task"
+  | "deliverable";
+
+export const SEMANTIC_ROLES: SemanticRole[] = [
+  "goal",
+  "question",
+  "concept",
+  "source",
+  "experiment",
+  "claim",
+  "task",
+  "deliverable",
+];
 
 export interface Card {
   /** Unique identifier for the card. */
@@ -60,6 +99,22 @@ export interface Card {
   schedule?: ScheduleState;
   /** Optional fields for recall questions. */
   answer?: string;
+  /**
+   * Optional source card id that this group card serves as a document container for.
+   * Enables reusing document container groups upon re-chunking.
+   */
+  documentGroupFor?: string;
+  /**
+   * Optional semantic role in the learner's goal (see {@link SemanticRole}). Purely
+   * descriptive — never affects rendering, `CardType`, or study/FSRS eligibility.
+   */
+  role?: SemanticRole;
+  /**
+   * Optional record of how this card was created (manual/agent/search/extraction/command),
+   * what it read, and whether it used the web. Absent on cards created before this
+   * feature existed or when creation didn't warrant one — never fabricate a value.
+   */
+  provenance?: Provenance;
 }
 
 /**
@@ -79,7 +134,10 @@ export interface CreateCardParams {
   cite?: string;
   schedule?: ScheduleState;
   answer?: string;
+  documentGroupFor?: string;
   createdAt?: number;
+  role?: SemanticRole;
+  provenance?: Provenance;
 }
 
 /**
@@ -110,6 +168,9 @@ export function createCard(params: CreateCardParams): Card {
     cite: params.cite,
     schedule: params.schedule,
     answer: params.answer,
+    documentGroupFor: params.documentGroupFor,
+    role: params.role,
+    provenance: params.provenance,
   };
 
   console.log(`[${logTimestamp}] [createCard] INPUTS: params=${JSON.stringify(params)} | OUTPUT: ${JSON.stringify(card)}`);

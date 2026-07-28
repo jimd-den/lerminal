@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { MemoryCardRepository } from "../MemoryCardRepository";
 import { MemoryWorkspaceRepository } from "../MemoryWorkspaceRepository";
+import { MemoryOperationLogRepository } from "../MemoryOperationLogRepository";
 import { createCard } from "../../../entities/card";
 import { createWorkspace } from "../../../entities/workspace";
+import { createOperationRecord } from "../../../entities/operationLog";
 
 describe("Memory Repositories", () => {
   it("should save and retrieve cards by workspace", async () => {
@@ -37,5 +39,48 @@ describe("Memory Repositories", () => {
     expect(workspaces.length).toBe(2);
     expect(workspaces.map(w => w.id)).toContain(ws1.id);
     expect(workspaces.map(w => w.id)).toContain(ws2.id);
+  });
+
+  it("should save, scope-by-workspace, and delete operation records (run receipts)", async () => {
+    const logRepo = new MemoryOperationLogRepository();
+    const now = Date.now();
+    const recordA = createOperationRecord({
+      commandName: "ask",
+      workspaceId: "ws-a",
+      startedAt: now - 1000,
+      completedAt: now - 1000,
+      summary: "1 chunk created",
+    });
+    const recordB = createOperationRecord({
+      commandName: "search",
+      workspaceId: "ws-a",
+      startedAt: now,
+      completedAt: now,
+      webUsed: true,
+      searchQuery: "eigenvectors",
+      summary: "5 results found",
+    });
+    const recordC = createOperationRecord({
+      commandName: "note",
+      workspaceId: "ws-b",
+      startedAt: now,
+      summary: "1 note created",
+    });
+
+    await logRepo.saveRecord(recordA);
+    await logRepo.saveRecord(recordB);
+    await logRepo.saveRecord(recordC);
+
+    const wsARecords = await logRepo.getRecords("ws-a");
+    expect(wsARecords.length).toBe(2);
+    // Most recent first.
+    expect(wsARecords[0].id).toBe(recordB.id);
+
+    expect(await logRepo.getRecord(recordC.id)).not.toBeNull();
+    expect(await logRepo.getRecord("missing-id")).toBeNull();
+
+    await logRepo.deleteRecord(recordA.id);
+    expect(await logRepo.getRecord(recordA.id)).toBeNull();
+    expect((await logRepo.getRecords("ws-a")).length).toBe(1);
   });
 });
