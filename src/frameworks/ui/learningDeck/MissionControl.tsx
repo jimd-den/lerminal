@@ -9,11 +9,13 @@ import { LearningTheme } from "./theme";
  * ## Business Value & Purpose
  * The compact, top-of-canvas summary that shifts the deck from a generic card bucket
  * toward a goal-directed workbench (Phase 4) — without becoming a separate dashboard
- * screen. Reads `state.gapReport` (computed deterministically, no API key required — see
- * `GapReportInteractor`) and shows the mission, a maturity read explicitly labeled as
- * heuristic, evidence counts, and exactly one high-confidence next action. When the
- * workspace has no mission yet, it's an elegant, low-pressure prompt to define one —
- * the rest of the app keeps working normally either way.
+ * screen or competing with the deck's one primary "Continue" action. Reads
+ * `state.gapReport` (computed deterministically, no API key required — see
+ * `GapReportInteractor`) and shows the mission, evidence counts, and one high-confidence
+ * next action as a lightweight text link (not a second button) alongside the link into
+ * the full report, where the heuristic maturity read lives. When the workspace has no
+ * mission yet, it's an elegant, low-pressure prompt to define one — the rest of the app
+ * keeps working normally either way.
  */
 export function MissionControlModule({
   controller,
@@ -36,6 +38,7 @@ export function MissionControlModule({
         onPress={() => controller.openMissionEditor()}
         style={({ pressed }) => [
           styles.panel,
+          styles.emptyPanel,
           { backgroundColor: theme.panelMuted, borderColor: theme.line, borderStyle: "dashed" },
           pressed && styles.pressed,
         ]}
@@ -52,7 +55,7 @@ export function MissionControlModule({
   const nextAction = report.recommendedActions[0];
 
   return (
-    <View style={[styles.panel, { backgroundColor: theme.panelStrong, borderColor: theme.line }]}>
+    <View style={[styles.panel, styles.row, { backgroundColor: theme.panelStrong, borderColor: theme.line }]}>
       <View style={[styles.rail, { backgroundColor: theme.accent }]} />
       <View style={styles.body}>
         <View style={styles.headerRow}>
@@ -67,7 +70,6 @@ export function MissionControlModule({
             Deliverable: {report.missionDeliverable}
           </Text>
         ) : null}
-        <Text numberOfLines={2} style={[styles.status, { color: theme.textFaint }]}>{report.maturityLabel}</Text>
 
         <View style={styles.countsRow}>
           <CountBadge label="BLOCKERS" value={report.evidence.openQuestions} theme={theme} warn={report.evidence.openQuestions > 0} />
@@ -75,30 +77,26 @@ export function MissionControlModule({
           <CountBadge label="TASKS" value={report.evidence.tasks} theme={theme} />
         </View>
 
-        {nextAction ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() =>
-              nextAction.presetId ? controller.openPreflight(nextAction.presetId) : controller.openMissionEditor()
-            }
-            style={({ pressed }) => [
-              styles.nextAction,
-              { backgroundColor: theme.accentSoft, borderColor: theme.accent },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={[styles.nextActionLabel, { color: theme.accent, fontFamily: theme.fontMono }]}>
-              NEXT ACTION
+        <View style={styles.linkRow}>
+          {nextAction ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() =>
+                nextAction.presetId ? controller.openPreflight(nextAction.presetId) : controller.openMissionEditor()
+              }
+              hitSlop={6}
+            >
+              <Text numberOfLines={1} style={[styles.linkText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                NEXT: {nextAction.label} →
+              </Text>
+            </Pressable>
+          ) : <View />}
+          <Pressable accessibilityRole="button" onPress={onOpenReport} hitSlop={6}>
+            <Text style={[styles.linkText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+              FULL STATUS →
             </Text>
-            <Text numberOfLines={1} style={[styles.nextActionText, { color: theme.text }]}>{nextAction.label}</Text>
           </Pressable>
-        ) : null}
-
-        <Pressable accessibilityRole="button" onPress={onOpenReport} style={styles.reportLink}>
-          <Text style={[styles.reportLinkText, { color: theme.accent, fontFamily: theme.fontMono }]}>
-            VIEW FULL STATUS →
-          </Text>
-        </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -131,27 +129,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 16,
     marginBottom: 18,
-    flexDirection: "row",
     overflow: "hidden",
-    padding: 16,
   },
-  rail: { width: 5, alignSelf: "stretch", marginRight: 12, marginLeft: -16, borderRadius: 3 },
-  body: { flex: 1 },
+  row: { flexDirection: "row" },
+  emptyPanel: { padding: 16 },
+  rail: { width: 5, alignSelf: "stretch" },
+  body: { flex: 1, padding: 16 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   eyebrow: { fontSize: 10, fontWeight: "900", letterSpacing: 1.4 },
   editLink: { fontSize: 10, fontWeight: "800", letterSpacing: 0.6, minHeight: 30 },
   title: { fontSize: 18, fontWeight: "700", lineHeight: 23, marginTop: 4 },
   deliverable: { fontSize: 12, marginTop: 4 },
-  status: { fontSize: 11, lineHeight: 15, marginTop: 6 },
   countsRow: { flexDirection: "row", gap: 8, marginTop: 12 },
   badge: { flex: 1, borderWidth: 1, borderRadius: 8, paddingVertical: 8, alignItems: "center" },
   badgeValue: { fontSize: 15, fontWeight: "800" },
   badgeLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 0.5, marginTop: 2 },
-  nextAction: { borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 12, minHeight: 48, justifyContent: "center" },
-  nextActionLabel: { fontSize: 9, fontWeight: "900", letterSpacing: 1 },
-  nextActionText: { fontSize: 13, fontWeight: "700", marginTop: 2 },
-  reportLink: { minHeight: 40, justifyContent: "center", marginTop: 8 },
-  reportLinkText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
+  linkRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, minHeight: 44 },
+  linkText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4, maxWidth: 180 },
   emptyTitle: { fontSize: 16, fontWeight: "700", marginTop: 6 },
   emptyBody: { fontSize: 12, lineHeight: 17, marginTop: 4 },
 });

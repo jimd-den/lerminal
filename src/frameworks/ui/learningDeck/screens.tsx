@@ -166,56 +166,6 @@ export function DeckScreen({
         </Pressable>
       </View>
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => onCapture("ask")}
-        style={({ pressed }) => [
-          styles.captureDock,
-          { backgroundColor: theme.panelMuted, borderColor: theme.line },
-          pressed && styles.pressed,
-        ]}
-      >
-        <View style={[styles.capturePrompt, { borderColor: theme.line }]}>
-          <Text
-            style={[
-              styles.capturePromptGlyph,
-              { color: theme.accent, fontFamily: theme.fontMono },
-            ]}
-          >
-            &gt;_
-          </Text>
-          <View style={styles.capturePromptCopy}>
-            <Text
-              style={[
-                styles.capturePromptLabel,
-                { color: theme.textFaint, fontFamily: theme.fontMono },
-              ]}
-            >
-              CAPTURE TERMINAL
-            </Text>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.capturePromptText,
-                { color: theme.text, fontFamily: theme.fontMono },
-              ]}
-            >
-              What are you learning?
-            </Text>
-          </View>
-        </View>
-        <View style={[styles.captureAdd, { backgroundColor: theme.accent }]}>
-          <Text
-            style={[
-              styles.captureAddText,
-              { color: theme.accentInk, fontFamily: theme.fontMono },
-            ]}
-          >
-            +
-          </Text>
-        </View>
-      </Pressable>
-
       {state.pendingOperations.length > 0 ? (
         <View
           accessibilityLiveRegion="polite"
@@ -1287,40 +1237,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   pendingActionText: { fontSize: 9, fontWeight: "900" },
-  captureDock: {
-    minHeight: 76,
-    borderRadius: 15,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "stretch",
-    padding: 7,
-    marginTop: 11,
-  },
-  capturePrompt: {
-    flex: 1,
-    borderRadius: 10,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-  },
-  capturePromptGlyph: { fontSize: 14, fontWeight: "900", marginRight: 11 },
-  capturePromptCopy: { flex: 1 },
-  capturePromptLabel: {
-    fontSize: 8,
-    fontWeight: "900",
-    letterSpacing: 1.1,
-    marginBottom: 2,
-  },
-  capturePromptText: { fontSize: 13, fontWeight: "700", letterSpacing: -0.2 },
-  captureAdd: {
-    width: 59,
-    borderRadius: 10,
-    marginLeft: 7,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  captureAddText: { fontSize: 26, lineHeight: 30, fontWeight: "700" },
   quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
   quickAction: {
     width: "48%",
