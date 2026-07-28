@@ -1,7 +1,6 @@
 import React from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AppState, LearnimalController } from "../../../adapters/presenters/LearnimalController";
-import { summarizeGapReportForPrompt } from "../../../usecases/report/GapReportInteractor";
 import { LearningTheme } from "./theme";
 
 /**
@@ -127,11 +126,7 @@ export function GapReportSheet({
             </Section>
 
             <Pressable
-              onPress={() => {
-                const prompt = summarizeGapReportForPrompt(report);
-                controller.closeGapReport();
-                controller.openPreflight("status-report", prompt);
-              }}
+              onPress={() => controller.enrichGapReport()}
               style={({ pressed }) => [
                 styles.enrichButton,
                 { borderColor: theme.accent, backgroundColor: theme.accentSoft },

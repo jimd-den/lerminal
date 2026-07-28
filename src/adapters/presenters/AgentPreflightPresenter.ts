@@ -1,5 +1,5 @@
 import { AppState } from "./LearnimalController";
-import { AgentRunRequest, OperationPreset, buildAgentRunRequest } from "../../usecases/agent/operationPresets";
+import { AgentRunRequest, OperationPreset, buildAgentRunRequest, findOperationPreset } from "../../usecases/agent/operationPresets";
 import { expandForPipe } from "../../usecases/tree";
 
 /**
@@ -32,9 +32,12 @@ export interface AgentPreflightModel {
 
 export function presentAgentPreflight(
   state: AppState,
-  preset: OperationPreset,
+  presetId: string,
   query: string
-): AgentPreflightModel {
+): AgentPreflightModel | null {
+  const preset = findOperationPreset(presetId);
+  if (!preset) return null;
+
   const selectedCards = expandForPipe(state.cards, state.selection);
   const request = buildAgentRunRequest({
     preset,

@@ -16,7 +16,6 @@ import {
   AppState,
   LearnimalController,
 } from "../../../adapters/presenters/LearnimalController";
-import { OPERATION_PRESETS } from "../../../usecases/agent/operationPresets";
 import { LearningTheme } from "./theme";
 
 const BUILTIN_COMMANDS: {
@@ -262,7 +261,7 @@ export function CommandConsoleModal({
               >
                 AI ACTIONS
               </Text>
-              {OPERATION_PRESETS.map((preset) => (
+              {state.operationPresets.map((preset) => (
                 <Pressable
                   key={preset.id}
                   onPress={() => {

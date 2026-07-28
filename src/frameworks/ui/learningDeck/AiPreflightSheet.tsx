@@ -11,8 +11,7 @@ import {
   View,
 } from "react-native";
 import { AppState, LearnimalController } from "../../../adapters/presenters/LearnimalController";
-import { presentAgentPreflight } from "../../../adapters/presenters/AgentPreflightPresenter";
-import { findOperationPreset } from "../../../usecases/agent/operationPresets";
+import { AgentPreflightModel, presentAgentPreflight } from "../../../adapters/presenters/AgentPreflightPresenter";
 import { LearningTheme } from "./theme";
 
 /**
@@ -35,11 +34,10 @@ export function AiPreflightSheet({
   state: AppState;
   theme: LearningTheme;
 }) {
-  const preset = state.activePreflightPresetId
-    ? findOperationPreset(state.activePreflightPresetId)
-    : undefined;
-  const visible = Boolean(preset);
-  const model = preset ? presentAgentPreflight(state, preset, state.preflightQuery) : null;
+  const model = state.activePreflightPresetId
+    ? presentAgentPreflight(state, state.activePreflightPresetId, state.preflightQuery)
+    : null;
+  const visible = Boolean(model);
 
   return (
     <Modal
@@ -56,13 +54,13 @@ export function AiPreflightSheet({
           <View
             style={[styles.sheet, { backgroundColor: theme.panelStrong, borderColor: theme.accent }]}
           >
-            {preset && model ? (
+            {model ? (
               <>
                 <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
                   AI PREFLIGHT
                 </Text>
-                <Text style={[styles.title, { color: theme.text }]}>{preset.label}</Text>
-                <Text style={[styles.purpose, { color: theme.textMuted }]}>{preset.purpose}</Text>
+                <Text style={[styles.title, { color: theme.text }]}>{model.preset.label}</Text>
+                <Text style={[styles.purpose, { color: theme.textMuted }]}>{model.preset.purpose}</Text>
 
                 <ScrollView style={styles.body} keyboardShouldPersistTaps="handled">
                   <Row theme={theme} label="CONTEXT" value={contextSummary(model)} />
@@ -91,13 +89,13 @@ export function AiPreflightSheet({
                     value={model.webEnabled ? "ENABLED — will search the live web" : "OFF — will not browse or search"}
                     valueColor={model.webEnabled ? theme.warning : theme.textMuted}
                   />
-                  <Row theme={theme} label="OUTPUT" value={preset.outputDescription} />
+                  <Row theme={theme} label="OUTPUT" value={model.preset.outputDescription} />
                   <Row theme={theme} label="DESTINATION" value={model.request.destinationLabel} />
-                  {preset.command === "ask" ? (
+                  {model.preset.command === "ask" ? (
                     <Row theme={theme} label="MODEL" value={model.modelLabel} />
                   ) : null}
 
-                  {preset.requiresQuery ? (
+                  {model.preset.requiresQuery ? (
                     <View style={styles.queryBlock}>
                       <Text style={[styles.queryLabel, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
                         QUERY
@@ -172,7 +170,7 @@ export function AiPreflightSheet({
   );
 }
 
-function contextSummary(model: ReturnType<typeof presentAgentPreflight>): string {
+function contextSummary(model: AgentPreflightModel): string {
   if (model.preset.defaultScope === "web") return "None — this reads no cards";
   const n = model.request.contextCardIds.length;
   if (n === 0) return "None selected yet";

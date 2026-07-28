@@ -88,12 +88,18 @@ import {
 } from "../../usecases/review/FsrsScheduler";
 import { ReviewLogRepository } from "../repositories/ReviewLogRepository";
 import { DEFAULT_FSRS_CONFIG } from "../../entities/workspace";
-import { buildAgentRunRequest, buildPipelineText, findOperationPreset } from "../../usecases/agent/operationPresets";
+import {
+  buildAgentRunRequest,
+  buildPipelineText,
+  findOperationPreset,
+  OperationPreset,
+  OPERATION_PRESETS,
+} from "../../usecases/agent/operationPresets";
 import { ResearchResult } from "../../entities/research";
 import { RunResearchInteractor } from "../../usecases/research/RunResearchInteractor";
 import { ExtractResearchResultInteractor } from "../../usecases/research/ExtractResearchResultInteractor";
 import { CreateResearchBriefInteractor } from "../../usecases/research/CreateResearchBriefInteractor";
-import { GapReport, GapReportInteractor } from "../../usecases/report/GapReportInteractor";
+import { GapReport, GapReportInteractor, summarizeGapReportForPrompt } from "../../usecases/report/GapReportInteractor";
 import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission } from "../../entities/workspace";
 
 // Default prompts are now *instructions* (the strict JSON format contract is appended
@@ -225,6 +231,8 @@ export interface AppState {
   isMissionEditorOpen: boolean;
   /** The in-progress mission edit, valid while `isMissionEditorOpen`. */
   missionDraft: MissionDraft;
+  /** The fixed set of explicit AI operation presets (see `operationPresets.ts`) — exposed here so UI never imports the usecases layer directly. */
+  operationPresets: OperationPreset[];
 }
 
 /** Business/domain state: persisted or derivable data, free of UI concerns. */
@@ -642,6 +650,7 @@ export class LearnimalController {
       isGapReportOpen: this.ui.isGapReportOpen,
       isMissionEditorOpen: this.ui.isMissionEditorOpen,
       missionDraft: { ...this.ui.missionDraft, successCriteria: [...this.ui.missionDraft.successCriteria] },
+      operationPresets: OPERATION_PRESETS,
     };
   }
 
@@ -1902,6 +1911,20 @@ export class LearnimalController {
 
   closeGapReport(): void {
     this.ui.isGapReportOpen = false;
+    this.emit();
+  }
+
+  /**
+   * Closes the gap report and opens the `status-report` preflight pre-filled with a
+   * serialization of the current deterministic report — the UI never has to know how
+   * that prompt is built (see `summarizeGapReportForPrompt`).
+   */
+  enrichGapReport(): void {
+    const report = this.computeGapReport();
+    if (!report) return;
+    this.ui.isGapReportOpen = false;
+    this.ui.activePreflightPresetId = "status-report";
+    this.ui.preflightQuery = summarizeGapReportForPrompt(report);
     this.emit();
   }
 
