@@ -303,6 +303,12 @@ export function DeckScreen({
           theme={theme}
           onPress={() => onCapture("ask")}
         />
+        <QuickAction
+          label="Search web"
+          code="WEB"
+          theme={theme}
+          onPress={() => controller.openPreflight("research-web")}
+        />
       </View>
 
       <SectionLabel theme={theme} code="LATEST 04">

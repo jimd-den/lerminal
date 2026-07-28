@@ -101,8 +101,9 @@ import { ExtractResearchResultInteractor } from "../../usecases/research/Extract
 import { CreateResearchBriefInteractor } from "../../usecases/research/CreateResearchBriefInteractor";
 import { SaveResearchResultAsSourceInteractor } from "../../usecases/research/SaveResearchResultAsSourceInteractor";
 import { SuggestSearchQueriesInteractor } from "../../usecases/agent/SuggestSearchQueriesInteractor";
+import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabusInteractor";
 import { GapReport, GapReportInteractor, summarizeGapReportForPrompt } from "../../usecases/report/GapReportInteractor";
-import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission } from "../../entities/workspace";
+import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission, WorkspacePhase } from "../../entities/workspace";
 
 // Default prompts are now *instructions* (the strict JSON format contract is appended
 // by the gateway via composeCardPrompt), so users can edit them freely.
@@ -357,6 +358,7 @@ export class LearnimalController {
   private createResearchBriefInteractor: CreateResearchBriefInteractor;
   private saveResearchResultAsSourceInteractor: SaveResearchResultAsSourceInteractor;
   private suggestSearchQueriesInteractor: SuggestSearchQueriesInteractor;
+  private generateSyllabusInteractor: GenerateSyllabusInteractor;
   private gapReportInteractor: GapReportInteractor;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
@@ -456,6 +458,10 @@ export class LearnimalController {
     );
     this.suggestSearchQueriesInteractor = new SuggestSearchQueriesInteractor(
       deps.agentGateway,
+    );
+    this.generateSyllabusInteractor = new GenerateSyllabusInteractor(
+      deps.agentGateway,
+      deps.cardRepo,
     );
     this.gapReportInteractor = new GapReportInteractor();
 
@@ -1774,6 +1780,7 @@ export class LearnimalController {
     try {
       const queries = await this.suggestSearchQueriesInteractor.execute({
         topic: trimmed,
+        mission: this.activeWorkspace()?.mission,
         apiKey: this.domain.openRouterKey,
         model: this.domain.selectedModel,
       });
@@ -2101,6 +2108,79 @@ export class LearnimalController {
     this.ui.isMissionEditorOpen = false;
     this.emit();
     this.showToast(`Mission saved: ${mission.goalTitle}`);
+  }
+
+  private activeWorkspace(): Workspace | undefined {
+    return this.domain.workspaces.find(
+      (w) => w.id === this.domain.activeWorkspaceId,
+    );
+  }
+
+  /**
+   * Moves the mission to another phase (define/explore/build/review/done) and persists
+   * it — phases are freely switchable in both directions from Mission Control, never a
+   * one-way gate on what the user can do.
+   */
+  async setMissionPhase(phase: WorkspacePhase): Promise<void> {
+    const workspace = this.activeWorkspace();
+    if (!workspace?.mission) return;
+    const updated: Workspace = {
+      ...workspace,
+      mission: updateWorkspaceMission(workspace.mission, { currentPhase: phase }),
+    };
+    await this.workspaceRepo.saveWorkspace(updated);
+    this.domain.workspaces = this.domain.workspaces.map((w) =>
+      w.id === workspace.id ? updated : w,
+    );
+    this.emit();
+  }
+
+  /**
+   * One explicit model call turning the full mission (goal, why, deliverable, criteria,
+   * phase) into a persisted mini-syllabus of ordered prerequisite cards under a
+   * "Syllabus" group. The created items land selected, so the research preflight's
+   * deterministic suggestions immediately offer them as search queries.
+   */
+  async generateSyllabus(): Promise<void> {
+    const workspace = this.activeWorkspace();
+    if (!workspace?.mission) {
+      this.showToast("Define a mission first");
+      return;
+    }
+    if (!this.domain.openRouterKey?.trim()) {
+      this.showToast("Add your OpenRouter key in Settings");
+      return;
+    }
+
+    const opId = this.addPendingOperation("Generating syllabus…");
+    try {
+      const { group, items } = await this.generateSyllabusInteractor.execute({
+        mission: workspace.mission,
+        workspaceId: workspace.id,
+        apiKey: this.domain.openRouterKey,
+        model: this.domain.selectedModel,
+      });
+      this.removePendingOperation(opId);
+      if (this.domain.activeWorkspaceId === workspace.id) {
+        await this.loadCardsForActiveWorkspace();
+        this.domain.selection = new Set(items.map((c) => c.id));
+      }
+      this.ui.operationResult = {
+        summary: `Syllabus created: ${items.length} prerequisite topic${items.length === 1 ? "" : "s"}`,
+        createdCardIds: [group.id, ...items.map((c) => c.id)],
+        destination: { spaceId: workspace.id, groupId: group.id },
+        primaryActionLabel: "Open syllabus",
+      };
+      this.emit();
+    } catch (err: any) {
+      this.setPendingOperationError(
+        opId,
+        err instanceof UseCaseError ? err.userMessage : "Could not generate syllabus",
+      );
+      this.showToast(
+        err instanceof UseCaseError ? err.userMessage : "Could not generate syllabus",
+      );
+    }
   }
 
   // --- Spaced Repetition Review Flow ---

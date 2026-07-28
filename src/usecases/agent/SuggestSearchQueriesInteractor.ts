@@ -1,13 +1,33 @@
 import { AgentGateway } from "../../adapters/gateways/AgentGateway";
 import { BUILTIN_ASSISTANT_PROFILES } from "../../entities/assistantProfile";
+import { WorkspaceMission } from "../../entities/workspace";
 import { AgentRequestError, MissingApiKeyError } from "../errors";
 
 const QUERY_STRATEGIST_PROFILE = BUILTIN_ASSISTANT_PROFILES.find(p => p.id === "builtin-query-strategist")!;
 
+const MAX_QUERIES = 6;
+
 export interface SuggestSearchQueriesRequest {
   topic: string;
+  /** The workspace mission, when set — the model sees the goal, criteria, and phase, not just the raw topic. */
+  mission?: WorkspaceMission;
   apiKey: string;
   model: string;
+}
+
+/** Serializes the mission into prompt context so suggested queries serve the actual goal. */
+export function buildQueryStrategistPrompt(topic: string, mission?: WorkspaceMission): string {
+  const lines: string[] = [`Topic: ${topic}`];
+  if (mission) {
+    lines.push(`Learner's goal: ${mission.goalTitle}`);
+    if (mission.goalDescription) lines.push(`Why: ${mission.goalDescription}`);
+    if (mission.targetDeliverable) lines.push(`Target deliverable: ${mission.targetDeliverable}`);
+    if (mission.successCriteria.length > 0) {
+      lines.push(`Success criteria: ${mission.successCriteria.join("; ")}`);
+    }
+    lines.push(`Current phase: ${mission.currentPhase}`);
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -16,17 +36,18 @@ export interface SuggestSearchQueriesRequest {
  * ## Business Value & Purpose
  * The optional, explicit "break this down for me" step ahead of "Research on the web":
  * calls the model once to turn one broad goal/topic into several sharper, more specific
- * search queries (official docs, comparisons, tutorials, pitfalls) rather than making the
- * user guess good query phrasing themselves. This is a distinct, clearly-labeled AI call —
- * never conflated with the actual web search, which still only ever happens through
- * `RunResearchInteractor`/`SearchGateway`.
+ * search queries rather than making the user guess good query phrasing themselves. The
+ * full workspace mission (goal, why, deliverable, success criteria, phase) is included in
+ * the prompt when set, so queries serve the actual goal — not just the literal topic text.
+ * This is a distinct, clearly-labeled AI call — never conflated with the actual web
+ * search, which still only ever happens through `RunResearchInteractor`/`SearchGateway`.
  *
- * Requires a configured API key up front, same honesty guard as the other agent-backed
- * research steps. Note: unlike `CreateResearchBriefInteractor`, there is no structural
- * signal here (like a missing citation) to detect a gateway's local-fallback path — see
- * the Phase 0 recon doc on `OpenRouterAgentGateway`'s silent fallback. Until that's fixed
- * at the gateway (Phase 8), a fallback response would surface as plausible-looking but
- * generic query text rather than being caught here.
+ * ## Return-shape enforcement
+ * Requires a configured API key up front. The response rides the strict `cards-v1`
+ * output contract (appended by the gateway), and this interactor validates the shape on
+ * top: only non-empty string titles survive, duplicates are dropped case-insensitively,
+ * the list is capped at {@link MAX_QUERIES}, and an empty/invalid result throws rather
+ * than returning a fabricated success.
  */
 export class SuggestSearchQueriesInteractor {
   constructor(private readonly agentGateway: AgentGateway) {}
@@ -37,7 +58,7 @@ export class SuggestSearchQueriesInteractor {
     }
 
     const cards = await this.agentGateway.ask(
-      request.topic,
+      buildQueryStrategistPrompt(request.topic, request.mission),
       [],
       request.apiKey,
       request.model,
@@ -45,9 +66,20 @@ export class SuggestSearchQueriesInteractor {
       "cards-v1"
     );
 
-    const queries = cards.map(c => c.title.trim()).filter(Boolean);
+    const seen = new Set<string>();
+    const queries: string[] = [];
+    for (const card of cards) {
+      const title = typeof card?.title === "string" ? card.title.trim() : "";
+      if (!title) continue;
+      const key = title.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queries.push(title);
+      if (queries.length >= MAX_QUERIES) break;
+    }
+
     if (queries.length === 0) {
-      throw new AgentRequestError("The model didn't return any query suggestions.");
+      throw new AgentRequestError("The model didn't return any usable query suggestions.");
     }
     return queries;
   }

@@ -132,6 +132,18 @@ export const BUILTIN_ASSISTANT_PROFILES: AssistantProfile[] = [
     builtin: true,
   },
   {
+    id: "builtin-syllabus-planner",
+    name: "Syllabus Planner",
+    description: "Builds a mini-syllabus of ordered prerequisites for a stated goal",
+    goal: "Turn a goal into 4-8 ordered prerequisite topics, each phrased as a searchable topic name",
+    capability: "generate-cards",
+    outputContract: "cards-v1",
+    systemPrompt: "You are a curriculum designer building a mini-syllabus. Given the learner's goal (and, when provided, their why, target deliverable, success criteria, and current phase), produce 4 to 8 prerequisite topics ordered so earlier ones scaffold later ones. Each card's title MUST be the prerequisite topic itself, phrased as a concise searchable topic name (as someone would type into a search box — no numbering, no 'Learn' prefix). The body states in 1-2 sentences what to learn about it and why it's needed for this specific goal. Cover only genuine prerequisites for the stated goal; do not pad with generic study advice.",
+    createdAt: 1718582400000,
+    updatedAt: 1718582400000,
+    builtin: true,
+  },
+  {
     id: "builtin-query-strategist",
     name: "Query Strategist",
     description: "Breaks a broad goal or topic down into several sharper web search queries",

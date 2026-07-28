@@ -341,4 +341,68 @@ describe("Learnimal App Controller", () => {
     expect(state.isSuggestingQueries).toBe(false);
     expect(state.aiQuerySuggestions).toEqual(["Mock Chunks 1", "Mock Chunks 2"]);
   });
+
+  it("switches mission phases freely in both directions and persists each change", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+    controller.openMissionEditor();
+    controller.updateMissionDraft({ goalTitle: "Ship a renderer" });
+    await controller.saveMission();
+
+    await controller.setMissionPhase("build");
+    expect(controller.getState().workspaces[0].mission?.currentPhase).toBe("build");
+
+    await controller.setMissionPhase("explore");
+    expect(controller.getState().workspaces[0].mission?.currentPhase).toBe("explore");
+
+    const persisted = await workspaceRepo.getWorkspaces();
+    expect(persisted[0].mission?.currentPhase).toBe("explore");
+  });
+
+  it("generates a persisted syllabus group from the mission and selects its items", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+    controller.setOpenRouterKey("test-key");
+    controller.openMissionEditor();
+    controller.updateMissionDraft({ goalTitle: "Ship a renderer" });
+    await controller.saveMission();
+
+    await controller.generateSyllabus();
+
+    const state = controller.getState();
+    const group = state.cards.find(c => c.type === "group" && c.title.startsWith("Syllabus:"));
+    expect(group).toBeDefined();
+    const items = state.cards.filter(c => c.parentId === group?.id);
+    expect(items.length).toBe(2);
+    expect(items.every(i => i.role === "concept")).toBe(true);
+    expect(state.selection.size).toBe(2);
+    expect(state.operationResult?.summary).toContain("Syllabus created");
+  });
+
+  it("refuses to generate a syllabus without a mission or without a key", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.generateSyllabus();
+    expect(controller.getState().toastMessage).toContain("mission");
+
+    controller.openMissionEditor();
+    controller.updateMissionDraft({ goalTitle: "Goal" });
+    await controller.saveMission();
+    await controller.generateSyllabus();
+    expect(controller.getState().toastMessage).toContain("OpenRouter key");
+    expect(controller.getState().cards.some(c => c.title.startsWith("Syllabus:"))).toBe(false);
+  });
 });

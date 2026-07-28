@@ -1,7 +1,10 @@
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { AppState, LearnimalController } from "../../../adapters/presenters/LearnimalController";
+import { WorkspacePhase } from "../../../entities/workspace";
 import { LearningTheme } from "./theme";
+
+const PHASES: WorkspacePhase[] = ["define", "explore", "build", "review", "done"];
 
 /**
  * # Mission Control Module
@@ -53,6 +56,7 @@ export function MissionControlModule({
   }
 
   const nextAction = report.recommendedActions[0];
+  const currentPhase = state.workspaces.find(w => w.id === state.activeWorkspaceId)?.mission?.currentPhase;
 
   return (
     <View style={[styles.panel, styles.row, { backgroundColor: theme.panelStrong, borderColor: theme.line }]}>
@@ -70,6 +74,36 @@ export function MissionControlModule({
             Deliverable: {report.missionDeliverable}
           </Text>
         ) : null}
+
+        <View style={styles.phaseRow}>
+          {PHASES.map((phase) => {
+            const active = phase === currentPhase;
+            return (
+              <Pressable
+                key={phase}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => void controller.setMissionPhase(phase)}
+                style={[
+                  styles.phaseChip,
+                  {
+                    borderColor: active ? theme.accent : theme.line,
+                    backgroundColor: active ? theme.accentSoft : "transparent",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.phaseChipText,
+                    { color: active ? theme.accent : theme.textFaint, fontFamily: theme.fontMono },
+                  ]}
+                >
+                  {phase.toUpperCase()}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         <View style={styles.countsRow}>
           <CountBadge label="BLOCKERS" value={report.evidence.openQuestions} theme={theme} warn={report.evidence.openQuestions > 0} />
@@ -94,6 +128,19 @@ export function MissionControlModule({
           <Pressable accessibilityRole="button" onPress={onOpenReport} hitSlop={6}>
             <Text style={[styles.linkText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
               FULL STATUS →
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.linkRow}>
+          <Pressable accessibilityRole="button" onPress={() => void controller.generateSyllabus()} hitSlop={6}>
+            <Text style={[styles.linkText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              GENERATE SYLLABUS →
+            </Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => controller.openPreflight("research-web")} hitSlop={6}>
+            <Text style={[styles.linkText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+              SEARCH WEB →
             </Text>
           </Pressable>
         </View>
@@ -144,6 +191,9 @@ const styles = StyleSheet.create({
   badge: { flex: 1, borderWidth: 1, borderRadius: 8, paddingVertical: 8, alignItems: "center" },
   badgeValue: { fontSize: 15, fontWeight: "800" },
   badgeLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 0.5, marginTop: 2 },
+  phaseRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
+  phaseChip: { minHeight: 32, borderWidth: 1, borderRadius: 7, paddingHorizontal: 8, justifyContent: "center" },
+  phaseChipText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.8 },
   linkRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, minHeight: 44 },
   linkText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4, maxWidth: 180 },
   emptyTitle: { fontSize: 16, fontWeight: "700", marginTop: 6 },
