@@ -8,11 +8,8 @@ import {
   presentLearningDeck,
 } from "../../adapters/presenters/LearningDeckPresenter";
 import { useControllerState } from "./useControllerState";
-import {
-  BottomNavigation,
-  CorePlace,
-  SelectionBar,
-} from "./learningDeck/components";
+import { BottomNavigation, CorePlace } from "./learningDeck/components";
+import { SelectionTray } from "./learningDeck/SelectionTray";
 import {
   CaptureIntent,
   CaptureScreen,
@@ -149,9 +146,6 @@ export function MainLayout({ controller }: MainLayoutProps) {
     setPlace("more");
   };
 
-  const openAdvancedPalette = () => {
-    controller.setModalOpen(true);
-  };
 
   const confirmSelectionDelete = () => {
     const selectedCards = state.cards.filter((card) =>
@@ -327,12 +321,10 @@ export function MainLayout({ controller }: MainLayoutProps) {
             </View>
           ) : null}
           {state.selection.size > 0 ? (
-            <SelectionBar
-              count={state.selection.size}
+            <SelectionTray
+              controller={controller}
+              state={state}
               theme={theme}
-              onCancel={() => controller.clearSelection()}
-              onOrganize={openAdvancedPalette}
-              onTransform={openAdvancedPalette}
               onDelete={confirmSelectionDelete}
             />
           ) : (

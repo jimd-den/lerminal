@@ -22,13 +22,8 @@ import {
   materialLabel,
 } from "../../../adapters/presenters/LearningDeckPresenter";
 import { Card } from "../../../entities/card";
-import {
-  Chip,
-  OperationPanel,
-  SectionLabel,
-  Slab,
-  SystemHeader,
-} from "./components";
+import { Chip, SectionLabel, Slab, SystemHeader } from "./components";
+import { CaptureReceipt } from "./CaptureReceipt";
 import { MissionControlModule } from "./MissionControl";
 import { LearningTheme } from "./theme";
 
@@ -89,14 +84,13 @@ export function DeckScreen({
         rightAction={{ label: "SYS", onPress: onOpenSettings }}
       />
 
-      {state.operationResult ? (
-        <OperationPanel
-          result={state.operationResult}
-          theme={theme}
-          onOpen={onOpenResult}
-          onDismiss={() => controller.dismissOperationResult()}
-        />
-      ) : null}
+      <CaptureReceipt
+        controller={controller}
+        state={state}
+        theme={theme}
+        onOpenOutput={onOpenResult}
+      />
+
 
       <MissionControlModule
         controller={controller}

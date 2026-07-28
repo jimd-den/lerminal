@@ -143,6 +143,17 @@ export interface OperationResult {
   primaryActionLabel: string;
 }
 
+/**
+ * The union of every way a suggested action can be carried out — the capture receipt's
+ * follow-ups and the selection tray's buttons both narrow to this, so
+ * {@link LearnimalController.dispatchSuggestedAction} is the one place that routes them.
+ */
+export type SuggestedActionDispatch =
+  | { kind: "preflight"; presetId: string }
+  | { kind: "pipeline"; text: string }
+  | { kind: "mission" }
+  | { kind: "palette" };
+
 /** Editable draft used while creating/editing a workspace's mission. */
 export interface MissionDraft {
   goalTitle: string;
@@ -708,10 +719,21 @@ export class LearnimalController {
       await this.loadCardsForActiveWorkspace();
       if (this.domain.activeWorkspaceId === workspaceId) {
         this.domain.selection = new Set([note.id]);
+        // Capture must lead somewhere: a note now produces the same receipt a pipeline
+        // run does, so the confirmation carries next actions instead of a bare toast.
+        this.ui.operationResult = {
+          summary: "Note captured",
+          createdCardIds: [note.id],
+          destination: {
+            spaceId: workspaceId,
+            groupId: note.parentId,
+            cardId: note.id,
+          },
+          primaryActionLabel: "Open note",
+        };
         this.emit();
       }
     }
-    this.showToast("Note saved");
     console.log(
       `[${logTimestamp}] [LearnimalController.createNote] SUCCESS | noteId=${note.id}`,
     );
@@ -980,6 +1002,36 @@ export class LearnimalController {
   dismissOperationResult(): void {
     this.ui.operationResult = null;
     this.emit();
+  }
+
+  /**
+   * The single entry point for every suggested action — capture-receipt follow-ups and
+   * selection-tray buttons alike (see `nextActions.ts` / `selectionActions.ts`).
+   *
+   * Routing lives here rather than in each component so the guarantee is enforced in one
+   * place: a `preflight` dispatch can only ever *open the scope sheet*. There is no code
+   * path by which tapping a suggestion reaches a gateway directly.
+   */
+  async dispatchSuggestedAction(dispatch: SuggestedActionDispatch): Promise<void> {
+    switch (dispatch.kind) {
+      case "preflight":
+        this.ui.operationResult = null;
+        this.openPreflight(dispatch.presetId);
+        return;
+      case "pipeline":
+        this.ui.operationResult = null;
+        this.emit();
+        await this.runPipeline(dispatch.text);
+        return;
+      case "mission":
+        this.ui.operationResult = null;
+        this.openMissionEditor();
+        return;
+      case "palette":
+        this.ui.operationResult = null;
+        this.setModalOpen(true);
+        return;
+    }
   }
 
   // --- Custom Commands ---

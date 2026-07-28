@@ -405,4 +405,64 @@ describe("Learnimal App Controller", () => {
     expect(controller.getState().toastMessage).toContain("OpenRouter key");
     expect(controller.getState().cards.some(c => c.title.startsWith("Syllabus:"))).toBe(false);
   });
+
+  it("produces a capture receipt after a note, so capture leads somewhere", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    const note = await controller.createNote({ content: "An idea worth keeping" });
+
+    const result = controller.getState().operationResult;
+    expect(result).not.toBeNull();
+    expect(result?.createdCardIds).toEqual([note.id]);
+    expect(result?.destination.cardId).toBe(note.id);
+  });
+
+  it("dispatching a suggested AI action only opens the preflight — never runs it", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+    await controller.createNote({ content: "A note" });
+
+    await controller.dispatchSuggestedAction({ kind: "preflight", presetId: "explain-selected" });
+
+    const state = controller.getState();
+    expect(state.activePreflightPresetId).toBe("explain-selected");
+    // The receipt steps aside for the sheet, and no cards were generated behind our back.
+    expect(state.operationResult).toBeNull();
+    expect(state.cards.length).toBe(1);
+  });
+
+  it("dispatching 'More' opens the command palette", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.dispatchSuggestedAction({ kind: "palette" });
+
+    expect(controller.getState().isModalOpen).toBe(true);
+  });
+
+  it("dispatching a mission action opens the mission editor", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.dispatchSuggestedAction({ kind: "mission" });
+
+    expect(controller.getState().isMissionEditorOpen).toBe(true);
+  });
 });
