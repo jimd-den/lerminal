@@ -5,30 +5,67 @@ import { SemanticRole } from "../../../entities/card";
 export type AccentName = AppState["accent"];
 
 /**
- * # Type Scale
+ * # Type Scale — large-format
  *
  * ## Business Value & Purpose
- * The HUD styling had drifted into 7, 8, and 9-point labels — legible in a mockup on a
- * desktop monitor, not on a phone at arm's length, and well under what anyone with even
- * mild visual impairment can read. This scale sets a hard floor of 11pt and gives every
- * size a name describing its *job*, so the next label added has an obvious size to pick
- * rather than a number someone eyeballed.
+ * The design direction is an LCARS-style mission console by way of Vision Pro's calm
+ * depth and Nintendo's chunky, no-manual-needed clarity. All three agree on one thing:
+ * **big**. LCARS labels are bold blocks you read across a bridge; Nintendo controls are
+ * obvious from the couch; Vision Pro panels are generously spaced because they float in
+ * real space. The old styling had drifted the other way into 7, 8, and 9-point labels —
+ * legible in a desktop mockup, not on a phone at arm's length.
+ *
+ * So this scale is deliberately larger than a conventional mobile ramp, with a hard 12pt
+ * floor, and each step named for its *job* so the next label added has an obvious size to
+ * pick rather than a number someone eyeballed.
  *
  * Six steps is deliberate. A scale with a step for every occasion stops being a scale.
  */
 export const TypeScale = {
-  /** System labels, HUD eyebrows, badges. The floor — never go below this. */
-  label: 11,
+  /** All-caps system labels, HUD eyebrows, badges. The floor — never go below this. */
+  label: 12,
   /** Metadata, IDs, intervals, provenance lines. */
-  meta: 12,
+  meta: 13,
   /** Default body text. */
-  body: 14,
+  body: 16,
   /** Emphasised body — card titles in lists, primary buttons. */
-  bodyStrong: 15,
+  bodyStrong: 18,
   /** Section and card titles. */
-  title: 18,
+  title: 22,
   /** Screen headings. */
-  display: 22,
+  display: 28,
+} as const;
+
+/**
+ * # Structure Tokens
+ *
+ * ## Business Value & Purpose
+ * The LCARS half of the direction is *structural*: colour-coded rails, blocky panels, and
+ * the characteristic asymmetric corner where a rail turns into a panel. These tokens name
+ * that vocabulary so panels across the app share one silhouette instead of each
+ * re-inventing its radii — which is what makes a set of screens read as one instrument
+ * rather than a pile of cards.
+ *
+ * Touch sizes carry the Nintendo half: `tap` is the 44pt floor, `tapLarge` is what a
+ * primary action gets, because the main thing on screen should be unmissable.
+ */
+export const Structure = {
+  /** Width of the colour-coded spine on a panel. */
+  rail: 6,
+  /** Thicker spine for a primary/mission panel. */
+  railBold: 10,
+  /** The soft outer radius of a panel. */
+  radius: 16,
+  /** The tight corner where a rail meets a panel — the LCARS "elbow". */
+  radiusElbow: 5,
+  /** Inner radius for controls sitting inside a panel. */
+  radiusControl: 10,
+  /** Minimum touch target. */
+  tap: 44,
+  /** Primary-action touch target. */
+  tapLarge: 56,
+  /** Standard gutter inside a panel. */
+  gutter: 16,
 } as const;
 
 /**

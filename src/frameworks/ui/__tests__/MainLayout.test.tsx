@@ -2,28 +2,87 @@ import { describe, expect, it } from "bun:test";
 import * as fs from "fs";
 import * as path from "path";
 
-describe("MainLayout Custom Command Sheet Styling", () => {
-  it("should style the KeyboardAvoidingView wrapping bottomSheet in the Create Custom Command Modal", () => {
-    const filePath = path.join(__dirname, "../MainLayout.tsx");
-    const content = fs.readFileSync(filePath, "utf-8");
+const uiRoot = path.join(__dirname, "..");
+const read = (relative: string) => fs.readFileSync(path.join(uiRoot, relative), "utf-8");
 
-    // Locate the CREATE CUSTOM COMMAND SHEET modal section.
-    const startToken = "{/* CREATE CUSTOM COMMAND SHEET */}";
-    const startIndex = content.indexOf(startToken);
-    expect(startIndex).not.toBe(-1);
+/**
+ * These are architecture assertions, not behaviour tests: they pin *where* responsibility
+ * lives so the shell can't quietly re-absorb what once made it a God class — five screens,
+ * eight modals, navigation state, and the back-button policy in one file.
+ */
+describe("MainLayout shell", () => {
+  const content = read("MainLayout.tsx");
 
-    const sheetContent = content.substring(startIndex, startIndex + 1000);
+  it("composes the four places from the screens module", () => {
+    expect(content).toContain("DeckScreen");
+    expect(content).toContain("LibraryScreen");
+    expect(content).toContain("SpaceScreen");
+    expect(content).toContain("DocumentScreen");
+    expect(content).toContain("CaptureScreen");
+    expect(content).toContain("SettingsScreen");
+    expect(content).toContain("BottomNavigation");
+    expect(content).not.toContain("LegacyMainLayout");
+  });
 
-    // Find the KeyboardAvoidingView inside this block
-    const kavRegex = /<KeyboardAvoidingView[^>]*>/;
-    const match = sheetContent.match(kavRegex);
-    expect(match).not.toBeNull();
+  it("delegates navigation and the modal stack rather than owning them", () => {
+    expect(content).toContain("useDeckNavigation");
+    expect(content).toContain("ModalStack");
 
-    const kavTag = match![0];
-    console.log("Found KeyboardAvoidingView tag:", kavTag);
+    // The back-button policy and place transitions belong to the hook now.
+    expect(content).not.toContain("BackHandler");
+    expect(content).not.toContain("setLibraryLevel");
+    // Individual sheets are mounted by ModalStack, not here.
+    expect(content).not.toContain("CardDetailModal");
+    expect(content).not.toContain("AiPreflightSheet");
+    expect(content).not.toContain("GapReportSheet");
+  });
 
-    // Assert that the tag contains style containing flex: 1 and width: "100%"
-    expect(kavTag).toContain("style=");
-    expect(kavTag).toMatch(/style=\{\s*\{\s*flex:\s*1,\s*width:\s*(['"])100%\1\s*\}\s*\}/);
+  it("carries no decorative chrome that implies capability", () => {
+    // The old instrument grid drew crosshairs over the canvas that meant nothing.
+    expect(content).not.toContain("instrumentGrid");
+    expect(content).not.toContain("gridNode");
+  });
+});
+
+describe("modal stack", () => {
+  it("mounts every sheet in one place", () => {
+    const content = read("learningDeck/ModalStack.tsx");
+
+    for (const modal of [
+      "CardDetailModal",
+      "ReviewModal",
+      "CommandConsoleModal",
+      "AiPreflightSheet",
+      "ResearchResultsSheet",
+      "MissionEditorSheet",
+      "GapReportSheet",
+      "PendingInputModal",
+    ]) {
+      expect(content).toContain(modal);
+    }
+  });
+});
+
+describe("screens module", () => {
+  it("is split one file per screen, not a single omnibus file", () => {
+    expect(fs.existsSync(path.join(uiRoot, "learningDeck/screens.tsx"))).toBe(false);
+
+    for (const file of [
+      "DeckScreen.tsx",
+      "LibraryScreen.tsx",
+      "SpaceScreen.tsx",
+      "DocumentScreen.tsx",
+      "CaptureScreen.tsx",
+    ]) {
+      expect(fs.existsSync(path.join(uiRoot, "learningDeck/screens", file))).toBe(true);
+    }
+  });
+
+  it("keeps every screen small enough to hold in your head", () => {
+    const dir = path.join(uiRoot, "learningDeck/screens");
+    for (const file of fs.readdirSync(dir)) {
+      const lines = fs.readFileSync(path.join(dir, file), "utf-8").split("\n").length;
+      expect(lines).toBeLessThan(400);
+    }
   });
 });
