@@ -263,4 +263,52 @@ describe("Learnimal App Controller", () => {
     expect(controller.getState().isMissionEditorOpen).toBe(true);
     expect(controller.getState().workspaces[0].mission).toBeUndefined();
   });
+
+  it("persists a kept research result as a real source card, with no API key required", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.startResearch("react hooks");
+    const [firstResult] = controller.getState().researchResults;
+    expect(firstResult).toBeDefined();
+
+    controller.setResearchKeepState(firstResult.url, "kept");
+    await controller.saveResearchResultAsSource(firstResult.url);
+
+    const state = controller.getState();
+    expect(state.researchResults[0].savedCardId).toBeDefined();
+    expect(state.toastMessage).toContain("Source added");
+
+    const savedCard = state.cards.find(c => c.id === state.researchResults[0].savedCardId);
+    expect(savedCard).toBeDefined();
+    expect(savedCard?.type).toBe("source");
+    expect(savedCard?.cite).toBe(firstResult.url);
+
+    // Actually persisted to the repository, not just in-memory controller state.
+    const persisted = await cardRepo.getCardsByWorkspace(state.activeWorkspaceId!);
+    expect(persisted.some(c => c.id === savedCard?.id)).toBe(true);
+  });
+
+  it("does not create a duplicate card when saving the same research result twice", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.startResearch("react hooks");
+    const [firstResult] = controller.getState().researchResults;
+
+    await controller.saveResearchResultAsSource(firstResult.url);
+    await controller.saveResearchResultAsSource(firstResult.url);
+
+    const state = controller.getState();
+    const sourceCards = state.cards.filter(c => c.cite === firstResult.url);
+    expect(sourceCards.length).toBe(1);
+  });
 });

@@ -99,6 +99,7 @@ import { ResearchResult } from "../../entities/research";
 import { RunResearchInteractor } from "../../usecases/research/RunResearchInteractor";
 import { ExtractResearchResultInteractor } from "../../usecases/research/ExtractResearchResultInteractor";
 import { CreateResearchBriefInteractor } from "../../usecases/research/CreateResearchBriefInteractor";
+import { SaveResearchResultAsSourceInteractor } from "../../usecases/research/SaveResearchResultAsSourceInteractor";
 import { GapReport, GapReportInteractor, summarizeGapReportForPrompt } from "../../usecases/report/GapReportInteractor";
 import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission } from "../../entities/workspace";
 
@@ -347,6 +348,7 @@ export class LearnimalController {
   private runResearchInteractor: RunResearchInteractor;
   private extractResearchResultInteractor: ExtractResearchResultInteractor;
   private createResearchBriefInteractor: CreateResearchBriefInteractor;
+  private saveResearchResultAsSourceInteractor: SaveResearchResultAsSourceInteractor;
   private gapReportInteractor: GapReportInteractor;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
@@ -439,6 +441,9 @@ export class LearnimalController {
     );
     this.createResearchBriefInteractor = new CreateResearchBriefInteractor(
       deps.agentGateway,
+      deps.cardRepo,
+    );
+    this.saveResearchResultAsSourceInteractor = new SaveResearchResultAsSourceInteractor(
       deps.cardRepo,
     );
     this.gapReportInteractor = new GapReportInteractor();
@@ -1835,6 +1840,40 @@ export class LearnimalController {
       );
     } finally {
       this.ui.researchLoading = false;
+      this.emit();
+    }
+  }
+
+  /**
+   * Persists a research candidate as a real `source` card immediately — deterministic,
+   * no model call, no API key required. This is the direct "add this" action; unlike
+   * `createResearchBrief` (which needs a key and only saves cited claim cards), a
+   * learner must be able to save evidence they found even with no AI configured.
+   */
+  async saveResearchResultAsSource(url: string): Promise<void> {
+    const workspaceId = this.domain.activeWorkspaceId;
+    const target = this.ui.researchResults.find((r) => r.url === url);
+    if (!workspaceId || !target) return;
+    if (target.savedCardId) return;
+
+    try {
+      const card = await this.saveResearchResultAsSourceInteractor.execute({
+        result: target,
+        workspaceId,
+        parentId: this.domain.currentGroupId,
+      });
+      this.ui.researchResults = this.ui.researchResults.map((r) =>
+        r.url === url ? { ...r, savedCardId: card.id } : r,
+      );
+      if (this.domain.activeWorkspaceId === workspaceId) {
+        await this.loadCardsForActiveWorkspace();
+      }
+      this.showToast(`Source added: ${card.title}`);
+    } catch (err: any) {
+      this.showToast(
+        err instanceof UseCaseError ? err.userMessage : "Could not save source",
+      );
+    } finally {
       this.emit();
     }
   }

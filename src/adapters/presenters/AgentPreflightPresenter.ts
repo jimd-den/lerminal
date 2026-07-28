@@ -28,6 +28,12 @@ export interface AgentPreflightModel {
   blockedReason: string | null;
   /** Non-blocking warning shown above Run (e.g. no API key configured — local fallback). */
   warning: string | null;
+  /**
+   * Deterministic, tappable search-query suggestions (only populated for presets that
+   * require a typed query, i.e. research-web) — derived from the current selection, the
+   * workspace mission, and uncovered gap-report success criteria. Never a model call.
+   */
+  querySuggestions: string[];
 }
 
 export function presentAgentPreflight(
@@ -71,6 +77,9 @@ export function presentAgentPreflight(
     .filter((c): c is NonNullable<typeof c> => Boolean(c));
 
   const runLabel = buildRunLabel(preset, selectedCards.length, query);
+  const querySuggestions = preset.requiresQuery
+    ? buildQuerySuggestions(state, selectedCards)
+    : [];
 
   return {
     preset,
@@ -83,7 +92,39 @@ export function presentAgentPreflight(
     runLabel,
     blockedReason,
     warning,
+    querySuggestions,
   };
+}
+
+/**
+ * Deterministic search-query candidates: selected card titles first (the most specific
+ * signal), then uncovered gap-report success criteria, then the workspace mission title
+ * as a last resort — deduped and capped so the preflight stays a quick tap, not a wall
+ * of options.
+ */
+function buildQuerySuggestions(
+  state: AppState,
+  selectedCards: { title: string }[]
+): string[] {
+  const suggestions: string[] = [];
+  const seen = new Set<string>();
+  const push = (text?: string | null) => {
+    const trimmed = text?.trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    suggestions.push(trimmed);
+  };
+
+  for (const card of selectedCards.slice(0, 2)) push(card.title);
+
+  const uncovered = state.gapReport?.successCriteria.filter(c => !c.hasEvidence) ?? [];
+  for (const criterion of uncovered.slice(0, 2)) push(criterion.text);
+
+  if (state.gapReport?.hasMission) push(state.gapReport.missionTitle);
+
+  return suggestions.slice(0, 4);
 }
 
 function buildRunLabel(preset: OperationPreset, selectedCount: number, query: string): string {

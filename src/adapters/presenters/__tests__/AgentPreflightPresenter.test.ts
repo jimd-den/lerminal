@@ -78,4 +78,64 @@ describe("presentAgentPreflight", () => {
 
     expect(model.runLabel).toBe("Plan experiment (1 selected)");
   });
+
+  it("suggests selected card titles as search queries for research-web", () => {
+    const card = createCard({ id: "c1", workspaceId: "ws-1", type: "note", title: "Eigenvector intuition", body: "B" });
+    const state = baseState({ cards: [card], selection: new Set([card.id]) });
+
+    const model = presentAgentPreflight(state, "research-web", "")!;
+
+    expect(model.querySuggestions).toContain("Eigenvector intuition");
+  });
+
+  it("suggests uncovered gap-report success criteria and the mission title as search queries", () => {
+    const state = baseState({
+      gapReport: {
+        hasMission: true,
+        missionTitle: "Ship a renderer",
+        successCriteria: [
+          { text: "Renders a textured cube", hasEvidence: false },
+          { text: "Runs at 60fps", hasEvidence: true },
+        ],
+      },
+    });
+
+    const model = presentAgentPreflight(state, "research-web", "")!;
+
+    expect(model.querySuggestions).toContain("Renders a textured cube");
+    expect(model.querySuggestions).not.toContain("Runs at 60fps");
+    expect(model.querySuggestions).toContain("Ship a renderer");
+  });
+
+  it("never suggests search queries for presets that don't take a typed query", () => {
+    const card = createCard({ id: "c1", workspaceId: "ws-1", type: "note", title: "N", body: "B" });
+    const state = baseState({ cards: [card], selection: new Set([card.id]) });
+
+    const model = presentAgentPreflight(state, "explain-selected", "")!;
+
+    expect(model.querySuggestions).toEqual([]);
+  });
+
+  it("dedupes and caps query suggestions at 4", () => {
+    const card = createCard({ id: "c1", workspaceId: "ws-1", type: "note", title: "Ship a renderer", body: "B" });
+    const state = baseState({
+      cards: [card],
+      selection: new Set([card.id]),
+      gapReport: {
+        hasMission: true,
+        missionTitle: "Ship a renderer",
+        successCriteria: [
+          { text: "A", hasEvidence: false },
+          { text: "B", hasEvidence: false },
+          { text: "C", hasEvidence: false },
+        ],
+      },
+    });
+
+    const model = presentAgentPreflight(state, "research-web", "")!;
+
+    expect(model.querySuggestions.length).toBeLessThanOrEqual(4);
+    // "Ship a renderer" appears both as the card title and the mission title — deduped.
+    expect(model.querySuggestions.filter(s => s === "Ship a renderer").length).toBe(1);
+  });
 });

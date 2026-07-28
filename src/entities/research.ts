@@ -38,6 +38,8 @@ export interface ResearchResult {
   keepState: ResearchKeepState;
   /** Extracted full text, present only after a successful explicit extraction. */
   extractedText?: string;
+  /** Set once this candidate has been persisted as a source card, so the UI can show it's saved and avoid duplicates. */
+  savedCardId?: string;
 }
 
 /** Human-readable label for an {@link EvidenceKind}, matching the spec's example phrasing. */

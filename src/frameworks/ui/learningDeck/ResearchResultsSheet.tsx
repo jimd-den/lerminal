@@ -82,6 +82,7 @@ export function ResearchResultsSheet({
                   onReject={() => controller.setResearchKeepState(result.url, result.keepState === "rejected" ? "undecided" : "rejected")}
                   onOpen={() => void Linking.openURL(result.url)}
                   onExtract={() => void controller.extractResearchResult(result.url)}
+                  onSaveAsSource={() => void controller.saveResearchResultAsSource(result.url)}
                   extracting={state.researchLoading}
                 />
               ))
@@ -123,6 +124,7 @@ function ResultCard({
   onReject,
   onOpen,
   onExtract,
+  onSaveAsSource,
   extracting,
 }: {
   result: ResearchResult;
@@ -131,6 +133,7 @@ function ResultCard({
   onReject: () => void;
   onOpen: () => void;
   onExtract: () => void;
+  onSaveAsSource: () => void;
   extracting: boolean;
 }) {
   const kept = result.keepState === "kept";
@@ -157,6 +160,11 @@ function ResultCard({
           FULL TEXT EXTRACTED
         </Text>
       ) : null}
+      {result.savedCardId ? (
+        <Text style={[styles.extractedBadge, { color: theme.accent, fontFamily: theme.fontMono }]}>
+          ✓ SAVED AS SOURCE CARD
+        </Text>
+      ) : null}
 
       <View style={styles.actions}>
         <ActionButton label={kept ? "KEPT" : "KEEP"} active={kept} theme={theme} onPress={onKeep} />
@@ -165,6 +173,13 @@ function ResultCard({
         {!result.extractedText ? (
           <ActionButton label="EXTRACT" theme={theme} onPress={onExtract} disabled={extracting} />
         ) : null}
+        <ActionButton
+          label={result.savedCardId ? "SAVED" : "SAVE AS SOURCE"}
+          active={Boolean(result.savedCardId)}
+          theme={theme}
+          onPress={onSaveAsSource}
+          disabled={Boolean(result.savedCardId)}
+        />
       </View>
     </View>
   );

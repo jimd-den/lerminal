@@ -111,6 +111,29 @@ export function AiPreflightSheet({
                           { color: theme.text, borderColor: theme.line, fontFamily: theme.fontMono },
                         ]}
                       />
+                      {model.querySuggestions.length > 0 ? (
+                        <View style={styles.suggestionRow}>
+                          {model.querySuggestions.map((suggestion, i) => (
+                            <Pressable
+                              key={i}
+                              accessibilityRole="button"
+                              onPress={() => controller.setPreflightQuery(suggestion)}
+                              style={({ pressed }) => [
+                                styles.suggestionChip,
+                                { borderColor: theme.line, backgroundColor: theme.panelMuted },
+                                pressed && { opacity: 0.7 },
+                              ]}
+                            >
+                              <Text
+                                numberOfLines={1}
+                                style={[styles.suggestionText, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+                              >
+                                {suggestion}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      ) : null}
                     </View>
                   ) : null}
 
@@ -214,6 +237,9 @@ const styles = StyleSheet.create({
   queryBlock: { marginBottom: 12 },
   queryLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 1.2, marginBottom: 6 },
   queryInput: { minHeight: 48, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, fontSize: 14 },
+  suggestionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  suggestionChip: { minHeight: 44, maxWidth: 220, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, justifyContent: "center" },
+  suggestionText: { fontSize: 11, fontWeight: "700" },
   warning: { borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 4, marginBottom: 4 },
   warningText: { fontSize: 12, lineHeight: 17 },
   actions: { flexDirection: "row", gap: 10, marginTop: 16 },
