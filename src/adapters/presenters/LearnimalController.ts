@@ -100,6 +100,7 @@ import { RunResearchInteractor } from "../../usecases/research/RunResearchIntera
 import { ExtractResearchResultInteractor } from "../../usecases/research/ExtractResearchResultInteractor";
 import { CreateResearchBriefInteractor } from "../../usecases/research/CreateResearchBriefInteractor";
 import { SaveResearchResultAsSourceInteractor } from "../../usecases/research/SaveResearchResultAsSourceInteractor";
+import { SuggestSearchQueriesInteractor } from "../../usecases/agent/SuggestSearchQueriesInteractor";
 import { GapReport, GapReportInteractor, summarizeGapReportForPrompt } from "../../usecases/report/GapReportInteractor";
 import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission } from "../../entities/workspace";
 
@@ -200,6 +201,10 @@ export interface AppState {
   activePreflightPresetId: string | null;
   /** Free-text query the user has typed into the open preflight sheet. */
   preflightQuery: string;
+  /** AI-generated search-query suggestions for the open preflight (research-web only). */
+  aiQuerySuggestions: string[];
+  /** True while a query-suggestion request is in flight. */
+  isSuggestingQueries: boolean;
   toastMessage: string;
   openRouterKey: string;
   selectedModel: string;
@@ -276,6 +281,8 @@ interface UiState {
   inputSheetMode: "source" | "ask" | "note";
   activePreflightPresetId: string | null;
   preflightQuery: string;
+  aiQuerySuggestions: string[];
+  isSuggestingQueries: boolean;
   pendingCommandName: string;
   toastMessage: string;
   isLoadingModels: boolean;
@@ -349,6 +356,7 @@ export class LearnimalController {
   private extractResearchResultInteractor: ExtractResearchResultInteractor;
   private createResearchBriefInteractor: CreateResearchBriefInteractor;
   private saveResearchResultAsSourceInteractor: SaveResearchResultAsSourceInteractor;
+  private suggestSearchQueriesInteractor: SuggestSearchQueriesInteractor;
   private gapReportInteractor: GapReportInteractor;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
@@ -446,6 +454,9 @@ export class LearnimalController {
     this.saveResearchResultAsSourceInteractor = new SaveResearchResultAsSourceInteractor(
       deps.cardRepo,
     );
+    this.suggestSearchQueriesInteractor = new SuggestSearchQueriesInteractor(
+      deps.agentGateway,
+    );
     this.gapReportInteractor = new GapReportInteractor();
 
     this.domain = {
@@ -502,6 +513,8 @@ export class LearnimalController {
       inputSheetMode: "source",
       activePreflightPresetId: null,
       preflightQuery: "",
+      aiQuerySuggestions: [],
+      isSuggestingQueries: false,
       pendingCommandName: "",
       toastMessage: "",
       isLoadingModels: false,
@@ -639,6 +652,8 @@ export class LearnimalController {
       inputSheetMode: this.ui.inputSheetMode,
       activePreflightPresetId: this.ui.activePreflightPresetId,
       preflightQuery: this.ui.preflightQuery,
+      aiQuerySuggestions: [...this.ui.aiQuerySuggestions],
+      isSuggestingQueries: this.ui.isSuggestingQueries,
       toastMessage: this.ui.toastMessage,
       isLoadingModels: this.ui.isLoadingModels,
       pendingOperations: this.ui.pendingOperations,
@@ -1726,13 +1741,51 @@ export class LearnimalController {
     if (!findOperationPreset(presetId)) return;
     this.ui.activePreflightPresetId = presetId;
     this.ui.preflightQuery = initialQuery ?? "";
+    this.ui.aiQuerySuggestions = [];
     this.emit();
   }
 
   closePreflight(): void {
     this.ui.activePreflightPresetId = null;
     this.ui.preflightQuery = "";
+    this.ui.aiQuerySuggestions = [];
     this.emit();
+  }
+
+  /**
+   * The optional, explicit "break this down for me" step ahead of research: calls the
+   * model once (via `SuggestSearchQueriesInteractor`) to turn a broad topic into several
+   * sharper search queries, shown as additional tappable suggestions in the preflight.
+   * A distinct AI call from the actual web search — never implies browsing happened.
+   */
+  async suggestSearchQueries(topic: string): Promise<void> {
+    const trimmed = topic.trim();
+    if (!trimmed) {
+      this.showToast("Type a topic first, then suggest queries");
+      return;
+    }
+    if (!this.domain.openRouterKey?.trim()) {
+      this.showToast("Add your OpenRouter key in Settings");
+      return;
+    }
+
+    this.ui.isSuggestingQueries = true;
+    this.emit();
+    try {
+      const queries = await this.suggestSearchQueriesInteractor.execute({
+        topic: trimmed,
+        apiKey: this.domain.openRouterKey,
+        model: this.domain.selectedModel,
+      });
+      this.ui.aiQuerySuggestions = queries;
+    } catch (err: any) {
+      this.showToast(
+        err instanceof UseCaseError ? err.userMessage : "Could not suggest queries",
+      );
+    } finally {
+      this.ui.isSuggestingQueries = false;
+      this.emit();
+    }
   }
 
   setPreflightQuery(query: string): void {
@@ -1757,6 +1810,7 @@ export class LearnimalController {
     if (preset.command === "research") {
       this.ui.activePreflightPresetId = null;
       this.ui.preflightQuery = "";
+      this.ui.aiQuerySuggestions = [];
       this.emit();
       await this.startResearch(query);
       return true;
@@ -1781,6 +1835,7 @@ export class LearnimalController {
     if (ok) {
       this.ui.activePreflightPresetId = null;
       this.ui.preflightQuery = "";
+      this.ui.aiQuerySuggestions = [];
       this.emit();
     }
     return ok;

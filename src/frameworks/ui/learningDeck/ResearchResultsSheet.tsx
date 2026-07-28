@@ -146,7 +146,16 @@ function ResultCard({
         {result.domain} · {evidenceKindLabel(result.evidenceKind)}
       </Text>
       <Text numberOfLines={2} style={[styles.cardTitle, { color: theme.text }]}>{result.title}</Text>
-      <Text numberOfLines={3} style={[styles.cardSnippet, { color: theme.textMuted }]}>
+      <Pressable onPress={onOpen} hitSlop={4}>
+        <Text
+          selectable
+          numberOfLines={1}
+          style={[styles.cardUrl, { color: theme.accent, fontFamily: theme.fontMono }]}
+        >
+          {result.url}
+        </Text>
+      </Pressable>
+      <Text selectable numberOfLines={3} style={[styles.cardSnippet, { color: theme.textMuted }]}>
         {result.extractedText ? result.extractedText.slice(0, 220) : result.snippet}
       </Text>
       <Text style={[styles.relevance, { color: relevanceColor(result.relevance, theme) }]}>
@@ -239,6 +248,7 @@ const styles = StyleSheet.create({
   card: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 12 },
   cardDomain: { fontSize: 10, fontWeight: "800", letterSpacing: 0.6, marginBottom: 4 },
   cardTitle: { fontSize: 15, fontWeight: "700", lineHeight: 20 },
+  cardUrl: { fontSize: 11, marginTop: 4, minHeight: 18 },
   cardSnippet: { fontSize: 13, lineHeight: 18, marginTop: 6 },
   relevance: { fontSize: 11, fontWeight: "800", marginTop: 8 },
   caution: { fontSize: 11, lineHeight: 16, marginTop: 3 },

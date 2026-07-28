@@ -311,4 +311,34 @@ describe("Learnimal App Controller", () => {
     const sourceCards = state.cards.filter(c => c.cite === firstResult.url);
     expect(sourceCards.length).toBe(1);
   });
+
+  it("blocks AI query suggestions with a toast when no API key is configured", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.suggestSearchQueries("learn WebGPU");
+
+    expect(controller.getState().aiQuerySuggestions).toEqual([]);
+    expect(controller.getState().toastMessage).toContain("OpenRouter key");
+  });
+
+  it("populates AI query suggestions from the agent gateway when a key is configured", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+    controller.setOpenRouterKey("test-key");
+
+    await controller.suggestSearchQueries("learn WebGPU");
+
+    const state = controller.getState();
+    expect(state.isSuggestingQueries).toBe(false);
+    expect(state.aiQuerySuggestions).toEqual(["Mock Chunks 1", "Mock Chunks 2"]);
+  });
 });

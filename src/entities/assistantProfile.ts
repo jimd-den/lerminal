@@ -132,6 +132,18 @@ export const BUILTIN_ASSISTANT_PROFILES: AssistantProfile[] = [
     builtin: true,
   },
   {
+    id: "builtin-query-strategist",
+    name: "Query Strategist",
+    description: "Breaks a broad goal or topic down into several sharper web search queries",
+    goal: "Turn one broad topic into 3-5 distinct, specific search queries covering different useful angles",
+    capability: "generate-cards",
+    outputContract: "cards-v1",
+    systemPrompt: "You are a search query strategist. Given the user's broad goal or topic, produce 3 to 5 distinct, specific, well-formed web search queries that together cover it from different useful angles (e.g. official documentation, comparisons/alternatives, tutorials or how-tos, common pitfalls or troubleshooting). Put each query itself (not a description of it) in the title field, phrased exactly as someone would type it into a search box. Body should be a one-sentence reason this angle is useful. Do not repeat the same query twice; do not include the words 'search for' in the query text itself.",
+    createdAt: 1718582400000,
+    updatedAt: 1718582400000,
+    builtin: true,
+  },
+  {
     id: "builtin-research-brief",
     name: "Research Brief Synthesizer",
     description: "Writes a cited brief strictly from retained web sources",

@@ -134,6 +134,46 @@ export function AiPreflightSheet({
                           ))}
                         </View>
                       ) : null}
+
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={state.isSuggestingQueries}
+                        onPress={() => void controller.suggestSearchQueries(state.preflightQuery || model.preset.purpose)}
+                        style={({ pressed }) => [
+                          styles.aiSuggestButton,
+                          { borderColor: theme.accent },
+                          pressed && { opacity: 0.7 },
+                        ]}
+                      >
+                        <Text style={[styles.aiSuggestText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                          {state.isSuggestingQueries ? "ASKING THE MODEL…" : "BREAK THIS DOWN WITH AI →"}
+                        </Text>
+                      </Pressable>
+
+                      {state.aiQuerySuggestions.length > 0 ? (
+                        <View style={styles.suggestionRow}>
+                          {state.aiQuerySuggestions.map((suggestion, i) => (
+                            <Pressable
+                              key={i}
+                              accessibilityRole="button"
+                              onPress={() => controller.setPreflightQuery(suggestion)}
+                              style={({ pressed }) => [
+                                styles.suggestionChip,
+                                styles.aiSuggestionChip,
+                                { borderColor: theme.accent, backgroundColor: theme.accentSoft },
+                                pressed && { opacity: 0.7 },
+                              ]}
+                            >
+                              <Text
+                                numberOfLines={1}
+                                style={[styles.suggestionText, { color: theme.accent, fontFamily: theme.fontMono }]}
+                              >
+                                {suggestion}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      ) : null}
                     </View>
                   ) : null}
 
@@ -239,7 +279,10 @@ const styles = StyleSheet.create({
   queryInput: { minHeight: 48, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, fontSize: 14 },
   suggestionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   suggestionChip: { minHeight: 44, maxWidth: 220, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, justifyContent: "center" },
+  aiSuggestionChip: { borderWidth: 1.5 },
   suggestionText: { fontSize: 11, fontWeight: "700" },
+  aiSuggestButton: { minHeight: 44, borderWidth: 1, borderRadius: 8, justifyContent: "center", alignItems: "center", marginTop: 10 },
+  aiSuggestText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.4 },
   warning: { borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 4, marginBottom: 4 },
   warningText: { fontSize: 12, lineHeight: 17 },
   actions: { flexDirection: "row", gap: 10, marginTop: 16 },
