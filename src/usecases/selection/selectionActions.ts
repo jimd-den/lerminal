@@ -1,5 +1,6 @@
 import { Card } from "../../entities/card";
 import { isSchedulable, CardTypeDefinition } from "../../entities/cardTypeDefinition";
+import { SuggestedActionDispatch } from "../actions/SuggestedAction";
 
 /**
  * # Selection Tray Actions
@@ -21,10 +22,7 @@ import { isSchedulable, CardTypeDefinition } from "../../entities/cardTypeDefini
  *    of the app ("Study needs question or cloze cards") where a missing one just confuses.
  */
 
-export type SelectionActionDispatch =
-  | { kind: "preflight"; presetId: string }
-  | { kind: "pipeline"; text: string }
-  | { kind: "palette" };
+export type SelectionActionDispatch = SuggestedActionDispatch;
 
 export interface SelectionAction {
   id: string;

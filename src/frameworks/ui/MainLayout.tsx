@@ -54,6 +54,18 @@ export function MainLayout({ controller }: MainLayoutProps) {
     }
   }, [controller, state.isSettingsSheetOpen]);
 
+  // A `capture` dispatch (from the palette or a suggestion) asks for the capture screen.
+  // The controller only records the intent; navigation is the shell's job, so it's
+  // consumed here exactly once.
+  useEffect(() => {
+    if (!state.captureIntent) return;
+    const intent = controller.consumeCaptureIntent();
+    if (intent) {
+      setCaptureIntent(intent);
+      setPlace("capture");
+    }
+  }, [controller, state.captureIntent]);
+
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",

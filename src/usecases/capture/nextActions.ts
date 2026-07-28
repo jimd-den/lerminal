@@ -1,4 +1,5 @@
 import { Card, SemanticRole } from "../../entities/card";
+import { SuggestedActionDispatch } from "../actions/SuggestedAction";
 
 /**
  * # Next Actions — "capture must lead somewhere"
@@ -24,16 +25,11 @@ import { Card, SemanticRole } from "../../entities/card";
  */
 
 /**
- * How the UI should carry out a suggestion.
- *
- * `preflight` is deliberately the only route to anything AI-backed: a next action can
- * *propose* an AI operation, but it always lands the user on the scope sheet first. A
- * one-tap suggestion must never become hidden AI execution.
+ * How the UI should carry out a suggestion — see {@link SuggestedActionDispatch}, shared
+ * with the selection tray and command palette so `preflight` remains the single route to
+ * anything AI-backed.
  */
-export type NextActionDispatch =
-  | { kind: "preflight"; presetId: string }
-  | { kind: "pipeline"; text: string }
-  | { kind: "mission" };
+export type NextActionDispatch = SuggestedActionDispatch;
 
 export interface NextAction {
   /** Stable identifier — used for React keys and assertions, never shown. */

@@ -16,76 +16,12 @@ import {
   AppState,
   LearnimalController,
 } from "../../../adapters/presenters/LearnimalController";
+import {
+  PaletteAction,
+  PaletteCommand,
+  presentCommandPalette,
+} from "../../../adapters/presenters/CommandPalettePresenter";
 import { LearningTheme } from "./theme";
-
-const BUILTIN_COMMANDS: {
-  name: string;
-  description: string;
-  category: string;
-}[] = [
-  {
-    name: "ask",
-    description: "Generate study material with AI",
-    category: "LEARN",
-  },
-  { name: "source", description: "Import text or a URL", category: "CAPTURE" },
-  {
-    name: "search",
-    description: "Search configured web sources",
-    category: "CAPTURE",
-  },
-  {
-    name: "chunk",
-    description: "Restructure source into study chunks",
-    category: "TRANSFORM",
-  },
-  {
-    name: "split",
-    description: "Faithful structural document split",
-    category: "TRANSFORM",
-  },
-  {
-    name: "recall",
-    description: "Create active-recall questions",
-    category: "PRACTICE",
-  },
-  {
-    name: "cloze",
-    description: "Create fill-in-the-blank practice",
-    category: "PRACTICE",
-  },
-  {
-    name: "elaborate",
-    description: "Create explain-in-your-own-words practice",
-    category: "PRACTICE",
-  },
-  {
-    name: "chat",
-    description: "Create a grounded conversation channel",
-    category: "LEARN",
-  },
-  {
-    name: "space",
-    description: "Schedule compatible cards",
-    category: "PRACTICE",
-  },
-  { name: "review", description: "Begin due reviews", category: "PRACTICE" },
-  {
-    name: "group",
-    description: "Group selected material",
-    category: "ORGANIZE",
-  },
-  {
-    name: "ungroup",
-    description: "Dissolve a selected group",
-    category: "ORGANIZE",
-  },
-  {
-    name: "move",
-    description: "Move selected material to a space",
-    category: "ORGANIZE",
-  },
-];
 
 export function CommandConsoleModal({
   controller,
@@ -102,6 +38,8 @@ export function CommandConsoleModal({
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<"agent" | "pipeline">("agent");
   const [body, setBody] = useState("");
+
+  const palette = presentCommandPalette(state);
 
   const run = (pipeline: string) => {
     if (!pipeline.trim()) return;
@@ -253,57 +191,35 @@ export function CommandConsoleModal({
                 </View>
               ) : null}
 
+              {/* What the next command will act on — stated before any command is picked. */}
+              <View
+                style={[
+                  styles.contextBar,
+                  { borderColor: theme.line, backgroundColor: theme.panelMuted },
+                ]}
+              >
+                <Text
+                  style={[styles.contextText, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+                >
+                  {palette.selectionSummary}
+                </Text>
+              </View>
+
               <Text
                 style={[
                   styles.sectionLabel,
                   { color: theme.textMuted, fontFamily: theme.fontMono },
                 ]}
               >
-                AI ACTIONS
+                ACTIONS
               </Text>
-              {state.operationPresets.map((preset) => (
-                <Pressable
-                  key={preset.id}
-                  onPress={() => {
-                    controller.setModalOpen(false);
-                    controller.openPreflight(preset.id);
-                  }}
-                  style={({ pressed }) => [
-                    styles.customRow,
-                    { borderColor: theme.line },
-                    pressed && { opacity: 0.7 },
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={[
-                        styles.commandName,
-                        { color: theme.text, fontFamily: theme.fontMono },
-                      ]}
-                    >
-                      {preset.label}
-                    </Text>
-                    <Text
-                      style={[styles.commandDescription, { color: theme.textMuted }]}
-                    >
-                      {preset.purpose}
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.editText,
-                      {
-                        color:
-                          preset.defaultScope === "web"
-                            ? theme.warning
-                            : theme.textFaint,
-                        fontFamily: theme.fontMono,
-                      },
-                    ]}
-                  >
-                    {preset.defaultScope === "web" ? "WEB" : "SCOPED"}
-                  </Text>
-                </Pressable>
+              {palette.actions.map((entry) => (
+                <ActionRow
+                  key={entry.action.id}
+                  entry={entry}
+                  theme={theme}
+                  onPress={() => void controller.dispatchSuggestedAction(entry.action.dispatch)}
+                />
               ))}
 
               <View style={[styles.sectionHead, { marginTop: 25 }]}>
@@ -370,16 +286,14 @@ export function CommandConsoleModal({
               >
                 BUILT-IN COMMANDS
               </Text>
-              {BUILTIN_COMMANDS.map((command) => (
+              {palette.commands.map((entry) => (
                 <CommandRow
-                  key={command.name}
-                  name={command.name}
-                  description={command.description}
-                  category={command.category}
-                  pinned={state.pinnedCommands.includes(command.name)}
+                  key={entry.doc.name}
+                  entry={entry}
+                  pinned={state.pinnedCommands.includes(entry.doc.name)}
                   theme={theme}
-                  onRun={() => run(command.name)}
-                  onPin={() => controller.togglePinCommand(command.name)}
+                  onRun={() => run(entry.doc.name)}
+                  onPin={() => controller.togglePinCommand(entry.doc.name)}
                 />
               ))}
 
@@ -812,47 +726,111 @@ export function PendingInputModal({
   );
 }
 
+/**
+ * A canonical action: the plain-language name of something the product does, with its
+ * `/alias` for the keyboard and a web badge when it reaches the network.
+ */
+function ActionRow({
+  entry,
+  theme,
+  onPress,
+}: {
+  entry: PaletteAction;
+  theme: LearningTheme;
+  onPress: () => void;
+}) {
+  const { action, availability } = entry;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !availability.runnable }}
+      accessibilityHint={availability.reason ?? undefined}
+      onPress={onPress}
+      disabled={!availability.runnable}
+      style={({ pressed }) => [
+        styles.actionRow,
+        { borderColor: theme.line, opacity: availability.runnable ? 1 : 0.45 },
+        pressed && { opacity: 0.7 },
+      ]}
+    >
+      <View style={styles.actionMain}>
+        <View style={styles.actionTitleRow}>
+          <Text style={[styles.actionLabel, { color: theme.text }]}>{action.label}</Text>
+          {action.usesWeb ? (
+            <Text style={[styles.webBadge, { color: theme.warning, fontFamily: theme.fontMono }]}>
+              WEB
+            </Text>
+          ) : null}
+        </View>
+        <Text style={[styles.commandDescription, { color: theme.textMuted }]}>
+          {availability.reason ?? action.purpose}
+        </Text>
+      </View>
+      <Text style={[styles.aliasText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+        {action.alias}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * A documented built-in. Shows the four things you need before running an unfamiliar
+ * command: what it's for, what it needs, what it produces, and whether it uses the web.
+ */
 function CommandRow({
-  name,
-  description,
-  category,
+  entry,
   pinned,
   theme,
   onRun,
   onPin,
 }: {
-  name: string;
-  description: string;
-  category: string;
+  entry: PaletteCommand;
   pinned: boolean;
   theme: LearningTheme;
   onRun: () => void;
   onPin: () => void;
 }) {
+  const { doc, availability } = entry;
   return (
     <View style={[styles.commandRow, { borderBottomColor: theme.line }]}>
-      <Pressable onPress={onRun} style={styles.commandMain}>
-        <Text
-          style={[
-            styles.commandName,
-            { color: theme.text, fontFamily: theme.fontMono },
-          ]}
-        >
-          /{name}
-        </Text>
-        <Text style={[styles.commandDescription, { color: theme.textMuted }]}>
-          {description}
-        </Text>
-      </Pressable>
-      <Text
-        style={[
-          styles.category,
-          { color: theme.textFaint, fontFamily: theme.fontMono },
-        ]}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !availability.runnable }}
+        accessibilityHint={availability.reason ?? undefined}
+        onPress={onRun}
+        disabled={!availability.runnable}
+        style={[styles.commandMain, { opacity: availability.runnable ? 1 : 0.5 }]}
       >
-        {category}
-      </Text>
-      <Pressable onPress={onPin} style={styles.pin}>
+        <View style={styles.actionTitleRow}>
+          <Text style={[styles.commandName, { color: theme.text, fontFamily: theme.fontMono }]}>
+            /{doc.name}
+          </Text>
+          <Text style={[styles.commandLabel, { color: theme.textMuted }]}>{doc.label}</Text>
+          {doc.usesWeb ? (
+            <Text style={[styles.webBadge, { color: theme.warning, fontFamily: theme.fontMono }]}>
+              WEB
+            </Text>
+          ) : null}
+        </View>
+        <Text style={[styles.commandDescription, { color: theme.textMuted }]}>{doc.purpose}</Text>
+        <Text style={[styles.commandIo, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+          IN: {doc.input.description}
+        </Text>
+        <Text style={[styles.commandIo, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+          OUT: {doc.output}
+        </Text>
+        {availability.reason ? (
+          <Text style={[styles.commandIo, { color: theme.warning, fontFamily: theme.fontMono }]}>
+            {availability.reason}
+          </Text>
+        ) : null}
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={pinned ? `Unpin ${doc.name}` : `Pin ${doc.name}`}
+        onPress={onPin}
+        style={styles.pin}
+      >
         <Text
           style={[
             styles.pinText,
@@ -945,8 +923,34 @@ const styles = StyleSheet.create({
   },
   commandMain: { flex: 1, paddingVertical: 10 },
   commandName: { fontSize: 14, fontWeight: "800" },
+  commandLabel: { fontSize: 12, fontWeight: "600" },
   commandDescription: { fontSize: 12, lineHeight: 17, marginTop: 3 },
-  category: { fontSize: 8, width: 65, textAlign: "right" },
+  commandIo: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  contextBar: {
+    minHeight: 40,
+    borderWidth: 1,
+    borderRadius: 9,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    marginBottom: 18,
+  },
+  contextText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 60,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+    gap: 10,
+  },
+  actionMain: { flex: 1 },
+  actionTitleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
+  actionLabel: { fontSize: 15, fontWeight: "700" },
+  aliasText: { fontSize: 11, fontWeight: "700" },
+  webBadge: { fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
   pin: {
     width: 44,
     height: 50,

@@ -453,6 +453,66 @@ describe("Learnimal App Controller", () => {
     expect(controller.getState().isModalOpen).toBe(true);
   });
 
+  it("resolves a bare /alias to its action sheet instead of running it as a command", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    const ok = await controller.runPipeline("/research");
+
+    expect(ok).toBe(true);
+    expect(controller.getState().activePreflightPresetId).toBe("research-web");
+    expect(controller.getState().cards.length).toBe(0);
+  });
+
+  it("routes /status to the gap report", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.runPipeline("/status");
+
+    expect(controller.getState().isGapReportOpen).toBe(true);
+  });
+
+  it("leaves an alias with an argument to the pipeline parser", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    // `/study` alone opens a sheet; with an argument it must fall through as a command,
+    // where "study" is not a real keyword and fails honestly rather than silently.
+    await controller.runPipeline('study "topic"');
+
+    expect(controller.getState().activePreflightPresetId).toBeNull();
+  });
+
+  it("records a capture intent for the shell to navigate on", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.dispatchSuggestedAction({ kind: "capture", intent: "link" });
+    expect(controller.getState().captureIntent).toBe("link");
+
+    // Consumed exactly once, so re-renders don't re-navigate.
+    expect(controller.consumeCaptureIntent()).toBe("link");
+    expect(controller.getState().captureIntent).toBeNull();
+    expect(controller.consumeCaptureIntent()).toBeNull();
+  });
+
   it("dispatching a mission action opens the mission editor", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,

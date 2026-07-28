@@ -85,6 +85,9 @@ export function presentCaptureReceipt(state: AppState): CaptureReceiptModel | nu
   };
 }
 
+/** Re-exported so UI components type their props without reaching into `usecases/`. */
+export type { SelectionAction };
+
 export interface SelectionTrayModel {
   /** How many cards are selected — always shown, so the tray's scope is never a guess. */
   count: number;

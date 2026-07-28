@@ -92,8 +92,6 @@ import {
   buildAgentRunRequest,
   buildPipelineText,
   findOperationPreset,
-  OperationPreset,
-  OPERATION_PRESETS,
 } from "../../usecases/agent/operationPresets";
 import { ResearchResult } from "../../entities/research";
 import { RunResearchInteractor } from "../../usecases/research/RunResearchInteractor";
@@ -102,6 +100,8 @@ import { CreateResearchBriefInteractor } from "../../usecases/research/CreateRes
 import { SaveResearchResultAsSourceInteractor } from "../../usecases/research/SaveResearchResultAsSourceInteractor";
 import { SuggestSearchQueriesInteractor } from "../../usecases/agent/SuggestSearchQueriesInteractor";
 import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabusInteractor";
+import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction";
+import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
 import { GapReport, GapReportInteractor, summarizeGapReportForPrompt } from "../../usecases/report/GapReportInteractor";
 import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission, WorkspacePhase } from "../../entities/workspace";
 
@@ -144,15 +144,10 @@ export interface OperationResult {
 }
 
 /**
- * The union of every way a suggested action can be carried out — the capture receipt's
- * follow-ups and the selection tray's buttons both narrow to this, so
- * {@link LearnimalController.dispatchSuggestedAction} is the one place that routes them.
+ * Re-exported so the UI layer keeps importing its types from the controller rather than
+ * reaching into `usecases/` — see `actions/SuggestedAction.ts` for the definition.
  */
-export type SuggestedActionDispatch =
-  | { kind: "preflight"; presetId: string }
-  | { kind: "pipeline"; text: string }
-  | { kind: "mission" }
-  | { kind: "palette" };
+export type { SuggestedActionDispatch };
 
 /** Editable draft used while creating/editing a workspace's mission. */
 export interface MissionDraft {
@@ -217,6 +212,8 @@ export interface AppState {
   aiQuerySuggestions: string[];
   /** True while a query-suggestion request is in flight. */
   isSuggestingQueries: boolean;
+  /** A capture screen the UI should navigate to, set by a `capture` dispatch. */
+  captureIntent: "note" | "paste" | "link" | "ask" | null;
   toastMessage: string;
   openRouterKey: string;
   selectedModel: string;
@@ -249,8 +246,6 @@ export interface AppState {
   isMissionEditorOpen: boolean;
   /** The in-progress mission edit, valid while `isMissionEditorOpen`. */
   missionDraft: MissionDraft;
-  /** The fixed set of explicit AI operation presets (see `operationPresets.ts`) — exposed here so UI never imports the usecases layer directly. */
-  operationPresets: OperationPreset[];
 }
 
 /** Business/domain state: persisted or derivable data, free of UI concerns. */
@@ -295,6 +290,7 @@ interface UiState {
   preflightQuery: string;
   aiQuerySuggestions: string[];
   isSuggestingQueries: boolean;
+  captureIntent: "note" | "paste" | "link" | "ask" | null;
   pendingCommandName: string;
   toastMessage: string;
   isLoadingModels: boolean;
@@ -532,6 +528,7 @@ export class LearnimalController {
       preflightQuery: "",
       aiQuerySuggestions: [],
       isSuggestingQueries: false,
+      captureIntent: null,
       pendingCommandName: "",
       toastMessage: "",
       isLoadingModels: false,
@@ -671,6 +668,7 @@ export class LearnimalController {
       preflightQuery: this.ui.preflightQuery,
       aiQuerySuggestions: [...this.ui.aiQuerySuggestions],
       isSuggestingQueries: this.ui.isSuggestingQueries,
+      captureIntent: this.ui.captureIntent,
       toastMessage: this.ui.toastMessage,
       isLoadingModels: this.ui.isLoadingModels,
       pendingOperations: this.ui.pendingOperations,
@@ -687,7 +685,6 @@ export class LearnimalController {
       isGapReportOpen: this.ui.isGapReportOpen,
       isMissionEditorOpen: this.ui.isMissionEditorOpen,
       missionDraft: { ...this.ui.missionDraft, successCriteria: [...this.ui.missionDraft.successCriteria] },
-      operationPresets: OPERATION_PRESETS,
     };
   }
 
@@ -1031,7 +1028,30 @@ export class LearnimalController {
         this.ui.operationResult = null;
         this.setModalOpen(true);
         return;
+      case "status":
+        this.ui.operationResult = null;
+        this.ui.isModalOpen = false;
+        this.openGapReport();
+        return;
+      case "capture":
+        // Capture is a screen, not a sheet, so the controller only clears what's in the
+        // way; MainLayout observes `captureIntent` and does the navigation.
+        this.ui.operationResult = null;
+        this.ui.isModalOpen = false;
+        this.ui.captureIntent = dispatch.intent;
+        this.emit();
+        return;
     }
+  }
+
+  /** Consumes the pending capture intent, so navigating to the capture screen happens once. */
+  consumeCaptureIntent(): "note" | "paste" | "link" | "ask" | null {
+    const intent = this.ui.captureIntent;
+    if (intent) {
+      this.ui.captureIntent = null;
+      this.emit();
+    }
+    return intent;
   }
 
   // --- Custom Commands ---
@@ -1609,6 +1629,15 @@ export class LearnimalController {
     if (!workspaceId) {
       this.showToast("Create a workspace first");
       return false;
+    }
+
+    // A bare `/alias` is a shortcut to a canonical action's sheet, not a pipeline stage.
+    // Resolved here rather than in the palette so typing it into the command line, a
+    // macro, or the capture terminal all behave identically.
+    const alias = resolveCommandAlias(pipelineText);
+    if (alias) {
+      await this.dispatchSuggestedAction(alias.dispatch);
+      return true;
     }
 
     this.ui.isModalOpen = false;

@@ -4,8 +4,10 @@ import {
   AppState,
   LearnimalController,
 } from "../../../adapters/presenters/LearnimalController";
-import { presentSelectionTray } from "../../../adapters/presenters/CaptureReceiptPresenter";
-import { SelectionAction } from "../../../usecases/selection/selectionActions";
+import {
+  SelectionAction,
+  presentSelectionTray,
+} from "../../../adapters/presenters/CaptureReceiptPresenter";
 import { LearningTheme } from "./theme";
 import { TrashIcon } from "./Icons";
 
