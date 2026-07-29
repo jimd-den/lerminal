@@ -1,6 +1,11 @@
 import { Platform } from "react-native";
 import { AppState } from "../../../adapters/presenters/LearnimalController";
 import { SemanticRole } from "../../../entities/card";
+import {
+  AppearanceSettings,
+  FontChoice,
+  resolveAppearance,
+} from "../../../entities/appearance";
 
 export type AccentName = AppState["accent"];
 
@@ -112,7 +117,10 @@ export interface LearningTheme {
   accentInk: string;
   danger: string;
   warning: string;
+  /** The face for commands, metadata, IDs, and system labels — the console's own voice. */
   fontMono: string;
+  /** The face for reading-length prose. Falls back to the platform UI font. */
+  fontSans: string | undefined;
 }
 
 export const ACCENT_OPTIONS: { name: AccentName; color: string; label: string }[] = [
@@ -123,26 +131,84 @@ export const ACCENT_OPTIONS: { name: AccentName; color: string; label: string }[
   { name: "arctic", color: "#75C8FF", label: "Arctic" },
 ];
 
-const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) as string;
+const SYSTEM_MONO_FAMILY = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  default: "monospace",
+}) as string;
 
-export function resolveLearningTheme(mode: AppState["theme"], accentName: AccentName): LearningTheme {
-  const accent = ACCENT_OPTIONS.find(option => option.name === accentName)?.color ?? ACCENT_OPTIONS[0].color;
-  const dark = mode === "dark";
+/**
+ * Resolves a {@link FontChoice} to a value `fontFamily` accepts. System choices become the
+ * platform face (or `undefined` for sans, which is how RN asks for the default UI font);
+ * installed fonts are referenced by the family name they were registered under.
+ */
+function resolveFontFamily(choice: FontChoice, role: "mono" | "sans"): string | undefined {
+  if (choice.source === "system") {
+    return role === "mono" ? SYSTEM_MONO_FAMILY : undefined;
+  }
+  return choice.family;
+}
+
+/**
+ * Builds the theme from the user's appearance settings.
+ *
+ * The legacy `mode`/`accentName` arguments still work and still win when no palette has
+ * been chosen, so existing callers and saved settings behave exactly as before — the
+ * palette system is additive, not a migration.
+ */
+export function resolveLearningTheme(
+  mode: AppState["theme"],
+  accentName: AccentName,
+  appearance?: AppearanceSettings
+): LearningTheme {
+  const legacyAccent =
+    ACCENT_OPTIONS.find(option => option.name === accentName)?.color ?? ACCENT_OPTIONS[0].color;
+
+  const resolved = resolveAppearance(appearance);
+  const usingCustomPalette = Boolean(appearance?.paletteId);
+  const palette = resolved.palette;
+
+  // Without an explicit palette the app keeps its original light/dark pair, so nobody's
+  // existing look changes underneath them just because this feature shipped.
+  const dark = usingCustomPalette ? palette.mode === "dark" : mode === "dark";
+  const accent = appearance?.accentOverride
+    ? resolved.accent
+    : usingCustomPalette
+      ? palette.accent
+      : legacyAccent;
+
+  const base = usingCustomPalette
+    ? palette
+    : {
+        background: dark ? "#090E13" : "#EEF1EC",
+        panel: dark ? "#101820" : "#FBFCF7",
+        panelStrong: dark ? "#17232C" : "#FFFFFF",
+        panelMuted: dark ? "#0D141A" : "#E4E9E2",
+        text: dark ? "#F2F6F1" : "#131A1A",
+        textMuted: dark ? "#A7B6B5" : "#536260",
+        textFaint: dark ? "#637574" : "#7B8884",
+        line: dark ? "#26363D" : "#CBD4CE",
+        accentInk: dark ? "#06110F" : "#07110F",
+        danger: "#FF5F69",
+        warning: "#FFB45B",
+      };
+
   return {
-    mode,
-    background: dark ? "#090E13" : "#EEF1EC",
-    panel: dark ? "#101820" : "#FBFCF7",
-    panelStrong: dark ? "#17232C" : "#FFFFFF",
-    panelMuted: dark ? "#0D141A" : "#E4E9E2",
-    text: dark ? "#F2F6F1" : "#131A1A",
-    textMuted: dark ? "#A7B6B5" : "#536260",
-    textFaint: dark ? "#637574" : "#7B8884",
-    line: dark ? "#26363D" : "#CBD4CE",
+    mode: dark ? "dark" : "light",
+    background: base.background,
+    panel: base.panel,
+    panelStrong: base.panelStrong,
+    panelMuted: base.panelMuted,
+    text: base.text,
+    textMuted: base.textMuted,
+    textFaint: base.textFaint,
+    line: base.line,
     accent,
     accentSoft: `${accent}22`,
-    accentInk: dark ? "#06110F" : "#07110F",
-    danger: "#FF5F69",
-    warning: "#FFB45B",
-    fontMono: MONO,
+    accentInk: base.accentInk,
+    danger: base.danger,
+    warning: base.warning,
+    fontMono: resolveFontFamily(resolved.monoFont, "mono") ?? SYSTEM_MONO_FAMILY,
+    fontSans: resolveFontFamily(resolved.sansFont, "sans"),
   };
 }

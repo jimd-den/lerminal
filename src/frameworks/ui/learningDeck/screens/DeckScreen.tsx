@@ -11,6 +11,7 @@ import {
 import { SectionLabel, Slab, SystemHeader } from "../components";
 import { CaptureReceipt } from "../CaptureReceipt";
 import { MissionControlModule } from "../MissionControl";
+import { WorkingBar } from "../../motion/communicative";
 import { LearningTheme } from "../theme";
 import { CaptureIntent, SharedProps } from "./types";
 import { QuickAction, EmptyReadout } from "./shared";
@@ -193,6 +194,12 @@ export function DeckScreen({
                 ? state.pendingOperations[0].errorMessage
                 : state.pendingOperations[0].commandName}
             </Text>
+            {/* Indeterminate by design — the app can't know how far a model call is. */}
+            <WorkingBar
+              active={state.pendingOperations[0].status === "loading"}
+              color={theme.accent}
+              trackColor={theme.line}
+            />
           </View>
           {state.pendingOperations[0].status === "error" && state.pendingOperations[0].pipelineText && !state.pendingOperations[0].pipelineText.includes("|") ? (
             <Pressable

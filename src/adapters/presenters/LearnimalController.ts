@@ -102,6 +102,13 @@ import { SuggestSearchQueriesInteractor } from "../../usecases/agent/SuggestSear
 import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabusInteractor";
 import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction";
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
+import { AppearanceSettings, FontChoice } from "../../entities/appearance";
+import { FontGateway } from "../gateways/FontGateway";
+import {
+  FontLoader,
+  InstallFontInteractor,
+  reloadInstalledFonts,
+} from "../../usecases/appearance/InstallFontInteractor";
 import { GapReport, GapReportInteractor, summarizeGapReportForPrompt } from "../../usecases/report/GapReportInteractor";
 import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission, WorkspacePhase } from "../../entities/workspace";
 
@@ -167,6 +174,8 @@ const EMPTY_MISSION_DRAFT: MissionDraft = {
 export interface AppState {
   theme: "dark" | "light";
   accent: "teal" | "lilac" | "amber" | "rose" | "arctic";
+  /** Palette and typeface customisation (see `entities/appearance.ts`). */
+  appearance: AppearanceSettings;
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   cards: Card[];
@@ -214,6 +223,8 @@ export interface AppState {
   isSuggestingQueries: boolean;
   /** A capture screen the UI should navigate to, set by a `capture` dispatch. */
   captureIntent: "note" | "paste" | "link" | "ask" | null;
+  /** True while a Google font download is in flight. */
+  isInstallingFont: boolean;
   toastMessage: string;
   openRouterKey: string;
   selectedModel: string;
@@ -252,6 +263,8 @@ export interface AppState {
 interface DomainState {
   theme: "dark" | "light";
   accent: "teal" | "lilac" | "amber" | "rose" | "arctic";
+  /** Palette and typeface customisation (see `entities/appearance.ts`). */
+  appearance: AppearanceSettings;
   openRouterKey: string;
   selectedModel: string;
   customSystemPrompt: string;
@@ -291,6 +304,7 @@ interface UiState {
   aiQuerySuggestions: string[];
   isSuggestingQueries: boolean;
   captureIntent: "note" | "paste" | "link" | "ask" | null;
+  isInstallingFont: boolean;
   pendingCommandName: string;
   toastMessage: string;
   isLoadingModels: boolean;
@@ -320,6 +334,10 @@ export interface LearnimalControllerDeps {
   searchGateway: SearchGateway;
   extractionGateway: ExtractionGateway;
   reviewLogRepo?: ReviewLogRepository;
+  /** Resolves a font family name to a downloadable file. Optional so tests can omit it. */
+  fontGateway?: FontGateway;
+  /** Registers a downloaded font with the platform. Optional so tests can omit it. */
+  fontLoader?: FontLoader;
 }
 
 /**
@@ -367,6 +385,8 @@ export class LearnimalController {
   private suggestSearchQueriesInteractor: SuggestSearchQueriesInteractor;
   private generateSyllabusInteractor: GenerateSyllabusInteractor;
   private gapReportInteractor: GapReportInteractor;
+  private installFontInteractor: InstallFontInteractor;
+  private fontLoader: FontLoader;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
   private builtinCommands: PipelineCommand[] = [];
@@ -471,10 +491,26 @@ export class LearnimalController {
       deps.cardRepo,
     );
     this.gapReportInteractor = new GapReportInteractor();
+    // A no-op loader keeps the controller constructible in tests and on any platform
+    // where font installation isn't wired up; installFont then simply fails honestly.
+    this.fontLoader = deps.fontLoader ?? {
+      async load() {
+        throw new Error("Font loading isn't available here");
+      },
+    };
+    this.installFontInteractor = new InstallFontInteractor(
+      deps.fontGateway ?? {
+        async resolveFont() {
+          throw new Error("Font downloading isn't available here");
+        },
+      },
+      this.fontLoader,
+    );
 
     this.domain = {
       theme: "dark",
       accent: "teal",
+      appearance: {},
       openRouterKey: "",
       selectedModel: "",
       customSystemPrompt: DEFAULT_SYSTEM_PROMPT,
@@ -529,6 +565,7 @@ export class LearnimalController {
       aiQuerySuggestions: [],
       isSuggestingQueries: false,
       captureIntent: null,
+      isInstallingFont: false,
       pendingCommandName: "",
       toastMessage: "",
       isLoadingModels: false,
@@ -559,6 +596,7 @@ export class LearnimalController {
       if (settings) {
         this.domain.theme = settings.theme || "dark";
         this.domain.accent = settings.accent || "teal";
+        this.domain.appearance = settings.appearance ?? {};
         this.domain.openRouterKey = settings.openRouterKey || "";
         this.domain.selectedModel = settings.selectedModel || "";
         this.domain.customSystemPrompt =
@@ -598,6 +636,8 @@ export class LearnimalController {
       }
       await this.loadCardsForActiveWorkspace();
       this.loadAvailableModels();
+      // Not awaited: a slow or failed font fetch must never delay first paint.
+      void this.restoreInstalledFonts();
       this.emit();
       console.log(`[${logTimestamp}] [LearnimalController.init] SUCCESS`);
     } catch (err: any) {
@@ -629,6 +669,7 @@ export class LearnimalController {
     return {
       theme: this.domain.theme,
       accent: this.domain.accent,
+      appearance: this.domain.appearance,
       workspaces: [...this.domain.workspaces],
       activeWorkspaceId: this.domain.activeWorkspaceId,
       cards: [...this.domain.cards],
@@ -669,6 +710,7 @@ export class LearnimalController {
       aiQuerySuggestions: [...this.ui.aiQuerySuggestions],
       isSuggestingQueries: this.ui.isSuggestingQueries,
       captureIntent: this.ui.captureIntent,
+      isInstallingFont: this.ui.isInstallingFont,
       toastMessage: this.ui.toastMessage,
       isLoadingModels: this.ui.isLoadingModels,
       pendingOperations: this.ui.pendingOperations,
@@ -921,6 +963,97 @@ export class LearnimalController {
   setAccent(accent: "teal" | "lilac" | "amber" | "rose" | "arctic"): void {
     this.domain.accent = accent;
     this.saveCurrentSettings();
+    this.emit();
+  }
+
+  // --- Appearance (palette + typeface customisation) ---
+
+  /** Applies a shipped palette. Clears any accent override so the palette reads as designed. */
+  setPalette(paletteId: string): void {
+    this.domain.appearance = {
+      ...this.domain.appearance,
+      paletteId,
+      accentOverride: undefined,
+    };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  /** Overrides the palette's accent. An invalid hex is ignored by `resolveAppearance`, not guessed at. */
+  setAccentOverride(hex: string | undefined): void {
+    this.domain.appearance = { ...this.domain.appearance, accentOverride: hex };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  /** Chooses which installed (or system) face is used for a role. */
+  setFont(role: "mono" | "sans", font: FontChoice): void {
+    this.domain.appearance =
+      role === "mono"
+        ? { ...this.domain.appearance, monoFont: font }
+        : { ...this.domain.appearance, sansFont: font };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  /**
+   * Downloads a Google font and registers it for use. Only recorded in settings once it
+   * has actually loaded — see {@link InstallFontInteractor} — so the font list can never
+   * advertise a typeface that won't render.
+   */
+  async installFont(family: string): Promise<boolean> {
+    const trimmed = family.trim();
+    if (!trimmed) return false;
+
+    this.ui.isInstallingFont = true;
+    this.emit();
+    try {
+      const font = await this.installFontInteractor.execute(trimmed);
+      const existing = this.domain.appearance.installedFonts ?? [];
+      const deduped = existing.filter(
+        item => item.family.toLowerCase() !== font.family.toLowerCase()
+      );
+      this.domain.appearance = {
+        ...this.domain.appearance,
+        installedFonts: [...deduped, font],
+      };
+      await this.saveCurrentSettings();
+      this.showToast(`Installed ${font.family}`);
+      return true;
+    } catch (err: any) {
+      this.showToast(
+        err instanceof UseCaseError ? err.userMessage : "Couldn't install that font"
+      );
+      return false;
+    } finally {
+      this.ui.isInstallingFont = false;
+      this.emit();
+    }
+  }
+
+  /**
+   * Re-registers previously installed fonts at startup, dropping any that no longer load
+   * so a dead font degrades to the system face instead of blocking launch.
+   */
+  private async restoreInstalledFonts(): Promise<void> {
+    const installed = this.domain.appearance.installedFonts ?? [];
+    if (installed.length === 0) return;
+
+    const loaded = await reloadInstalledFonts(installed, this.fontLoader);
+    if (loaded.length === installed.length) return;
+
+    // Some font vanished; forget it and fall back anything that referenced it.
+    const survivors = new Set(loaded.map(font => font.family));
+    const stillValid = (font: FontChoice | undefined) =>
+      font && (font.source === "system" || survivors.has(font.family)) ? font : undefined;
+
+    this.domain.appearance = {
+      ...this.domain.appearance,
+      installedFonts: loaded,
+      monoFont: stillValid(this.domain.appearance.monoFont),
+      sansFont: stillValid(this.domain.appearance.sansFont),
+    };
+    await this.saveCurrentSettings();
     this.emit();
   }
 
@@ -1527,6 +1660,7 @@ export class LearnimalController {
     return {
       theme: this.domain.theme,
       accent: this.domain.accent,
+      appearance: this.domain.appearance,
       openRouterKey: this.domain.openRouterKey,
       selectedModel: this.domain.selectedModel,
       customSystemPrompt: this.domain.customSystemPrompt,

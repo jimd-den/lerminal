@@ -5,7 +5,8 @@ import {
   LearnimalController,
 } from "../../../adapters/presenters/LearnimalController";
 import { presentCaptureReceipt } from "../../../adapters/presenters/CaptureReceiptPresenter";
-import { LearningTheme } from "./theme";
+import { ArrivalView } from "../motion/communicative";
+import { LearningTheme, Structure, TypeScale } from "./theme";
 
 /**
  * # Capture Receipt Panel
@@ -33,6 +34,9 @@ export function CaptureReceipt({
   if (!receipt) return null;
 
   return (
+    // Keyed on the run's output so a *new* result animates in, but unrelated re-renders
+    // don't replay the arrival — that would drain the motion of its meaning.
+    <ArrivalView key={receipt.createdCards.map(card => card.id).join(",")}>
     <View
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
@@ -99,29 +103,35 @@ export function CaptureReceipt({
         </Pressable>
       </View>
     </View>
+    </ArrivalView>
   );
 }
 
 const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
-  panel: { borderWidth: 1, borderRadius: 16, padding: 17, marginBottom: 18 },
-  status: { fontSize: 11, fontWeight: "900", letterSpacing: 1.4 },
-  summary: { fontSize: 19, lineHeight: 25, fontWeight: "700", marginTop: 8 },
-  destination: { fontSize: 13, lineHeight: 18, marginTop: 5 },
-  nextLabel: { fontSize: 9, fontWeight: "900", letterSpacing: 1.2, marginTop: 14 },
+  panel: {
+    borderWidth: 1,
+    borderRadius: Structure.radius,
+    padding: Structure.gutter,
+    marginBottom: 18,
+  },
+  status: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
+  summary: { fontSize: TypeScale.title, lineHeight: 28, fontWeight: "700", marginTop: 8 },
+  destination: { fontSize: TypeScale.meta, lineHeight: 19, marginTop: 5 },
+  nextLabel: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2, marginTop: 14 },
   actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
   nextAction: {
-    minHeight: 44,
+    minHeight: Structure.tap,
     borderWidth: 1,
-    borderRadius: 9,
+    borderRadius: Structure.radiusControl,
     paddingHorizontal: 12,
     justifyContent: "center",
     maxWidth: "100%",
   },
-  nextActionText: { fontSize: 13, fontWeight: "700" },
+  nextActionText: { fontSize: TypeScale.body, fontWeight: "700" },
   footer: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 16 },
-  primary: { minHeight: 48, paddingHorizontal: 17, borderRadius: 10, justifyContent: "center" },
-  primaryText: { fontSize: 14, fontWeight: "800" },
+  primary: { minHeight: Structure.tapLarge, paddingHorizontal: 17, borderRadius: 10, justifyContent: "center" },
+  primaryText: { fontSize: TypeScale.body, fontWeight: "800" },
   dismiss: { minHeight: 48, justifyContent: "center" },
-  dismissText: { fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  dismissText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1 },
 });

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { LearnimalController } from "./src/adapters/presenters/LearnimalController";
 import { AsyncStorageCardRepository } from "./src/frameworks/storage/AsyncStorageCardRepository";
 import { AsyncStorageWorkspaceRepository } from "./src/frameworks/storage/AsyncStorageWorkspaceRepository";
@@ -8,9 +8,13 @@ import { AsyncStorageSettingsRepository } from "./src/frameworks/storage/AsyncSt
 import { AsyncStorageCommandDefinitionRepository } from "./src/frameworks/storage/AsyncStorageCommandDefinitionRepository";
 import { AsyncStorageCardTypeRepository } from "./src/frameworks/storage/AsyncStorageCardTypeRepository";
 import { AsyncStoragePromptPresetRepository } from "./src/frameworks/storage/AsyncStoragePromptPresetRepository";
+import { AsyncStorageAssistantProfileRepository } from "./src/frameworks/storage/AsyncStorageAssistantProfileRepository";
+import { AsyncStorageReviewLogRepository } from "./src/frameworks/storage/AsyncStorageReviewLogRepository";
 import { OpenRouterAgentGateway } from "./src/frameworks/network/OpenRouterAgentGateway";
 import { DuckDuckGoSearchGateway } from "./src/frameworks/network/DuckDuckGoSearchGateway";
 import { WebExtractionGateway } from "./src/frameworks/network/WebExtractionGateway";
+import { GoogleFontsGateway } from "./src/frameworks/network/GoogleFontsGateway";
+import { ExpoFontLoader } from "./src/frameworks/fonts/ExpoFontLoader";
 import { MainLayout } from "./src/frameworks/ui/MainLayout";
 
 /**
@@ -36,9 +40,13 @@ export default function App() {
     const commandDefinitionRepo = new AsyncStorageCommandDefinitionRepository();
     const cardTypeRepo = new AsyncStorageCardTypeRepository();
     const promptPresetRepo = new AsyncStoragePromptPresetRepository();
+    const assistantProfileRepo = new AsyncStorageAssistantProfileRepository();
+    const reviewLogRepo = new AsyncStorageReviewLogRepository();
     const agentGateway = new OpenRouterAgentGateway();
     const searchGateway = new DuckDuckGoSearchGateway();
     const extractionGateway = new WebExtractionGateway();
+    const fontGateway = new GoogleFontsGateway();
+    const fontLoader = new ExpoFontLoader();
 
     const appController = new LearnimalController({
       cardRepo,
@@ -48,8 +56,12 @@ export default function App() {
       commandDefinitionRepo,
       cardTypeRepo,
       promptPresetRepo,
+      assistantProfileRepo,
       searchGateway,
       extractionGateway,
+      reviewLogRepo,
+      fontGateway,
+      fontLoader,
     });
 
     appController.init().then(() => {
@@ -61,21 +73,18 @@ export default function App() {
 
   if (loading || !controller) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4EC7C0" />
-      </View>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics} style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4EC7C0" />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
-  // Choose the status bar style depending on active theme settings
-  const currentTheme = controller.getState().theme;
-  const statusBarStyle = currentTheme === "dark" ? "light" : "dark";
-
   return (
-    <View style={styles.container}>
-      <StatusBar style={statusBarStyle} />
+    <SafeAreaProvider initialMetrics={initialWindowMetrics} style={styles.container}>
       <MainLayout controller={controller} />
-    </View>
+    </SafeAreaProvider>
   );
 }
 
@@ -90,4 +99,3 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
-

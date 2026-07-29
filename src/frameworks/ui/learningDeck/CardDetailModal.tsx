@@ -1055,18 +1055,18 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 12,
   },
   headerCopy: { flex: 1, paddingHorizontal: 12 },
-  typeLabel: { fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
+  typeLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1.2 },
   headerTitle: { fontSize: 16, fontWeight: "700", marginTop: 4 },
   headerButton: {
     minHeight: 48,
     justifyContent: "center",
     paddingHorizontal: 8,
   },
-  headerButtonText: { fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  headerButtonText: { fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   body: { flex: 1 },
   bodyContent: { padding: 18, paddingBottom: 40 },
   title: { fontSize: 27, lineHeight: 34, fontWeight: "800", marginBottom: 20 },
-  machineLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
+  machineLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1.2 },
   editorPanel: { borderWidth: 1, borderRadius: 8, padding: 13 },
   editor: {
     minHeight: 260,
@@ -1086,7 +1086,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 10,
   },
-  typeChoiceText: { fontSize: 9, fontWeight: "900" },
+  typeChoiceText: { fontSize: 12, fontWeight: "900" },
   fieldInput: {
     minHeight: 52,
     borderWidth: 1,
@@ -1107,7 +1107,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
   },
   buttonCompact: { minWidth: 65, minHeight: 50, paddingHorizontal: 9 },
-  buttonText: { fontSize: 11, fontWeight: "900", letterSpacing: 0.7 },
+  buttonText: { fontSize: 12, fontWeight: "900", letterSpacing: 0.7 },
   footer: {
     minHeight: 72,
     borderTopWidth: 1,
@@ -1122,7 +1122,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  iconActionText: { fontSize: 8, fontWeight: "900", marginTop: 3 },
+  iconActionText: { fontSize: 12, fontWeight: "900", marginTop: 3 },
   studyPanel: { borderWidth: 1, borderRadius: 8, padding: 16 },
   answer: { fontSize: 18, lineHeight: 28, marginTop: 12 },
   veil: {
@@ -1160,7 +1160,7 @@ const styles = StyleSheet.create({
   },
   score: { marginTop: 14, fontSize: 12, fontWeight: "900" },
   citation: { borderWidth: 1, borderRadius: 5, padding: 12, marginTop: 20 },
-  citationText: { fontSize: 10, lineHeight: 16 },
+  citationText: { fontSize: 12, lineHeight: 16 },
   fieldPanel: { borderWidth: 1, borderRadius: 6, padding: 13, marginTop: 12 },
   fieldValue: { fontSize: 15, lineHeight: 22, marginTop: 7 },
   webFrame: {
@@ -1187,7 +1187,7 @@ const styles = StyleSheet.create({
   result: { borderWidth: 1, borderRadius: 7, padding: 14, marginBottom: 11 },
   resultTitle: { fontSize: 16, fontWeight: "800" },
   resultSnippet: { fontSize: 14, lineHeight: 20, marginTop: 7 },
-  resultUrl: { fontSize: 10, marginVertical: 10 },
+  resultUrl: { fontSize: 12, marginVertical: 10 },
   chatRoot: { flex: 1 },
   chatFeed: { flex: 1 },
   chatFeedContent: { padding: 15, paddingBottom: 30 },
@@ -1199,7 +1199,7 @@ const styles = StyleSheet.create({
     marginBottom: 9,
   },
   messageRole: {
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: "900",
     letterSpacing: 1.1,
     marginBottom: 5,
@@ -1228,5 +1228,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  sendText: { fontSize: 10, fontWeight: "900" },
+  sendText: { fontSize: 12, fontWeight: "900" },
 });

@@ -8,7 +8,8 @@ import {
   SelectionAction,
   presentSelectionTray,
 } from "../../../adapters/presenters/CaptureReceiptPresenter";
-import { LearningTheme } from "./theme";
+import { CountPulse } from "../motion/communicative";
+import { LearningTheme, Structure, TypeScale } from "./theme";
 import { TrashIcon } from "./Icons";
 
 /**
@@ -50,9 +51,11 @@ export function SelectionTray({
             CLEAR
           </Text>
         </Pressable>
-        <Text style={[styles.count, { color: theme.text, fontFamily: theme.fontMono }]}>
-          {tray.count} SELECTED
-        </Text>
+        <CountPulse value={tray.count}>
+          <Text style={[styles.count, { color: theme.text, fontFamily: theme.fontMono }]}>
+            {tray.count} SELECTED
+          </Text>
+        </CountPulse>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Delete selected items"
@@ -128,18 +131,18 @@ const styles = StyleSheet.create({
   wrap: { borderTopWidth: 1, paddingHorizontal: 12, paddingTop: 6, paddingBottom: 10 },
   head: { minHeight: 40, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   clear: { minHeight: 40, minWidth: 56, justifyContent: "center" },
-  clearText: { fontSize: 12, fontWeight: "800", letterSpacing: 1 },
-  count: { fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  clearText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1 },
+  count: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1 },
   delete: { minHeight: 40, minWidth: 44, alignItems: "flex-end", justifyContent: "center" },
   actions: { gap: 8, paddingVertical: 4, paddingRight: 4 },
   button: {
-    minHeight: 48,
-    minWidth: 88,
+    minHeight: Structure.tapLarge,
+    minWidth: 96,
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  buttonText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
+  buttonText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.4 },
 });

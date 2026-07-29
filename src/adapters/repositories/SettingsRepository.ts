@@ -7,13 +7,22 @@
  * offline-first usability, and gives the user full control of their experience.
  */
 
+import { AppearanceSettings } from "../../entities/appearance";
+
 export interface AppSettings {
   theme: "dark" | "light";
   accent: "teal" | "lilac" | "amber" | "rose" | "arctic";
+  /**
+   * Palette and typeface choices. Optional so settings written before appearance
+   * customisation existed load as the default console — see `resolveAppearance`.
+   */
+  appearance?: AppearanceSettings;
   openRouterKey: string;
   selectedModel: string;
   customSystemPrompt: string;
   customChunkSystemPrompt?: string;
+  /** Selected assistant profile per AI capability. */
+  activeProfileIds?: Record<string, string>;
   /** When true, pipelines auto-organize their output into a group per command. */
   autoGroupByCommand: boolean;
   /** When true, review sessions interleave cards across topics/groups (vs blocking). */

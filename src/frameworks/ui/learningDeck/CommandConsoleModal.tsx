@@ -892,10 +892,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 17,
     paddingTop: 12,
   },
-  status: { fontSize: 9, fontWeight: "900", letterSpacing: 1.1 },
+  status: { fontSize: 12, fontWeight: "900", letterSpacing: 1.1 },
   title: { fontSize: 22, fontWeight: "800", marginTop: 5 },
   close: { minHeight: 50, justifyContent: "center", paddingHorizontal: 5 },
-  closeText: { fontSize: 10, fontWeight: "900" },
+  closeText: { fontSize: 12, fontWeight: "900" },
   body: { flex: 1 },
   content: { padding: 16, paddingBottom: 35 },
   sectionHead: {
@@ -904,8 +904,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 9,
   },
-  sectionLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 1.1 },
-  editText: { fontSize: 10, fontWeight: "900" },
+  sectionLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1.1 },
+  editText: { fontSize: 12, fontWeight: "900" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginTop: 9 },
   chip: {
     minHeight: 42,
@@ -914,7 +914,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 11,
   },
-  chipText: { fontSize: 10, fontWeight: "900" },
+  chipText: { fontSize: 12, fontWeight: "900" },
   commandRow: {
     minHeight: 72,
     borderBottomWidth: 1,
@@ -925,7 +925,7 @@ const styles = StyleSheet.create({
   commandName: { fontSize: 14, fontWeight: "800" },
   commandLabel: { fontSize: 12, fontWeight: "600" },
   commandDescription: { fontSize: 12, lineHeight: 17, marginTop: 3 },
-  commandIo: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  commandIo: { fontSize: 12, lineHeight: 15, marginTop: 2 },
   contextBar: {
     minHeight: 40,
     borderWidth: 1,
@@ -934,7 +934,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 18,
   },
-  contextText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  contextText: { fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -949,8 +949,8 @@ const styles = StyleSheet.create({
   actionMain: { flex: 1 },
   actionTitleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
   actionLabel: { fontSize: 15, fontWeight: "700" },
-  aliasText: { fontSize: 11, fontWeight: "700" },
-  webBadge: { fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
+  aliasText: { fontSize: 12, fontWeight: "700" },
+  webBadge: { fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
   pin: {
     width: 44,
     height: 50,
@@ -967,7 +967,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   operationName: { fontSize: 12, fontWeight: "700" },
-  operationState: { fontSize: 10, marginTop: 3 },
+  operationState: { fontSize: 12, marginTop: 3 },
   smallButton: {
     minHeight: 40,
     minWidth: 43,
@@ -977,7 +977,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 7,
   },
-  smallButtonText: { fontSize: 8, fontWeight: "900" },
+  smallButtonText: { fontSize: 12, fontWeight: "900" },
   form: { borderWidth: 1, borderRadius: 7, padding: 12, marginBottom: 12 },
   input: {
     minHeight: 50,
@@ -1003,7 +1003,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  kindText: { fontSize: 9, fontWeight: "900" },
+  kindText: { fontSize: 12, fontWeight: "900" },
   createButton: {
     minHeight: 54,
     borderRadius: 5,
@@ -1011,7 +1011,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 9,
   },
-  createText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  createText: { fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
   customRow: {
     minHeight: 77,
     borderWidth: 1,
@@ -1039,7 +1039,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  runText: { fontSize: 10, fontWeight: "900" },
+  runText: { fontSize: 12, fontWeight: "900" },
   scrim: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.72)",
@@ -1065,5 +1065,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  sheetButtonText: { fontSize: 10, fontWeight: "900" },
+  sheetButtonText: { fontSize: 12, fontWeight: "900" },
 });

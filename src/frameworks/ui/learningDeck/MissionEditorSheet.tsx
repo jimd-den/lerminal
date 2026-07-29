@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   content: { padding: 18 },
   field: { marginBottom: 20 },
-  fieldLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 1, marginBottom: 8 },
+  fieldLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1, marginBottom: 8 },
   input: { minHeight: 48, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, fontSize: 15 },
   textarea: { minHeight: 80, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingTop: 12, fontSize: 14, textAlignVertical: "top" },
   criterionRow: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 8, padding: 10, marginBottom: 8, gap: 8 },

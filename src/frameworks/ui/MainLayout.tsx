@@ -37,7 +37,7 @@ import { resolveLearningTheme } from "./learningDeck/theme";
  */
 export function MainLayout({ controller }: { controller: LearnimalController }) {
   const state = useControllerState(controller);
-  const theme = resolveLearningTheme(state.theme, state.accent);
+  const theme = resolveLearningTheme(state.theme, state.accent, state.appearance);
   const deck = presentLearningDeck(state);
 
   // The capture draft lives here rather than in the screen: a pending-input prompt can

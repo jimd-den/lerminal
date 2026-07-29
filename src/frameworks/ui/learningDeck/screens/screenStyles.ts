@@ -28,7 +28,7 @@ export const styles = StyleSheet.create({
   },
   continueRail: { position: "absolute", left: 0, top: 0, bottom: 0, width: 9 },
   kicker: {
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 16,
     fontWeight: "900",
     letterSpacing: 1.3,
@@ -75,14 +75,14 @@ export const styles = StyleSheet.create({
   },
   pendingCopy: { marginLeft: 13, flex: 1 },
   pendingTitle: { fontSize: 14, fontWeight: "700" },
-  pendingMeta: { marginTop: 2, fontSize: 11 },
+  pendingMeta: { marginTop: 2, fontSize: 12 },
   pendingAction: {
     minWidth: 48,
     minHeight: 48,
     justifyContent: "center",
     alignItems: "center",
   },
-  pendingActionText: { fontSize: 9, fontWeight: "900" },
+  pendingActionText: { fontSize: 12, fontWeight: "900" },
   quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
   quickAction: {
     width: "48%",
@@ -92,7 +92,7 @@ export const styles = StyleSheet.create({
     padding: 14,
     justifyContent: "space-between",
   },
-  quickCode: { fontSize: 11, fontWeight: "900", letterSpacing: 1.1 },
+  quickCode: { fontSize: 12, fontWeight: "900", letterSpacing: 1.1 },
   quickLabel: { fontSize: 15, fontWeight: "700" },
   activityRow: {
     minHeight: 52,
@@ -102,7 +102,7 @@ export const styles = StyleSheet.create({
   },
   activityCode: {
     width: 54,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.7,
   },
@@ -141,10 +141,10 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  modeText: { fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
+  modeText: { fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
   overview: { borderRadius: 15, borderWidth: 1, padding: 17, marginTop: 13 },
   overviewText: { fontSize: 19, fontWeight: "700", marginTop: 8 },
-  overviewMeta: { fontSize: 11, marginTop: 6 },
+  overviewMeta: { fontSize: 12, marginTop: 6 },
   discussPanel: {
     borderWidth: 1,
     borderRadius: 15,
@@ -165,7 +165,7 @@ export const styles = StyleSheet.create({
   },
   commandCode: {
     width: 65,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.8,
   },
@@ -178,7 +178,7 @@ export const styles = StyleSheet.create({
     marginBottom: 13,
   },
   contextTitle: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "900",
     letterSpacing: 1,
     marginBottom: 9,
@@ -192,8 +192,8 @@ export const styles = StyleSheet.create({
     padding: 16,
   },
   terminalHead: { flexDirection: "row", justifyContent: "space-between" },
-  terminalMode: { fontSize: 11, fontWeight: "900", letterSpacing: 1.1 },
-  terminalCursor: { fontSize: 10 },
+  terminalMode: { fontSize: 12, fontWeight: "900", letterSpacing: 1.1 },
+  terminalCursor: { fontSize: 12 },
   terminalInput: {
     minHeight: 180,
     textAlignVertical: "top",
@@ -221,7 +221,7 @@ export const styles = StyleSheet.create({
     padding: 22,
     alignItems: "center",
   },
-  emptyCode: { fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+  emptyCode: { fontSize: 12, fontWeight: "800", letterSpacing: 1 },
   emptyText: {
     fontSize: 14,
     lineHeight: 20,

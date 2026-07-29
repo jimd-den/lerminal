@@ -32,6 +32,7 @@ import {
 } from "../../../entities/promptPreset";
 import { Chip, SectionLabel, Slab, SystemHeader } from "./components";
 import { ACCENT_OPTIONS, LearningTheme } from "./theme";
+import { AppearanceSettingsSection } from "./AppearanceSettings";
 import { TrashIcon } from "./Icons";
 
 const CAPABILITIES: { id: AssistantCapability; label: string }[] = [
@@ -193,6 +194,8 @@ export function SettingsScreen({
           </Pressable>
         ))}
       </View>
+
+      <AppearanceSettingsSection controller={controller} state={state} theme={theme} />
 
       <SectionLabel theme={theme}>AI LINK // OPENROUTER</SectionLabel>
       <Panel theme={theme}>
@@ -1282,10 +1285,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   colorBar: { width: 26, height: 5, marginBottom: 8 },
-  colorText: { fontSize: 9, fontWeight: "900" },
+  colorText: { fontSize: 12, fontWeight: "900" },
   panel: { borderWidth: 1, borderRadius: 8, padding: 13 },
   fieldLabel: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: "900",
     letterSpacing: 1,
     marginBottom: 7,
@@ -1297,7 +1300,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
-  link: { fontSize: 9, fontWeight: "900", letterSpacing: 0.7 },
+  link: { fontSize: 12, fontWeight: "900", letterSpacing: 0.7 },
   input: {
     minHeight: 52,
     borderWidth: 1,
@@ -1314,8 +1317,8 @@ const styles = StyleSheet.create({
     padding: 10,
     justifyContent: "space-between",
   },
-  modelName: { fontSize: 10, fontWeight: "800" },
-  modelMeta: { fontSize: 8, marginTop: 7 },
+  modelName: { fontSize: 12, fontWeight: "800" },
+  modelMeta: { fontSize: 12, marginTop: 7 },
   action: {
     minHeight: 53,
     borderRadius: 5,
@@ -1325,7 +1328,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   actionCompact: { minWidth: 70, minHeight: 50, marginTop: 0 },
-  actionText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.8 },
+  actionText: { fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
   toggle: {
     minHeight: 80,
     borderWidth: 1,
@@ -1353,7 +1356,7 @@ const styles = StyleSheet.create({
   },
   workspaceSignal: { width: 6, height: 30, marginRight: 11 },
   workspaceName: { flex: 1, fontSize: 13, fontWeight: "700" },
-  workspaceState: { fontSize: 8, fontWeight: "900" },
+  workspaceState: { fontSize: 12, fontWeight: "900" },
   inlineForm: {
     flexDirection: "row",
     gap: 6,
@@ -1377,7 +1380,7 @@ const styles = StyleSheet.create({
     gap: 9,
     marginTop: 10,
   },
-  dangerText: { fontSize: 9, fontWeight: "900" },
+  dangerText: { fontSize: 12, fontWeight: "900" },
   profileSection: { marginBottom: 16 },
   profileRow: {
     minHeight: 78,
@@ -1402,9 +1405,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  flagName: { width: 90, fontSize: 10, fontWeight: "900" },
-  flagDomain: { flex: 1, fontSize: 10 },
-  remove: { fontSize: 8, fontWeight: "900", padding: 12 },
+  flagName: { width: 90, fontSize: 12, fontWeight: "900" },
+  flagDomain: { flex: 1, fontSize: 12 },
+  remove: { fontSize: 12, fontWeight: "900", padding: 12 },
   flagInput: {
     width: 86,
     minHeight: 50,
@@ -1435,10 +1438,10 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 14,
   },
-  promptGuideTitle: { fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+  promptGuideTitle: { fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   promptGuideText: { fontSize: 12, lineHeight: 18, marginTop: 8 },
-  promptExample: { fontSize: 10, lineHeight: 16, marginTop: 10 },
-  promptHint: { fontSize: 11, lineHeight: 16, marginBottom: 7 },
+  promptExample: { fontSize: 12, lineHeight: 16, marginTop: 10 },
+  promptHint: { fontSize: 12, lineHeight: 16, marginBottom: 7 },
   presetGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   preset: {
     width: "48%",
@@ -1447,8 +1450,8 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     padding: 9,
   },
-  presetName: { fontSize: 10, fontWeight: "800" },
-  presetMeta: { fontSize: 8, marginTop: 6 },
+  presetName: { fontSize: 12, fontWeight: "800" },
+  presetMeta: { fontSize: 12, marginTop: 6 },
   typeRow: {
     minHeight: 58,
     borderBottomWidth: 1,
@@ -1457,7 +1460,7 @@ const styles = StyleSheet.create({
   },
   typeColor: { width: 7, height: 32, marginRight: 10 },
   typeName: { fontSize: 12, fontWeight: "800" },
-  typeMeta: { fontSize: 8, marginTop: 4 },
+  typeMeta: { fontSize: 12, marginTop: 4 },
   learningChip: {
     minWidth: 43,
     minHeight: 48,
@@ -1466,7 +1469,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  learningText: { fontSize: 7, fontWeight: "900" },
+  learningText: { fontSize: 12, fontWeight: "900" },
   designer: { flex: 1 },
   designerHeader: {
     minHeight: 88,
@@ -1480,7 +1483,7 @@ const styles = StyleSheet.create({
   designerTitle: { fontSize: 19, fontWeight: "800" },
   designerContent: { padding: 16, paddingBottom: 40 },
   designMessage: { borderWidth: 1, borderRadius: 6, padding: 12, marginTop: 8 },
-  messageRole: { fontSize: 8, fontWeight: "900" },
+  messageRole: { fontSize: 12, fontWeight: "900" },
   messageBody: { fontSize: 14, lineHeight: 21, marginTop: 6 },
   designInput: {
     minHeight: 140,
