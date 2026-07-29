@@ -212,3 +212,64 @@ Explicitly deferred: extra learning commands beyond the three, saved/named pipel
 3. **Selection model** — is a single "current card" enough for most pipes, or is multi-select essential from day one?
 4. **Where does review live?** As a command you run (`review`), or a gentle ambient prompt when items are due — without becoming a notification feed?
 5. **Failed recall** — should a missed question auto-pipe back into `ask` for a re-explanation, or stay manual?
+
+---
+
+## 15. Implementation status
+
+*Added after the goal-workspace build. The sections above are the original product
+thinking and are preserved as written; this section records what was actually built, what
+changed, and — where the two disagree — why.*
+
+### The problem that drove the work
+
+The pipeline model above shipped and worked. What it lacked was **legibility**: users
+couldn't tell what the AI would read, whether it would use the web, what it would create,
+where output would land, or whether a result came from their notes, from evidence, or from
+the model alone. The build addressed that, and added the goal/capstone layer the original
+PRD didn't reach for.
+
+### Answers to §14's open questions
+
+1. **Implicit vs. explicit pipes** — *both, made visible.* Output is auto-selected for the
+   next stage (§6's "one gesture" property is preserved), but the receipt says so out
+   loud. Silent re-selection was the objectionable half, not the convenience.
+2. **How opinionated is `chunk`?** — *unchanged and opinionated*, but `split` was added
+   beside it for deterministic structural splitting with no model involved.
+3. **Selection model** — *multi-select was essential.* The selection tray, scope
+   resolution, and receipts all assume it.
+4. **Where does review live?** — *a command*, unchanged. No ambient prompts, no feed.
+5. **Failed recall** — *still manual.* Auto-piping a missed question into `ask` would be
+   exactly the invisible AI behaviour the rest of this work removes.
+
+### Where the implementation diverges from §6 and §13
+
+- **Not one screen.** The PRD specifies a single canvas. Shipped: four places (Deck,
+  Library, Capture, More) with a two-level library drill. Reason: mission control, the
+  status report, and research results each need room the canvas couldn't give without
+  becoming a scroll of unrelated panels. The *canvas* remains the centre of gravity and
+  cards remain full-screen when opened; what was added is navigation, not chrome.
+- **The drawer became a bottom bar and a selection tray.** Same idea — commands one thumb
+  away — but a tray that names five real actions beats a handle that opens a list.
+- **§13's cold-start four questions were not built.** Missions cover the same ground
+  (goal, why, deliverable, success criteria) as an editable object rather than a one-time
+  interview, and can be revised as understanding changes. Worth revisiting as onboarding.
+
+### Added beyond the PRD
+
+Workspace missions and phases; semantic card roles (independent of card type, never
+affecting study eligibility); structured provenance; persisted run receipts and undo; a
+real web-research workflow with keep/reject/extract and cited briefs; a deterministic gap
+report; AI-generated prerequisite syllabi; customisable palettes and Google Fonts; and an
+always-visible activity banner that labels model and web use.
+
+### Known limitations
+
+- **`OpenRouterAgentGateway` still falls back to local template cards** on a missing key
+  or a failed request. Callers can't distinguish that from a real response. Mitigated at
+  the edges — the preflight warns when no key is configured, and the cited-brief step
+  rejects uncited output — but the honest fix is a tagged result from the gateway.
+- **Undo covers the last run only**, and refuses (safely, with a reason) rather than
+  handling partially-edited output.
+- **`AppSettings` has no schema version.** New fields are optional and resolve to
+  defaults, which has been sufficient, but a versioned migration will eventually be needed.

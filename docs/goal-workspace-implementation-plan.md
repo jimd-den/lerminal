@@ -116,3 +116,70 @@ Each phase ends with `bun test` + `npx tsc --noEmit` (against non-test `src/`) a
 - **No new state library, no schema-migration framework** — reusing the existing optional-field + backfill-on-load pattern already proven by `cardTypes`/`promptPresets`/`assistantProfiles`.
 - **Undo is log-based, not a general command-pattern undo stack** — bounded, per-operation, safety-checked (refuses rather than partially applying), matching the brief's "do not claim undo succeeded if it only partially succeeded."
 - **`ask` command name is kept** (the brief says "do not remove `ask`") — only its UI framing and preflight change; scope selection is additive UI state on top of the same `AskCommand`.
+
+---
+
+## 5. Final implementation notes
+
+*Written on completion. §§1–4 above were the Phase 0 reconnaissance and are left as
+written — including predictions that turned out wrong, which are noted below.*
+
+### What shipped, by phase
+
+| Phase | Outcome |
+|---|---|
+| 1 | `WorkspaceMission`, `Card.role`, `Card.provenance`, `OperationRecord` + `OperationLogRepository` — all additive and optional |
+| 2 | `AgentScope` bounded-context resolution, seven operation presets, the preflight sheet |
+| 3 | Real search via `SearchGateway`, inspectable candidates, save-as-source, cited briefs |
+| 4 | Mission Control module, deterministic gap report, mission editor, phases |
+| 5 | Capture receipts with next actions, the five-action selection tray |
+| 6 | Documented command catalog, canonical actions, `/aliases` |
+| 7 | Type scale, palettes, Google Fonts, communicative motion — plus the God-class refactor |
+| 8 | Undo, failure cards, the global activity banner, sheet-dismissal fix |
+| 9 | Docs and quality gates (this section) |
+
+### Corrections to the Phase 0 analysis
+
+- **The undo strategy in §2 was written as if `Card` had an `updatedAt`.** It doesn't.
+  `canUndoCreate` instead compares a content signature (title, body, answer, fields,
+  parentId) against an as-created snapshot. This is stricter and catches edits an
+  `updatedAt` would have missed.
+- **The snapshot timing was subtly wrong and only caught by a test.** Snapshots were taken
+  before auto-grouping re-parented the output, so `canUndoCreate` read the changed
+  `parentId` as a user edit and refused *every* grouped run. Snapshots are now taken after
+  the cards settle, and the group a run creates is part of what undo removes.
+- **§2 predicted the trust gap was "entirely in the UI".** It was worse. Every in-flight
+  indicator was owned by the screen that started the work, so running an action from any
+  screen but the deck showed *nothing at all* until output silently appeared. Fixed by
+  moving the indicator into the shell.
+
+### Migration notes
+
+No migration runner was needed or written. Every field added is optional and resolves
+through a defaulting function — `resolveAppearance`, `readFailedRunCard`, the `mission`/
+`role`/`provenance` fields — so a settings or card blob written before this work loads
+unchanged. `resolveLearningTheme` still honours the legacy `mode`/`accent` arguments and
+only switches to a palette once one is explicitly chosen, so no existing user's appearance
+changed underneath them.
+
+Storage keys are unchanged except for one addition: `learnimal_operation_log_v1`, bounded
+to the 200 most recent records.
+
+### Quality gates
+
+`bun test` — 352 tests across 55 files. `npx tsc --noEmit` — clean for all non-test
+sources. The pre-existing test-file type errors catalogued in §0 remain (missing
+`bun-types` in `tsconfig`, plus three stale fixtures); none were introduced by this work
+and none affect `bun test`. There is no lint configuration in the repo.
+
+### Recommended next steps
+
+1. **Make `OpenRouterAgentGateway` honest.** Return a tagged result distinguishing a real
+   model response from the local-fallback template, and thread `isLocalFallback` (already
+   on `Provenance`) through to the receipt. This is the last place the app can imply a
+   model answered when it didn't.
+2. **Add `bun-types` to `tsconfig`** so `npx tsc --noEmit` is clean end-to-end and can
+   become a CI gate.
+3. **Extend undo beyond one step**, using the persisted log that already supports it.
+4. **Revisit onboarding** — the PRD's cold-start four questions were never built, and
+   missions are currently something you have to go and find.
