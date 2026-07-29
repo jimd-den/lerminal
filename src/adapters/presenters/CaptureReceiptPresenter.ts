@@ -40,6 +40,8 @@ export interface CaptureReceiptModel {
    * that makes an app feel like it's acting behind your back.
    */
   selectionChanged: boolean;
+  /** True when this run can still be reversed — see `UndoOperationInteractor`. */
+  canUndo: boolean;
 }
 
 /**
@@ -82,6 +84,7 @@ export function presentCaptureReceipt(state: AppState): CaptureReceiptModel | nu
     primaryActionLabel: result.primaryActionLabel,
     nextActions,
     selectionChanged: createdCards.some(card => state.selection.has(card.id)),
+    canUndo: Boolean(state.undoableOperationId),
   };
 }
 

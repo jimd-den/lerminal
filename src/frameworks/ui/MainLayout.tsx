@@ -12,6 +12,7 @@ import { useDeckNavigation } from "./useDeckNavigation";
 import { BottomNavigation } from "./learningDeck/components";
 import { SelectionTray } from "./learningDeck/SelectionTray";
 import { ActivityBanner } from "./learningDeck/ActivityBanner";
+import { PlaceTransition } from "./motion/communicative";
 import { ModalStack } from "./learningDeck/ModalStack";
 import {
   CaptureScreen,
@@ -188,7 +189,14 @@ export function MainLayout({ controller }: { controller: LearnimalController }) 
             { backgroundColor: theme.background, borderColor: theme.line },
           ]}
         >
-          <View style={styles.screenSlot}>{screen}</View>
+          {/* Keyed on place *and* group, so moving between screens and being dropped
+              into a newly created group both read as movement rather than a silent swap. */}
+          <PlaceTransition
+            place={`${nav.place}:${nav.libraryLevel}:${state.currentGroupId ?? ""}`}
+            style={styles.screenSlot}
+          >
+            {screen}
+          </PlaceTransition>
 
           {state.toastMessage ? (
             <View

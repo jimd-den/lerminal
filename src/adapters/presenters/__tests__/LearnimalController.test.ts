@@ -582,6 +582,110 @@ describe("Learnimal App Controller", () => {
     expect(after.every(c => c.title.includes("ask"))).toBe(true);
   });
 
+  it("undoes the last run, removing what it created", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.runPipeline('ask "photosynthesis"');
+    const afterRun = controller.getState();
+    expect(afterRun.undoableOperationId).not.toBeNull();
+    const createdCount = afterRun.cards.length;
+    expect(createdCount).toBeGreaterThan(0);
+
+    const undone = await controller.undoLastOperation();
+
+    expect(undone).toBe(true);
+    const after = controller.getState();
+    expect(after.cards).toHaveLength(0);
+    expect(after.undoableOperationId).toBeNull();
+    expect(after.selection.size).toBe(0);
+  });
+
+  it("refuses to undo — leaving everything intact — once a created card has been edited", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.runPipeline('ask "photosynthesis"');
+    const created = controller.getState().cards.filter(c => c.type === "chunk");
+    expect(created.length).toBeGreaterThan(0);
+
+    await controller.setCardBody(created[0].id, "I rewrote this myself");
+
+    const undone = await controller.undoLastOperation();
+
+    expect(undone).toBe(false);
+    // The whole point: a refused undo changes nothing at all.
+    expect(controller.getState().cards.length).toBeGreaterThan(0);
+    expect(controller.getState().toastMessage).toContain("edited");
+  });
+
+  it("moves the user into the group a run creates", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.runPipeline('ask "photosynthesis"');
+
+    const state = controller.getState();
+    const group = state.cards.find(c => c.type === "group");
+    expect(group).toBeDefined();
+    // The result is what you're looking at, not something to go find.
+    expect(state.currentGroupId).toBe(group!.id);
+    expect(controller.consumeGroupNavigation()).toBe(group!.id);
+    // Consumed once, so a re-render doesn't yank the user back.
+    expect(controller.consumeGroupNavigation()).toBeNull();
+  });
+
+  it("closes the preflight sheet the moment a run is committed, not when it finishes", async () => {
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+    await controller.createNote({ content: "A note to explain" });
+
+    controller.openPreflight("explain-selected");
+    expect(controller.getState().activePreflightPresetId).toBe("explain-selected");
+
+    await controller.confirmPreflight();
+
+    expect(controller.getState().activePreflightPresetId).toBeNull();
+  });
+
+  it("leaves no sheet stranded when a run fails", async () => {
+    const failing: AgentGateway = {
+      async ask(): Promise<AgentCardResponse[]> { throw new Error("down"); },
+      async fetchModels() { return []; },
+    };
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway: failing,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+    await controller.createNote({ content: "A note" });
+
+    controller.openPreflight("explain-selected");
+    await controller.confirmPreflight();
+
+    // Previously the sheet only closed on success, so a failure stranded it forever.
+    expect(controller.getState().activePreflightPresetId).toBeNull();
+    expect(controller.getState().isModalOpen).toBe(false);
+    expect(controller.getState().cards.some(c => c.type === "failure")).toBe(true);
+  });
+
   it("dispatching a mission action opens the mission editor", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,

@@ -92,6 +92,17 @@ export function CaptureReceipt({
             {receipt.primaryActionLabel}
           </Text>
         </Pressable>
+        {receipt.canUndo ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void controller.undoLastOperation()}
+            style={({ pressed }) => [styles.dismiss, pressed && styles.pressed]}
+          >
+            <Text style={[styles.dismissText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              UNDO
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           onPress={() => controller.dismissOperationResult()}

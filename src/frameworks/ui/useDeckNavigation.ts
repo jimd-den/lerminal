@@ -148,6 +148,18 @@ export function useDeckNavigation({
     }
   }, [controller, state.isSettingsSheetOpen]);
 
+  // A run that produced a group asks the shell to open it, so the result is what the
+  // user is looking at rather than something they have to go find. Consumed once, so a
+  // re-render doesn't yank them back after they've navigated away themselves.
+  useEffect(() => {
+    if (!state.pendingGroupNavigation) return;
+    const groupId = controller.consumeGroupNavigation();
+    if (groupId) {
+      setPlace("library");
+      setLibraryLevel("document");
+    }
+  }, [controller, state.pendingGroupNavigation]);
+
   // A `capture` dispatch (from the palette or a suggestion) asks for the capture screen.
   // The controller only records the intent; navigating is the shell's job, so it is
   // consumed here exactly once and cleared.

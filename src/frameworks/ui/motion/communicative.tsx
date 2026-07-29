@@ -82,6 +82,52 @@ export function ArrivalView({
 }
 
 /**
+ * Cross-fades its children whenever `place` changes — the sense of *moving* somewhere.
+ *
+ * This carries information the layout otherwise leaves implicit: when a run drops you
+ * inside the group it just created, the transition is what distinguishes "you have been
+ * moved" from "the list you were reading suddenly has different contents in it".
+ *
+ * Deliberately a fade rather than a slide: a slide implies a direction, and the deck's
+ * places aren't arranged in a line — claiming an axis that doesn't exist is the kind of
+ * motion that misinforms.
+ */
+export function PlaceTransition({
+  place,
+  children,
+  style,
+}: {
+  place: string;
+  children: React.ReactNode;
+  style?: ViewStyle | ViewStyle[];
+}) {
+  const reducedMotion = useReducedMotion();
+  const fade = useRef(new Animated.Value(1)).current;
+  const previous = useRef(place);
+
+  useEffect(() => {
+    if (previous.current === place) return;
+    previous.current = place;
+    if (reducedMotion) {
+      fade.setValue(1);
+      return;
+    }
+
+    fade.setValue(0.35);
+    const animation = Animated.timing(fade, {
+      toValue: 1,
+      duration: DURATION,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [fade, place, reducedMotion]);
+
+  return <Animated.View style={[style, { opacity: fade }]}>{children}</Animated.View>;
+}
+
+/**
  * Briefly scales its children whenever `value` changes — confirmation that an action
  * registered. Skips the first render, because appearing is not the same as changing.
  */

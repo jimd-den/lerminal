@@ -104,6 +104,13 @@ import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction"
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
 import { AppearanceSettings, FontChoice } from "../../entities/appearance";
 import { createFailedRunCard, readFailedRunCard } from "../../entities/failedRun";
+import { createOperationRecord } from "../../entities/operationLog";
+import { OperationLogRepository } from "../repositories/OperationLogRepository";
+import { MemoryOperationLogRepository } from "../repositories/MemoryOperationLogRepository";
+import {
+  UndoOperationInteractor,
+  UndoUnavailableError,
+} from "../../usecases/undo/UndoOperationInteractor";
 import { FontGateway } from "../gateways/FontGateway";
 import {
   FontLoader,
@@ -224,8 +231,15 @@ export interface AppState {
   isSuggestingQueries: boolean;
   /** A capture screen the UI should navigate to, set by a `capture` dispatch. */
   captureIntent: "note" | "paste" | "link" | "ask" | null;
+  /**
+   * A group the shell should open, set when a run creates one. The controller decides
+   * *which* group; navigating there is the shell's job, so this is consumed once.
+   */
+  pendingGroupNavigation: string | null;
   /** True while a Google font download is in flight. */
   isInstallingFont: boolean;
+  /** The id of the most recent undoable operation, or null when there's nothing to undo. */
+  undoableOperationId: string | null;
   toastMessage: string;
   openRouterKey: string;
   selectedModel: string;
@@ -305,7 +319,9 @@ interface UiState {
   aiQuerySuggestions: string[];
   isSuggestingQueries: boolean;
   captureIntent: "note" | "paste" | "link" | "ask" | null;
+  pendingGroupNavigation: string | null;
   isInstallingFont: boolean;
+  undoableOperationId: string | null;
   pendingCommandName: string;
   toastMessage: string;
   isLoadingModels: boolean;
@@ -335,6 +351,8 @@ export interface LearnimalControllerDeps {
   searchGateway: SearchGateway;
   extractionGateway: ExtractionGateway;
   reviewLogRepo?: ReviewLogRepository;
+  /** Persists run receipts so the last operation can be undone. */
+  operationLogRepo?: OperationLogRepository;
   /** Resolves a font family name to a downloadable file. Optional so tests can omit it. */
   fontGateway?: FontGateway;
   /** Registers a downloaded font with the platform. Optional so tests can omit it. */
@@ -387,6 +405,8 @@ export class LearnimalController {
   private generateSyllabusInteractor: GenerateSyllabusInteractor;
   private gapReportInteractor: GapReportInteractor;
   private installFontInteractor: InstallFontInteractor;
+  private operationLogRepo: OperationLogRepository;
+  private undoOperationInteractor: UndoOperationInteractor;
   private fontLoader: FontLoader;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
@@ -492,6 +512,11 @@ export class LearnimalController {
       deps.cardRepo,
     );
     this.gapReportInteractor = new GapReportInteractor();
+    this.operationLogRepo = deps.operationLogRepo ?? new MemoryOperationLogRepository();
+    this.undoOperationInteractor = new UndoOperationInteractor(
+      deps.cardRepo,
+      this.operationLogRepo,
+    );
     // A no-op loader keeps the controller constructible in tests and on any platform
     // where font installation isn't wired up; installFont then simply fails honestly.
     this.fontLoader = deps.fontLoader ?? {
@@ -566,7 +591,9 @@ export class LearnimalController {
       aiQuerySuggestions: [],
       isSuggestingQueries: false,
       captureIntent: null,
+      pendingGroupNavigation: null,
       isInstallingFont: false,
+      undoableOperationId: null,
       pendingCommandName: "",
       toastMessage: "",
       isLoadingModels: false,
@@ -711,7 +738,9 @@ export class LearnimalController {
       aiQuerySuggestions: [...this.ui.aiQuerySuggestions],
       isSuggestingQueries: this.ui.isSuggestingQueries,
       captureIntent: this.ui.captureIntent,
+      pendingGroupNavigation: this.ui.pendingGroupNavigation,
       isInstallingFont: this.ui.isInstallingFont,
+      undoableOperationId: this.ui.undoableOperationId,
       toastMessage: this.ui.toastMessage,
       isLoadingModels: this.ui.isLoadingModels,
       pendingOperations: this.ui.pendingOperations,
@@ -1136,6 +1165,59 @@ export class LearnimalController {
   }
 
   /**
+   * Reverses the most recent run, or explains why it can't.
+   *
+   * Refusal is a success case here: {@link UndoOperationInteractor} checks everything
+   * before touching anything, so a "can't undo" message means the workspace is untouched
+   * — which is the point. Silently half-reversing would be far worse than declining.
+   */
+  async undoLastOperation(): Promise<boolean> {
+    const operationId = this.ui.undoableOperationId;
+    if (!operationId) return false;
+
+    const record = await this.operationLogRepo.getRecord(operationId);
+    if (!record) {
+      this.ui.undoableOperationId = null;
+      this.emit();
+      return false;
+    }
+
+    try {
+      const result = await this.undoOperationInteractor.execute(record, this.domain.cards);
+
+      // Anything the undo removed can't stay selected or open.
+      const removed = new Set(result.removedCardIds);
+      this.domain.selection = new Set(
+        [...this.domain.selection].filter((id) => !removed.has(id)),
+      );
+      if (this.ui.openCardId && removed.has(this.ui.openCardId)) {
+        this.ui.openCardId = null;
+      }
+      // The group the run dropped us into may have just been deleted with it.
+      if (this.domain.currentGroupId && removed.has(this.domain.currentGroupId)) {
+        this.domain.currentGroupId = null;
+      }
+
+      this.ui.undoableOperationId = null;
+      this.ui.operationResult = null;
+      await this.loadCardsForActiveWorkspace();
+      this.emit();
+      this.showToast(result.summary);
+      return true;
+    } catch (err: any) {
+      // The reason matters more than the failure: it tells the user what to do instead.
+      this.showToast(
+        err instanceof UseCaseError ? err.userMessage : "Couldn't undo that",
+      );
+      if (err instanceof UndoUnavailableError) {
+        this.ui.undoableOperationId = null;
+        this.emit();
+      }
+      return false;
+    }
+  }
+
+  /**
    * The single entry point for every suggested action — capture-receipt follow-ups and
    * selection-tray buttons alike (see `nextActions.ts` / `selectionActions.ts`).
    *
@@ -1176,6 +1258,16 @@ export class LearnimalController {
         this.emit();
         return;
     }
+  }
+
+  /** Consumes the pending group navigation, so the shell moves there exactly once. */
+  consumeGroupNavigation(): string | null {
+    const groupId = this.ui.pendingGroupNavigation;
+    if (groupId) {
+      this.ui.pendingGroupNavigation = null;
+      this.emit();
+    }
+    return groupId;
   }
 
   /** Consumes the pending capture intent, so navigating to the capture screen happens once. */
@@ -1775,8 +1867,7 @@ export class LearnimalController {
       return true;
     }
 
-    this.ui.isModalOpen = false;
-    this.ui.isInputSheetOpen = false;
+    this.dismissTransientSheets();
     this.pendingPipelineResume = null;
     this.emit();
 
@@ -1831,7 +1922,12 @@ export class LearnimalController {
         return true;
       }
 
+      let pendingRecord:
+        | { createdCardIds: string[]; summary: string; destinationGroupId?: string }
+        | null = null;
+
       if (outcome.cards.length > 0) {
+        let createdGroupId: string | undefined;
         let destinationGroupId =
           commonParentId(outcome.cards) ?? targetParentId ?? undefined;
         const parentIds = new Set(
@@ -1840,9 +1936,15 @@ export class LearnimalController {
         const generatedTogether = outcome.cards.every(
           (card) => card.createdAt >= startedAt,
         );
+        // Every run's output gets its own group, not just multi-card ones. A run is a
+        // unit of work, so its result should be a unit on the canvas — and a single
+        // card dropped loose among fifty others is exactly the "where did it go?"
+        // problem grouping exists to solve. `generatedTogether` still guards against
+        // wrapping cards a command merely passed through (e.g. `space`, which returns
+        // the same cards it was given).
         if (
           this.domain.autoGroupByCommand &&
-          outcome.cards.length > 1 &&
+          outcome.cards.length > 0 &&
           generatedTogether &&
           parentIds.size === 1
         ) {
@@ -1854,6 +1956,11 @@ export class LearnimalController {
             cards: outcome.cards,
           });
           destinationGroupId = group.id;
+          createdGroupId = group.id;
+          // Move the user into the group the work just produced, so the result is what
+          // they're looking at rather than something they have to go find.
+          this.domain.currentGroupId = group.id;
+          this.ui.pendingGroupNavigation = group.id;
         }
         const outputLabel = outcome.cards.every((card) => card.type === "chunk")
           ? "study chunk"
@@ -1871,10 +1978,41 @@ export class LearnimalController {
             ? "Open document"
             : "Open result",
         };
+
+        pendingRecord = {
+          // The group a run creates is part of what it created, so undoing removes it too.
+          createdCardIds: [
+            ...outcome.cards.map((card) => card.id),
+            ...(createdGroupId ? [createdGroupId] : []),
+          ],
+          summary: this.ui.operationResult.summary,
+          destinationGroupId,
+        };
       }
       if (this.domain.activeWorkspaceId === workspaceId) {
         this.domain.selection = new Set(outcome.cards.map((c) => c.id));
         await this.loadCardsForActiveWorkspace();
+      }
+
+      if (pendingRecord) {
+        // Snapshotted *after* the reload, so they reflect the cards as they finally
+        // landed — auto-grouping re-parents the output, and a snapshot taken before that
+        // would look like a user edit to `canUndoCreate` and wrongly block the undo.
+        const settled = this.domain.cards.filter((card) =>
+          pendingRecord!.createdCardIds.includes(card.id),
+        );
+        const record = createOperationRecord({
+          commandName: pipelineText,
+          workspaceId,
+          parentId: pendingRecord.destinationGroupId,
+          inputCardIds: initialInputCards.map((card) => card.id),
+          createdCardIds: settled.map((card) => card.id),
+          createdCardSnapshots: settled.map((card) => ({ ...card })),
+          startedAt,
+          summary: pendingRecord.summary,
+        });
+        await this.operationLogRepo.saveRecord(record);
+        this.ui.undoableOperationId = record.id;
       }
       this.emit();
       return true;
@@ -1939,6 +2077,24 @@ export class LearnimalController {
       this.emit();
     }
     return succeeded;
+  }
+
+  /**
+   * Closes every sheet that was a step *toward* an action, the moment that action starts.
+   *
+   * These surfaces exist to compose a command; once it's running they're stale, and any
+   * one of them left up is a form the user already submitted still sitting on screen.
+   * Centralised here because the bug was per-sheet: each caller remembered to close its
+   * own and forgot the others. Progress belongs to the ActivityBanner, which is always
+   * visible, so nothing is lost by dismissing all of them.
+   */
+  private dismissTransientSheets(): void {
+    this.ui.isModalOpen = false;
+    this.ui.isInputSheetOpen = false;
+    this.ui.activePreflightPresetId = null;
+    this.ui.preflightQuery = "";
+    this.ui.aiQuerySuggestions = [];
+    this.ui.isGapReportOpen = false;
   }
 
   public addPendingOperation(
@@ -2101,18 +2257,15 @@ export class LearnimalController {
     });
 
     const pipelineText = buildPipelineText(preset, query);
-    const ok = await this.runPipeline(pipelineText, {
+
+    // Dismiss on commit, not on completion. The sheet's job ends the moment the user
+    // says "run it" — keeping it up through the work leaves them staring at a form they
+    // already submitted, and closing only on success left it stranded forever on
+    // failure. Progress is the ActivityBanner's job; failure becomes a card.
+    return this.runPipeline(pipelineText, {
       inputCardIds: request.contextCardIds,
       parentId: this.domain.currentGroupId,
     });
-
-    if (ok) {
-      this.ui.activePreflightPresetId = null;
-      this.ui.preflightQuery = "";
-      this.ui.aiQuerySuggestions = [];
-      this.emit();
-    }
-    return ok;
   }
 
   // --- Web Research Flow (Phase 3: real search, inspectable candidates, cited briefs) ---

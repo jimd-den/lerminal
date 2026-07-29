@@ -10,6 +10,7 @@ import { AsyncStorageCardTypeRepository } from "./src/frameworks/storage/AsyncSt
 import { AsyncStoragePromptPresetRepository } from "./src/frameworks/storage/AsyncStoragePromptPresetRepository";
 import { AsyncStorageAssistantProfileRepository } from "./src/frameworks/storage/AsyncStorageAssistantProfileRepository";
 import { AsyncStorageReviewLogRepository } from "./src/frameworks/storage/AsyncStorageReviewLogRepository";
+import { AsyncStorageOperationLogRepository } from "./src/frameworks/storage/AsyncStorageOperationLogRepository";
 import { OpenRouterAgentGateway } from "./src/frameworks/network/OpenRouterAgentGateway";
 import { DuckDuckGoSearchGateway } from "./src/frameworks/network/DuckDuckGoSearchGateway";
 import { WebExtractionGateway } from "./src/frameworks/network/WebExtractionGateway";
@@ -42,6 +43,7 @@ export default function App() {
     const promptPresetRepo = new AsyncStoragePromptPresetRepository();
     const assistantProfileRepo = new AsyncStorageAssistantProfileRepository();
     const reviewLogRepo = new AsyncStorageReviewLogRepository();
+    const operationLogRepo = new AsyncStorageOperationLogRepository();
     const agentGateway = new OpenRouterAgentGateway();
     const searchGateway = new DuckDuckGoSearchGateway();
     const extractionGateway = new WebExtractionGateway();
@@ -60,6 +62,7 @@ export default function App() {
       searchGateway,
       extractionGateway,
       reviewLogRepo,
+      operationLogRepo,
       fontGateway,
       fontLoader,
     });
