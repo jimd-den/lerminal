@@ -11,6 +11,7 @@ import { useControllerState } from "./useControllerState";
 import { useDeckNavigation } from "./useDeckNavigation";
 import { BottomNavigation } from "./learningDeck/components";
 import { SelectionTray } from "./learningDeck/SelectionTray";
+import { ActivityBanner } from "./learningDeck/ActivityBanner";
 import { ModalStack } from "./learningDeck/ModalStack";
 import {
   CaptureScreen,
@@ -209,6 +210,10 @@ export function MainLayout({ controller }: { controller: LearnimalController }) 
               </Text>
             </View>
           ) : null}
+
+          {/* Always mounted: in-flight work outlives the screen that started it, so the
+              shell reports it rather than each screen owning its own indicator. */}
+          <ActivityBanner controller={controller} state={state} theme={theme} />
 
           {state.selection.size > 0 ? (
             <SelectionTray

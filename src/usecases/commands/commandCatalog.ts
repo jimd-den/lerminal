@@ -49,6 +49,13 @@ export interface CommandDoc {
   output: string;
   /** True only for commands that actually reach the network. */
   usesWeb: boolean;
+  /**
+   * True when the command calls a language model. Separate from {@link usesWeb} because
+   * they are genuinely different exposures: `ask` calls a model but never browses, and
+   * `search` browses but never calls a model. Collapsing them into one flag is precisely
+   * the confusion this app exists to remove.
+   */
+  usesModel: boolean;
   category: CommandCategory;
 }
 
@@ -71,6 +78,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsArgument("The note's text"),
     output: "One note card",
     usesWeb: false,
+    usesModel: false,
     category: "capture",
   },
   {
@@ -80,6 +88,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsArgument("A URL, or the text itself"),
     output: "One source card (a URL is fetched and converted to readable text)",
     usesWeb: true,
+    usesModel: false,
     category: "capture",
   },
   {
@@ -89,6 +98,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsArgument("The search query"),
     output: "One search card listing the results — nothing here is model-written",
     usesWeb: true,
+    usesModel: false,
     category: "capture",
   },
   {
@@ -98,6 +108,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: startsFresh("Optional: selected cards become the reading context"),
     output: "Study cards written by the model",
     usesWeb: false,
+    usesModel: true,
     category: "capture",
   },
   {
@@ -107,6 +118,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsArgument("A name for the conversation"),
     output: "One chat card you can talk to",
     usesWeb: false,
+    usesModel: true,
     category: "capture",
   },
   {
@@ -116,6 +128,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Source, note, or chunk cards"),
     output: "Chunk cards inside a document group. Falls back to a structural split without an API key",
     usesWeb: false,
+    usesModel: true,
     category: "transform",
   },
   {
@@ -125,6 +138,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Source, note, or chunk cards"),
     output: "Chunk cards mirroring the document's heading structure",
     usesWeb: false,
+    usesModel: false,
     category: "transform",
   },
   {
@@ -134,6 +148,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Chunk, source, or note cards"),
     output: "Elaboration cards holding the original as the model answer",
     usesWeb: false,
+    usesModel: false,
     category: "transform",
   },
   {
@@ -143,6 +158,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Chunk, source, or note cards"),
     output: "Question cards — not yet scheduled",
     usesWeb: false,
+    usesModel: false,
     category: "practice",
   },
   {
@@ -152,6 +168,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Chunk, source, or note cards"),
     output: "Cloze cards — not yet scheduled",
     usesWeb: false,
+    usesModel: false,
     category: "practice",
   },
   {
@@ -161,6 +178,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Question, cloze, or elaboration cards"),
     output: "The same cards, now scheduled. Notes and sources are skipped",
     usesWeb: false,
+    usesModel: false,
     category: "practice",
   },
   {
@@ -170,6 +188,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: startsFresh("Uses everything due in this workspace"),
     output: "Opens the review session; grading updates each card's schedule",
     usesWeb: false,
+    usesModel: false,
     category: "session",
   },
   {
@@ -179,6 +198,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Two or more cards"),
     output: "One group card containing them",
     usesWeb: false,
+    usesModel: false,
     category: "organize",
   },
   {
@@ -188,6 +208,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Group cards"),
     output: "The freed children, moved up one level",
     usesWeb: false,
+    usesModel: false,
     category: "organize",
   },
   {
@@ -197,6 +218,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Any cards, plus a destination name"),
     output: "Nothing here — the cards leave this workspace",
     usesWeb: false,
+    usesModel: false,
     category: "organize",
   },
   {
@@ -206,6 +228,7 @@ export const COMMAND_DOCS: CommandDoc[] = [
     input: needsSelection("Any cards; a selected group takes its contents with it"),
     output: "Nothing — this cannot be undone from the palette",
     usesWeb: false,
+    usesModel: false,
     category: "organize",
   },
 ];
@@ -251,6 +274,13 @@ export interface CanonicalAction {
   alias: string;
   dispatch: SuggestedActionDispatch;
   usesWeb: boolean;
+  /**
+   * True when carrying this action out calls a language model. Note the non-obvious
+   * cases: "Make study cards" runs the deterministic `recall` command and calls nothing,
+   * and "Status" is computed entirely from the card graph — so neither is badged, which
+   * is exactly the sort of thing a user would otherwise have to guess at.
+   */
+  usesModel: boolean;
   requiresSelection: boolean;
 }
 
@@ -262,6 +292,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/capture",
     dispatch: { kind: "capture", intent: "note" },
     usesWeb: false,
+    usesModel: false,
     requiresSelection: false,
   },
   {
@@ -271,6 +302,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/explain",
     dispatch: { kind: "preflight", presetId: "explain-selected" },
     usesWeb: false,
+    usesModel: true,
     requiresSelection: true,
   },
   {
@@ -280,6 +312,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/research",
     dispatch: { kind: "preflight", presetId: "research-web" },
     usesWeb: true,
+    usesModel: false,
     requiresSelection: false,
   },
   {
@@ -289,6 +322,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/prereqs",
     dispatch: { kind: "preflight", presetId: "find-prerequisites" },
     usesWeb: false,
+    usesModel: true,
     requiresSelection: false,
   },
   {
@@ -298,6 +332,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/connect",
     dispatch: { kind: "pipeline", text: "group" },
     usesWeb: false,
+    usesModel: false,
     requiresSelection: true,
   },
   {
@@ -307,6 +342,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/experiment",
     dispatch: { kind: "preflight", presetId: "plan-experiment" },
     usesWeb: false,
+    usesModel: true,
     requiresSelection: true,
   },
   {
@@ -316,6 +352,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/study",
     dispatch: { kind: "preflight", presetId: "make-study-cards" },
     usesWeb: false,
+    usesModel: false,
     requiresSelection: true,
   },
   {
@@ -325,6 +362,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/review",
     dispatch: { kind: "pipeline", text: "review" },
     usesWeb: false,
+    usesModel: false,
     requiresSelection: false,
   },
   {
@@ -334,6 +372,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/status",
     dispatch: { kind: "status" },
     usesWeb: false,
+    usesModel: false,
     requiresSelection: false,
   },
   {
@@ -343,6 +382,7 @@ export const CANONICAL_ACTIONS: CanonicalAction[] = [
     alias: "/build",
     dispatch: { kind: "preflight", presetId: "plan-capstone" },
     usesWeb: false,
+    usesModel: true,
     requiresSelection: false,
   },
 ];

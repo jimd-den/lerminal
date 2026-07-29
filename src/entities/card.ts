@@ -30,7 +30,9 @@ export type CardType =
   | "chat"
   | "cloze"
   | "elaboration"
-  | "interactive";
+  | "interactive"
+  /** A run that failed, kept as a durable, re-runnable record. See `failedRun.ts`. */
+  | "failure";
 
 /**
  * Optional user-facing semantic role describing a card's place in the learner's goal,

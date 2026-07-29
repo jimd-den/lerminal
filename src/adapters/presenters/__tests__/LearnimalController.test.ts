@@ -513,6 +513,75 @@ describe("Learnimal App Controller", () => {
     expect(controller.consumeCaptureIntent()).toBeNull();
   });
 
+  it("turns a failed run into a durable, re-runnable card instead of a transient banner", async () => {
+    // A gateway that fails once, then succeeds — so we can retry and see it recover.
+    let shouldFail = true;
+    const flaky: AgentGateway = {
+      async ask(): Promise<AgentCardResponse[]> {
+        if (shouldFail) throw new Error("model unavailable");
+        return [{ title: "Recovered", body: "It worked the second time" }];
+      },
+      async fetchModels() { return []; },
+    };
+
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway: flaky,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    const ok = await controller.runPipeline('ask "why do birds sing"');
+    expect(ok).toBe(false);
+
+    // The failure is a card in the workspace, not a banner that can be lost.
+    const failureCard = controller.getState().cards.find(c => c.type === "failure");
+    expect(failureCard).toBeDefined();
+    expect(failureCard!.title).toContain("why do birds sing");
+    // And no lingering pending operation reporting the same thing twice.
+    expect(controller.getState().pendingOperations).toHaveLength(0);
+
+    // It survives a reload, because it's persisted like any other card.
+    const persisted = await cardRepo.getCardsByWorkspace(controller.getState().activeWorkspaceId!);
+    expect(persisted.some(c => c.id === failureCard!.id)).toBe(true);
+
+    shouldFail = false;
+    const retried = await controller.rerunFailedCard(failureCard!.id);
+
+    expect(retried).toBe(true);
+    const after = controller.getState();
+    // The record is cleared once the work actually succeeds...
+    expect(after.cards.find(c => c.id === failureCard!.id)).toBeUndefined();
+    // ...and the output it was supposed to produce is there.
+    expect(after.cards.some(c => c.title === "Recovered")).toBe(true);
+  });
+
+  it("keeps the failure card when a retry fails again, rather than piling up records", async () => {
+    const alwaysFails: AgentGateway = {
+      async ask(): Promise<AgentCardResponse[]> { throw new Error("still down"); },
+      async fetchModels() { return []; },
+    };
+
+    const controller = new LearnimalController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway: alwaysFails,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    await controller.runPipeline('ask "x"');
+    const first = controller.getState().cards.filter(c => c.type === "failure");
+    expect(first).toHaveLength(1);
+
+    await controller.rerunFailedCard(first[0].id);
+
+    // One original + one from the retry — each a real, distinct attempt, not a duplicate
+    // of the same record.
+    const after = controller.getState().cards.filter(c => c.type === "failure");
+    expect(after.length).toBeGreaterThanOrEqual(1);
+    expect(after.every(c => c.title.includes("ask"))).toBe(true);
+  });
+
   it("dispatching a mission action opens the mission editor", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,

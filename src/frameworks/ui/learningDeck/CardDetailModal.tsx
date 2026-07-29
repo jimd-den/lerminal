@@ -26,6 +26,8 @@ import {
   readClozeCard,
 } from "../../../entities/cloze";
 import { resolveCardType } from "../../../entities/cardTypeDefinition";
+import { Card } from "../../../entities/card";
+import { isFailedRunCard, readFailedRunCard } from "../../../entities/failedRun";
 import { TrashIcon } from "./Icons";
 import { LearningTheme } from "./theme";
 
@@ -324,6 +326,12 @@ export function CardDetailModal({
                     revealed={revealed}
                     theme={theme}
                     onReveal={() => setRevealed(true)}
+                  />
+                ) : isFailedRunCard(card) ? (
+                  <FailureDetail
+                    controller={controller}
+                    card={card}
+                    theme={theme}
                   />
                 ) : card.type === "search" ? (
                   <SearchDetail
@@ -844,6 +852,69 @@ function QuestionDetail({
   );
 }
 
+/**
+ * The body of a failure card: what failed, why, and a button to run it again.
+ *
+ * The retry uses the inputs recorded on the card, not the current selection — see
+ * `readFailedRunCard`. If those details are missing the button is withheld entirely
+ * rather than offering a retry that would run something subtly different.
+ */
+function FailureDetail({
+  controller,
+  card,
+  theme,
+}: {
+  controller: LearnimalController;
+  card: Card;
+  theme: LearningTheme;
+}) {
+  const details = readFailedRunCard(card);
+
+  return (
+    <View>
+      <View style={[styles.failurePanel, { borderColor: theme.danger, backgroundColor: `${theme.danger}12` }]}>
+        <Text style={[styles.failureLabel, { color: theme.danger, fontFamily: theme.fontMono }]}>
+          WHAT WENT WRONG
+        </Text>
+        <Text style={[styles.failureMessage, { color: theme.text }]}>
+          {details?.errorMessage ?? card.body}
+        </Text>
+      </View>
+
+      {details ? (
+        <>
+          <Text style={[styles.failureLabel, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+            OPERATION
+          </Text>
+          <Text selectable style={[styles.failureMono, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
+            {details.pipelineText}
+          </Text>
+
+          <Text style={[styles.failureLabel, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+            INPUT
+          </Text>
+          <Text style={[styles.failureMono, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
+            {details.inputCardIds.length === 0
+              ? "No selected cards"
+              : `${details.inputCardIds.length} card${details.inputCardIds.length === 1 ? "" : "s"} — the same ones this run used`}
+          </Text>
+
+          <TerminalButton
+            label="RUN IT AGAIN"
+            primary
+            theme={theme}
+            onPress={() => void controller.rerunFailedCard(card.id)}
+          />
+        </>
+      ) : (
+        <Text style={[styles.failureMono, { color: theme.textMuted }]}>
+          This record is missing the details needed to run it again.
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function SearchDetail({
   controller,
   state,
@@ -1039,6 +1110,10 @@ function markdownStyles(theme: LearningTheme): any {
 }
 
 const styles = StyleSheet.create({
+  failurePanel: { borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 18 },
+  failureLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1.2, marginTop: 14, marginBottom: 5 },
+  failureMessage: { fontSize: 16, lineHeight: 22, fontWeight: "600", marginTop: 6 },
+  failureMono: { fontSize: 13, lineHeight: 19 },
   root: { flex: 1 },
   header: {
     minHeight: 84,

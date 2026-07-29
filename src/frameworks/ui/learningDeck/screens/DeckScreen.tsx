@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import {
   AppState,
   LearnimalController,
@@ -11,7 +11,6 @@ import {
 import { SectionLabel, Slab, SystemHeader } from "../components";
 import { CaptureReceipt } from "../CaptureReceipt";
 import { MissionControlModule } from "../MissionControl";
-import { WorkingBar } from "../../motion/communicative";
 import { LearningTheme } from "../theme";
 import { CaptureIntent, SharedProps } from "./types";
 import { QuickAction, EmptyReadout } from "./shared";
@@ -142,101 +141,8 @@ export function DeckScreen({
         </Pressable>
       </View>
 
-      {state.pendingOperations.length > 0 ? (
-        <View
-          accessibilityLiveRegion="polite"
-          accessibilityLabel={
-            state.pendingOperations[0].status === "error"
-              ? "Pipeline failed"
-              : "Pipeline active"
-          }
-          style={[
-            styles.pendingPanel,
-            {
-              backgroundColor:
-                state.pendingOperations[0].status === "error"
-                  ? `${theme.danger}12`
-                  : theme.accentSoft,
-              borderColor:
-                state.pendingOperations[0].status === "error"
-                  ? theme.danger
-                  : theme.accent,
-            },
-          ]}
-        >
-          {state.pendingOperations[0].status === "loading" ? (
-            <ActivityIndicator color={theme.accent} />
-          ) : null}
-          <View style={styles.pendingCopy}>
-            <Text
-              style={[
-                styles.pendingTitle,
-                {
-                  color:
-                    state.pendingOperations[0].status === "error"
-                      ? theme.danger
-                      : theme.text,
-                },
-              ]}
-            >
-              {state.pendingOperations[0].status === "error"
-                ? "Pipeline failed"
-                : "Pipeline active"}
-            </Text>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.pendingMeta,
-                { color: theme.textMuted, fontFamily: theme.fontMono },
-              ]}
-            >
-              {state.pendingOperations[0].status === "error"
-                ? state.pendingOperations[0].errorMessage
-                : state.pendingOperations[0].commandName}
-            </Text>
-            {/* Indeterminate by design — the app can't know how far a model call is. */}
-            <WorkingBar
-              active={state.pendingOperations[0].status === "loading"}
-              color={theme.accent}
-              trackColor={theme.line}
-            />
-          </View>
-          {state.pendingOperations[0].status === "error" && state.pendingOperations[0].pipelineText && !state.pendingOperations[0].pipelineText.includes("|") ? (
-            <Pressable
-              onPress={() =>
-                void controller.retryPipeline(state.pendingOperations[0].id)
-              }
-              style={styles.pendingAction}
-            >
-              <Text
-                style={[
-                  styles.pendingActionText,
-                  { color: theme.accent, fontFamily: theme.fontMono },
-                ]}
-              >
-                RETRY
-              </Text>
-            </Pressable>
-          ) : null}
-          {state.pendingOperations[0].status === "error" ? (
-            <Pressable
-              onPress={() =>
-                controller.removePendingOperation(state.pendingOperations[0].id)
-              }
-              style={styles.pendingAction}
-            >
-              <Text
-                style={[
-                  styles.pendingActionText,
-                  { color: theme.danger, fontFamily: theme.fontMono },
-                ]}
-              >
-                X
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
+      {/* In-flight work is reported by the shell's ActivityBanner, which is visible
+          on every screen — not just this one, which was the original bug. */}
 
       <SectionLabel
         theme={theme}

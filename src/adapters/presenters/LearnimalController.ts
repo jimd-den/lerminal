@@ -103,6 +103,7 @@ import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabu
 import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction";
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
 import { AppearanceSettings, FontChoice } from "../../entities/appearance";
+import { createFailedRunCard, readFailedRunCard } from "../../entities/failedRun";
 import { FontGateway } from "../gateways/FontGateway";
 import {
   FontLoader,
@@ -1883,10 +1884,61 @@ export class LearnimalController {
       );
       const errorMessage =
         err instanceof UseCaseError ? err.userMessage : "Pipeline failed";
-      this.setPendingOperationError(opId, errorMessage);
+
+      // A failure becomes a card, not a banner: it lands where the output would have
+      // gone, survives navigation and restart, and carries everything needed to retry.
+      // The transient operation is cleared so the same failure isn't reported twice.
+      this.removePendingOperation(opId);
+      const failureCard = createFailedRunCard({
+        workspaceId,
+        pipelineText,
+        inputCardIds: initialInputCards.map((card) => card.id),
+        parentId: targetParentId,
+        errorMessage,
+        failedAt: Date.now(),
+      });
+      await this.cardRepo.saveCard(failureCard);
+      if (this.domain.activeWorkspaceId === workspaceId) {
+        await this.loadCardsForActiveWorkspace();
+      }
       this.showToast(errorMessage);
+      this.emit();
       return false;
     }
+  }
+
+  /**
+   * Re-runs the operation a failure card recorded, using the *original* inputs rather
+   * than whatever happens to be selected now — a retry that quietly changes its input is
+   * a different operation wearing the same label.
+   *
+   * The card is removed only after the retry succeeds, so a second failure leaves exactly
+   * one record rather than accumulating a pile of them.
+   */
+  async rerunFailedCard(cardId: string): Promise<boolean> {
+    const card = this.domain.cards.find((c) => c.id === cardId);
+    if (!card) return false;
+
+    const details = readFailedRunCard(card);
+    if (!details) {
+      this.showToast("This failure can't be retried — its details are incomplete");
+      return false;
+    }
+
+    this.ui.openCardId = null;
+    this.emit();
+
+    const succeeded = await this.runPipeline(details.pipelineText, {
+      inputCardIds: details.inputCardIds,
+      parentId: details.parentId,
+    });
+
+    if (succeeded) {
+      await this.cardRepo.deleteCard(cardId);
+      await this.loadCardsForActiveWorkspace();
+      this.emit();
+    }
+    return succeeded;
   }
 
   public addPendingOperation(
