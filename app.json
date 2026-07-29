@@ -18,7 +18,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ddsrv.x_chunk_buddy"
+      "package": "com.ddsrv.x_chunk_buddy",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -27,6 +28,9 @@
       "eas": {
         "projectId": "60754f0d-760d-44ee-8f4b-a68f7edc1fb1"
       }
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
