@@ -1,11 +1,10 @@
 import { Card } from "../../entities/card";
+import { CardTypeDefinition, isSchedulable } from "../../entities/cardTypeDefinition";
 import { NothingDueError } from "../errors";
 
 /**
  * Reorders a queue so consecutive cards come from different parent groups/topics
- * (round-robin by `parentId`). Interleaving practice across topics is a well-supported
- * learning technique: it forces discrimination between concepts and improves retention
- * versus blocking all of one topic together. Order within a topic is preserved.
+ * (round-robin by `parentId`) to force discrimination between concepts.
  */
 function interleaveByTopic(cards: Card[]): Card[] {
   const buckets = new Map<string, Card[]>();
@@ -36,32 +35,53 @@ function interleaveByTopic(cards: Card[]): Card[] {
  * # Start Review Interactor
  *
  * ## Business Value & Purpose
- * Builds the queue for a spaced-repetition session from the workspace's scheduled
- * question cards. Due cards are preferred; if none are due, it falls back to all
- * scheduled questions so the user can always practice. When interleaving is enabled,
- * the queue is reordered to mix topics. Pure domain logic — cards in, ordered queue out.
+ * Builds the FSRS study queue for a review session.
+ * In standard review mode (`cram: false`), only cards that are due (`dueAt <= now`) and
+ * schedulable (`isSchedulable`) enter the queue. This prevents early review from corrupting
+ * FSRS memory interval calculations. If no cards are due, a `NothingDueError` is thrown.
+ * Users can pass `cram: true` to explicitly preview/practice without schedule corruption.
+ *
+ * ## Applied Design Patterns
+ * - **Use Case Pattern**: Encapsulates review queue selection in a pure domain service.
+ * - **Strategy / Interleaving Pattern**: Interleaves queue items across topics.
  */
 export class StartReviewInteractor {
   /**
    * @param cards All cards in the active workspace.
    * @param now Current epoch milliseconds.
    * @param interleave When true (default), mix cards across topics/groups.
-   * @returns The review queue.
-   * @throws {NothingDueError} when there are no scheduled question cards at all.
+   * @param cram When true, allows reviewing cards before their due date.
+   * @returns The ordered review queue.
+   * @throws {NothingDueError} when there are no due cards (and cram is false).
    */
-  execute(cards: Card[], now: number, interleave: boolean = true): Card[] {
-    let due = cards.filter(
-      c => c.type === "question" && c.schedule && c.schedule.dueAt <= now
-    );
+  execute(
+    cards: Card[],
+    now: number,
+    interleave: boolean = true,
+    cram: boolean = false,
+    cardTypes?: CardTypeDefinition[]
+  ): Card[] {
+    const logTimestamp = new Date().toISOString();
 
-    if (due.length === 0) {
-      due = cards.filter(c => c.type === "question" && c.schedule);
+    const schedulableCards = cards.filter(c => Boolean(c.schedule) && isSchedulable(c, cardTypes));
+
+    let queue: Card[];
+    if (cram) {
+      queue = schedulableCards;
+    } else {
+      queue = schedulableCards.filter(c => c.schedule!.dueAt <= now);
     }
 
-    if (due.length === 0) {
+    if (queue.length === 0) {
       throw new NothingDueError();
     }
 
-    return interleave ? interleaveByTopic(due) : due;
+    const finalQueue = interleave ? interleaveByTopic(queue) : queue;
+
+    console.log(
+      `[${logTimestamp}] [StartReviewInteractor.execute] Queue built | count=${finalQueue.length} | cram=${cram}`
+    );
+
+    return finalQueue;
   }
 }

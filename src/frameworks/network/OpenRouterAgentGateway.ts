@@ -1,16 +1,46 @@
 import { Card } from "../../entities/card";
-import { AgentCardResponse, AgentGateway, AgentModel, ChatMessage } from "../../adapters/gateways/AgentGateway";
+import {
+  AgentAskResult,
+  AgentCardResponse,
+  AgentGateway,
+  AgentModel,
+  ChatMessage,
+  PromptDesignResponse,
+} from "../../adapters/gateways/AgentGateway";
+import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
 import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
+
+const PROMPT_ARCHITECT_SYSTEM_PROMPT = `You are a prompt architect for a study application.
+
+Convert the learner's goal into a concise system instruction for one named assistant capability. Ask at most one clarifying question if needed.
+
+The instruction must:
+- Define the assistant's role and learning outcome
+- State preferred depth, style, and priorities
+- Require grounding in supplied material
+- Tell the assistant to say when source support is missing
+- Avoid output-format instructions, JSON schemas, tool use, or app policies
+- Be under 250 words
+
+Return JSON only:
+{
+  "needsClarification": boolean,
+  "question": "string or null",
+  "nameSuggestion": "string",
+  "description": "string",
+  "systemPrompt": "string or null"
+}`;
 
 /**
  * # OpenRouter Agent Gateway Implementation
  * 
  * ## Business Value & Purpose
- * Connects the application to modern LLMs via the OpenRouter service.
- * Learnimal follows a 'bring-your-own-key' policy to empower users and avoid model lock-in.
- * This class translates user prompts and active source text cards into structured prompt payloads,
- * requests cards from LLMs, parses the JSON response, and handles network or authentication failures
- * gracefully by falling back to localized chunk generation.
+ * Connects the application to modern LLMs via OpenRouter.
+ * Supports card generation requests, streaming chat, live model retrieval, and AI Prompt Architect
+ * profile design.
+ *
+ * ## Applied Design Patterns
+ * - **Gateway Pattern**: Encapsulates external LLM API communication and fallback logic.
  */
 export class OpenRouterAgentGateway implements AgentGateway {
   async ask(
@@ -18,8 +48,9 @@ export class OpenRouterAgentGateway implements AgentGateway {
     contextCards: Card[],
     apiKey: string,
     model: string,
-    systemPrompt?: string
-  ): Promise<AgentCardResponse[]> {
+    systemPrompt?: string,
+    outputContract: OutputContractKind = "cards-v1"
+  ): Promise<AgentAskResult> {
     const logTimestamp = new Date().toISOString();
     const modelToUse = model;
     const cleanKey = apiKey?.trim() || "";
@@ -36,7 +67,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
     // Fall back to local card generation if API key is not set
     if (!cleanKey) {
       console.warn(`[${logTimestamp}] [OpenRouterAgentGateway] API Key is missing. Falling back to local generation.`);
-      return this.generateLocalFallback(query);
+      return this.localFallback(query, "No OpenRouter API key is configured");
     }
 
     // Assemble source context
@@ -46,14 +77,13 @@ export class OpenRouterAgentGateway implements AgentGateway {
       .substring(0, 3000); // Restrict length for token budgets
 
     // The incoming systemPrompt is treated purely as an *instruction* (what kind of
-    // cards to make); the strict JSON format contract is always appended by
-    // composeCardPrompt, so any instruction yields parseable output.
+    // output to make); the strict JSON format contract matching the caller's
+    // outputContract is always appended by composeCardPrompt, so any instruction yields
+    // parseable output in the shape its capability actually expects.
     const instruction = systemPrompt?.trim() || DEFAULT_CARD_INSTRUCTION;
-    const activeSystemPrompt = composeCardPrompt(instruction);
+    const activeSystemPrompt = composeCardPrompt(instruction, outputContract);
 
-    const prompt = `${activeSystemPrompt}
-
-${contextText ? `Use this source context to extract and base your facts on:\n${contextText}\n\n` : ""}Query: ${query}`;
+    const userPrompt = `${contextText ? `Use this source context to extract and base your facts on:\n${contextText}\n\n` : ""}Query: ${query}`;
 
     try {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -68,8 +98,12 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
           model: modelToUse,
           messages: [
             {
+              role: "system",
+              content: activeSystemPrompt,
+            },
+            {
               role: "user",
-              content: prompt,
+              content: userPrompt,
             },
           ],
         }),
@@ -109,20 +143,100 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       const cards: AgentCardResponse[] = parsed.map((item: any) => ({
         title: String(item.title || "Concept").substring(0, 100),
         body: String(item.body || "").substring(0, 1000),
+        ...(item.sourceCardId ? { sourceCardId: String(item.sourceCardId) } : {}),
+        ...(item.sourceExcerpt ? { sourceExcerpt: String(item.sourceExcerpt).substring(0, 300) } : {}),
       }));
 
+      if (cards.length === 0) {
+        console.warn(`[${logTimestamp}] [OpenRouterAgentGateway] Model returned no cards. Using local fallback.`);
+        return this.localFallback(query, "The model returned no usable cards");
+      }
+
       console.log(`[${logTimestamp}] [OpenRouterAgentGateway] OpenRouter SUCCESS: model=${modelToUse} | generated ${cards.length} cards`);
-      return cards;
+      // The only path that may claim a model answered.
+      return { cards, isLocalFallback: false };
     } catch (err: any) {
       console.error(`[${logTimestamp}] [OpenRouterAgentGateway] request failed: ${err.message}. Falling back to local generation.`);
-      return this.generateLocalFallback(query);
+      return this.localFallback(query, `The model request failed: ${err?.message ?? "unknown error"}`);
     }
   }
 
   /**
-   * Streams a chat completion using SSE. React Native's `fetch` can't read a
-   * streaming body, so this uses `XMLHttpRequest` and parses the incremental
-   * `responseText` for `data:` lines, emitting each content delta as it arrives.
+   * Prompts the AI Prompt Architect to design or refine an AssistantProfile system instruction
+   * based on the user's stated learning goal.
+   */
+  async designAssistantProfile(input: {
+    messages: ChatMessage[];
+    capability: AssistantCapability;
+    apiKey: string;
+    model: string;
+  }): Promise<PromptDesignResponse> {
+    const logTimestamp = new Date().toISOString();
+    const cleanKey = input.apiKey?.trim();
+    if (!cleanKey) {
+      throw new Error("API key is required to design assistant profiles");
+    }
+
+    console.log(`[${logTimestamp}] [OpenRouterAgentGateway.designAssistantProfile] capability=${input.capability} | messagesCount=${input.messages.length}`);
+
+    const payloadMessages: ChatMessage[] = [
+      { role: "system", content: `${PROMPT_ARCHITECT_SYSTEM_PROMPT}\nTarget capability: ${input.capability}` },
+      ...input.messages,
+    ];
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cleanKey}`,
+        "HTTP-Referer": "https://github.com/dbslim/lerminal",
+        "X-Title": "Learnimal",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: payloadMessages,
+      }),
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
+      try {
+        const errData = await response.json();
+        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+    const cleanJson = content
+      .replace(/^```json/i, "")
+      .replace(/^```/, "")
+      .replace(/```$/, "")
+      .trim();
+
+    try {
+      const parsed = JSON.parse(cleanJson);
+      return {
+        needsClarification: Boolean(parsed.needsClarification),
+        question: parsed.question || null,
+        nameSuggestion: parsed.nameSuggestion || "Custom Assistant",
+        description: parsed.description || "Custom AI assistance profile",
+        systemPrompt: parsed.systemPrompt || null,
+      };
+    } catch {
+      return {
+        needsClarification: false,
+        question: null,
+        nameSuggestion: "Custom Assistant",
+        description: "Custom AI assistance profile",
+        systemPrompt: content,
+      };
+    }
+  }
+
+  /**
+   * Streams a chat completion using SSE.
    */
   streamChat(
     messages: ChatMessage[],
@@ -144,7 +258,7 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       xhr.setRequestHeader("HTTP-Referer", "https://github.com/dbslim/lerminal");
       xhr.setRequestHeader("X-Title", "Learnimal");
 
-      let processed = 0;   // index in responseText up to which lines are consumed
+      let processed = 0;
       let full = "";
 
       const drain = () => {
@@ -224,16 +338,24 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       console.log(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Retrieved ${models.length} models dynamically`);
       return models;
     } catch (err: any) {
-      // No hardcoded model fallback — models are always sourced live from OpenRouter.
-      // On failure return an empty list; the UI still allows entering a custom model id.
       console.warn(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Warning: ${err.message}. Returning empty model list.`);
       return [];
     }
   }
 
   /**
-   * Generates a template set of learning cards based on the query topic when API calls fail or are unconfigured.
+   * Wraps the local template in its tag. Every fallback path goes through here, so it is
+   * structurally impossible for template content to escape this class claiming a model
+   * wrote it — which is precisely the bug this replaced.
    */
+  private localFallback(query: string, reason: string): AgentAskResult {
+    return {
+      cards: this.generateLocalFallback(query),
+      isLocalFallback: true,
+      fallbackReason: reason,
+    };
+  }
+
   private generateLocalFallback(query: string): AgentCardResponse[] {
     const topic = query
       .replace(/^(how|what|why|explain|tell me about|the)\s+/i, "")

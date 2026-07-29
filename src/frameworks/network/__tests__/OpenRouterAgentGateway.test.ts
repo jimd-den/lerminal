@@ -18,7 +18,10 @@ describe("OpenRouter Agent Gateway", () => {
       
       const body = JSON.parse(options.body);
       expect(body.model).toBe("google/gemini-2.5-flash");
-      expect(body.messages.length).toBe(1);
+      expect(body.messages.length).toBe(2);
+      expect(body.messages[0].role).toBe("system");
+      expect(body.messages[1].role).toBe("user");
+      expect(body.messages[1].content).toContain("Query: explain state and props");
 
       return {
         ok: true,
@@ -43,17 +46,19 @@ describe("OpenRouter Agent Gateway", () => {
         body: "React is a JavaScript library.",
       });
 
-      const cards = await gateway.ask(
+      const result = await gateway.ask(
         "explain state and props",
         [contextCard],
         "test-api-key",
         "google/gemini-2.5-flash"
       );
 
-      expect(cards.length).toBe(2);
-      expect(cards[0].title).toBe("React State");
-      expect(cards[0].body).toBe("State is local component memory.");
-      expect(cards[1].title).toBe("React Props");
+      expect(result.cards.length).toBe(2);
+      expect(result.cards[0].title).toBe("React State");
+      expect(result.cards[0].body).toBe("State is local component memory.");
+      expect(result.cards[1].title).toBe("React Props");
+      // A genuine model response is the only case that may claim it wasn't a fallback.
+      expect(result.isLocalFallback).toBe(false);
     } finally {
       global.fetch = originalFetch;
     }
@@ -133,6 +138,108 @@ describe("OpenRouter Agent Gateway", () => {
       // ...and the strict format contract is always appended.
       expect(capturedBody.messages[0].content).toContain("Respond ONLY with a valid JSON array");
       expect(capturedBody.messages[0].content).toContain("OUTPUT FORMAT (STRICT");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("appends the chunks-v1 contract and preserves provenance fields when outputContract is chunks-v1", async () => {
+    const originalFetch = global.fetch;
+    const chunkResponse = [
+      {
+        title: "Gradient descent",
+        body: "Iteratively updates weights to minimize loss.",
+        sourceCardId: "card-123",
+        sourceExcerpt: "gradient descent is used to train the network",
+      },
+    ];
+    let capturedBody: any = null;
+
+    global.fetch = mock(async (url: any, options: any) => {
+      capturedBody = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify(chunkResponse) } }],
+        }),
+      } as Response;
+    });
+
+    try {
+      const gateway = new OpenRouterAgentGateway();
+      const cards = await gateway.ask(
+        "goal",
+        [],
+        "key",
+        "google/gemini-2.5-flash",
+        "You are a document structure expert.",
+        "chunks-v1",
+      );
+
+      expect(capturedBody.messages[0].content).toContain("sourceCardId");
+      expect(capturedBody.messages[0].content).toContain("sourceExcerpt");
+      expect(cards.cards[0].sourceCardId).toBe("card-123");
+      expect(cards.cards[0].sourceExcerpt).toBe("gradient descent is used to train the network");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("tags an empty model response as a local fallback rather than passing it off as an answer", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = mock(async () => ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "[]" } }] }),
+    }) as Response);
+
+    try {
+      const result = await new OpenRouterAgentGateway().ask(
+        "memory consolidation",
+        [],
+        "key",
+        "model",
+        "Make concise cards.",
+      );
+      // Still returns usable placeholder content...
+      expect(result.cards.length).toBeGreaterThan(0);
+      // ...but says so, which is the whole point.
+      expect(result.isLocalFallback).toBe(true);
+      expect(result.fallbackReason).toBeTruthy();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("tags a missing API key as a local fallback, and never reaches the network", async () => {
+    const originalFetch = global.fetch;
+    let called = false;
+    global.fetch = mock(async () => {
+      called = true;
+      return {} as Response;
+    });
+
+    try {
+      const result = await new OpenRouterAgentGateway().ask("anything", [], "", "model");
+
+      expect(called).toBe(false);
+      expect(result.isLocalFallback).toBe(true);
+      expect(result.fallbackReason).toContain("API key");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("tags a failed request as a local fallback", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = mock(async () => {
+      throw new Error("network down");
+    });
+
+    try {
+      const result = await new OpenRouterAgentGateway().ask("anything", [], "key", "model");
+
+      expect(result.isLocalFallback).toBe(true);
+      expect(result.fallbackReason).toContain("network down");
     } finally {
       global.fetch = originalFetch;
     }

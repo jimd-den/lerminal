@@ -95,6 +95,44 @@ describe("presentCaptureReceipt", () => {
     expect(receipt.nextActions.map(a => a.id)).not.toContain("attach-mission");
   });
 
+  it("warns when the output came from a local template rather than a model", () => {
+    const card = createCard({
+      id: "n1", workspaceId: "ws-1", type: "chunk", title: "N", body: "B",
+      provenance: { mode: "agent", createdAt: 1, isLocalFallback: true },
+    });
+    const state = baseState({
+      cards: [card],
+      operationResult: {
+        summary: "1 chunk created",
+        createdCardIds: ["n1"],
+        destination: { spaceId: "ws-1" },
+        primaryActionLabel: "Open",
+      },
+    });
+
+    const receipt = presentCaptureReceipt(state as any)!;
+
+    expect(receipt.localFallbackReason).toContain("local template");
+  });
+
+  it("stays silent when a model genuinely answered", () => {
+    const card = createCard({
+      id: "n1", workspaceId: "ws-1", type: "chunk", title: "N", body: "B",
+      provenance: { mode: "agent", createdAt: 1 },
+    });
+    const state = baseState({
+      cards: [card],
+      operationResult: {
+        summary: "1 chunk created",
+        createdCardIds: ["n1"],
+        destination: { spaceId: "ws-1" },
+        primaryActionLabel: "Open",
+      },
+    });
+
+    expect(presentCaptureReceipt(state as any)!.localFallbackReason).toBeNull();
+  });
+
   it("reports that the selection moved when the created cards are now selected", () => {
     const note = createCard({ id: "n1", workspaceId: "ws-1", type: "note", title: "N", body: "B" });
     const state = baseState({

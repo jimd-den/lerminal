@@ -5,11 +5,16 @@ import { EmptySelectionError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
 /**
- * `cloze` — turns selected content cards (chunk/source/note) into fill-in-the-blank
- * cards for retrieval practice. Deterministic and offline: it blanks the passage's
- * salient terms (proper nouns, numbers, long words). The result is a reviewable card
- * (`type: "question"`, `typeId: "cloze"`) whose title is the blanked prompt and whose
- * answer lists the removed terms, so it slots straight into the spaced-repetition flow.
+ * # ClozeCommand (`cloze`)
+ *
+ * ## Business Value & Purpose
+ * Turns selected content cards (chunk/source/note) into interactive fill-in-the-blank
+ * cards with inline deletion placeholders (`{{c1}}`, `{{c2}}`) for retrieval practice.
+ * Stores structured template and blanks in `card.fields` so the review engine can render
+ * inline text inputs, evaluate individual blanks, and provide granular feedback.
+ *
+ * ## Applied Design Patterns
+ * - **Command Pattern**: Encapsulates fill-in-the-blank card creation in a pipeline stage.
  */
 export class ClozeCommand implements PipelineCommand {
   readonly name = "cloze";
@@ -32,9 +37,13 @@ export class ClozeCommand implements PipelineCommand {
         workspaceId: ctx.workspaceId,
         type: "question",
         typeId: "cloze",
-        title: cloze.prompt,
+        title: card.title,
         body: "",
-        answer: cloze.answer,
+        answer: cloze.fullAnswer,
+        fields: {
+          template: cloze.template,
+          blanks: JSON.stringify(cloze.blanks),
+        },
         sourceRef: card.sourceRef || card.id,
         cite: card.cite,
         parentId: ctx.parentId ?? undefined,

@@ -1,4 +1,5 @@
 import { Card, createCard } from "../entities/card";
+import { ClozeBlank, ClozeResult } from "../entities/cloze";
 
 /**
  * # Command Domain Use Cases
@@ -92,7 +93,7 @@ function escapeRegExp(s: string): string {
  * @returns `{ prompt, answer }` where `prompt` has blanks and `answer` lists the
  *   removed terms, or `null` when the text is too short to make a useful cloze.
  */
-export function makeCloze(source: string): { prompt: string; answer: string } | null {
+export function makeCloze(source: string): ClozeResult | null {
   const text = source.trim().replace(/\s+/g, " ");
   if (text.length < 12) return null;
 
@@ -111,18 +112,27 @@ export function makeCloze(source: string): { prompt: string; answer: string } | 
     }
   }
 
-  let blanks = candidates.slice(0, 3);
-  if (blanks.length === 0) {
+  let chosenTerms = candidates.slice(0, 3);
+  if (chosenTerms.length === 0) {
     const longest = [...words].sort((a, b) => b.length - a.length)[0];
     if (!longest) return null;
-    blanks = [longest];
+    chosenTerms = [longest];
   }
 
-  let prompt = snippet;
-  for (const term of blanks) {
-    prompt = prompt.replace(new RegExp(`\\b${escapeRegExp(term)}\\b`), "_____");
-  }
-  return { prompt, answer: blanks.join(", ") };
+  let template = snippet;
+  const blanks: ClozeBlank[] = [];
+
+  chosenTerms.forEach((term, idx) => {
+    const blankId = `c${idx + 1}`;
+    blanks.push({ id: blankId, answer: term });
+    template = template.replace(new RegExp(`\\b${escapeRegExp(term)}\\b`), `{{${blankId}}}`);
+  });
+
+  return {
+    template,
+    blanks,
+    fullAnswer: snippet,
+  };
 }
 
 /**

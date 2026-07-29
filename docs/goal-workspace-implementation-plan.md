@@ -174,10 +174,16 @@ and none affect `bun test`. There is no lint configuration in the repo.
 
 ### Recommended next steps
 
-1. **Make `OpenRouterAgentGateway` honest.** Return a tagged result distinguishing a real
-   model response from the local-fallback template, and thread `isLocalFallback` (already
-   on `Provenance`) through to the receipt. This is the last place the app can imply a
-   model answered when it didn't.
+1. ~~**Make `OpenRouterAgentGateway` honest.**~~ **Done.** `ask()` now returns
+   `AgentAskResult` — cards plus `isLocalFallback` and a reason — so a caller cannot pass
+   template content off as a model's work by accident; silence is no longer expressible in
+   the type. Every fallback path funnels through one private `localFallback()` helper, so
+   it is structurally impossible for template content to leave the gateway untagged.
+   Callers respond according to what the content is *for*: `ask`/`chunk` record it in
+   `Provenance.isLocalFallback` (so the card carries the truth permanently) and the receipt
+   warns; the syllabus, query-suggestion, and cited-brief steps **refuse** outright, since
+   a template syllabus would be confidently wrong about the goal and a "cited" brief that
+   read no evidence is a contradiction.
 2. **Add `bun-types` to `tsconfig`** so `npx tsc --noEmit` is clean end-to-end and can
    become a CI gate.
 3. **Extend undo beyond one step**, using the persisted log that already supports it.

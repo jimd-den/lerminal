@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { SuggestSearchQueriesInteractor } from "../SuggestSearchQueriesInteractor";
-import { AgentGateway, AgentCardResponse } from "../../../adapters/gateways/AgentGateway";
+import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../../adapters/gateways/AgentGateway";
 import { Card } from "../../../entities/card";
 import { createWorkspaceMission } from "../../../entities/workspace";
 import { MissingApiKeyError, AgentRequestError } from "../../errors";
@@ -9,10 +9,10 @@ class StubAgentGateway implements AgentGateway {
   lastQuery = "";
   lastSystemPrompt = "";
   constructor(private response: AgentCardResponse[]) {}
-  async ask(query: string, _contextCards: Card[], _apiKey: string, _model: string, systemPrompt?: string): Promise<AgentCardResponse[]> {
+  async ask(query: string, _contextCards: Card[], _apiKey: string, _model: string, systemPrompt?: string): Promise<AgentAskResult> {
     this.lastQuery = query;
     this.lastSystemPrompt = systemPrompt ?? "";
-    return this.response;
+    return { cards: this.response, isLocalFallback: false };
   }
   async fetchModels() {
     return [];

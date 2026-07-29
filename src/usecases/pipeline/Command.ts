@@ -1,5 +1,10 @@
 import { Card } from "../../entities/card";
 import { Workspace } from "../../entities/workspace";
+import {
+  AssistantProfile,
+  AssistantCapability,
+} from "../../entities/assistantProfile";
+import { CardTypeDefinition } from "../../entities/cardTypeDefinition";
 
 /**
  * # Pipeline Command Port & Output Boundary
@@ -7,10 +12,7 @@ import { Workspace } from "../../entities/workspace";
  * ## Business Value & Purpose
  * Learnimal pipelines (`ask "X" | chunk | recall | space`) are sequences of
  * single-responsibility commands. This module defines the contract every command
- * implements and the typed result it returns. By making the result an explicit
- * output boundary (instead of returning `null` to signal a halt or calling a UI
- * toast directly), the runner and the presenter can interpret outcomes without the
- * command knowing anything about the UI.
+ * implements and the typed result it returns.
  */
 
 /**
@@ -30,37 +32,43 @@ export interface CommandContext {
   apiKey: string;
   /** Selected model identifier for agent-backed commands. */
   model: string;
-  /** System prompt for agent-backed commands. */
+  /** System prompt for agent-backed commands (legacy fallback). */
   systemPrompt: string;
-  /** System prompt for chunking commands. */
+  /** System prompt for chunking commands (legacy fallback). */
   chunkSystemPrompt: string;
+  /** AI Assistance Profiles for goal-specific assistance. */
+  assistantProfiles?: AssistantProfile[];
+  /** Active profile ID mappings per capability. */
+  activeProfileIds?: Partial<Record<AssistantCapability, string>>;
+  /** Active built-in and custom card-type registry. */
+  cardTypes?: CardTypeDefinition[];
   /**
    * Names of pipeline-macro commands currently being expanded, outermost first.
-   * Threaded so a {@link PipelineCommandDefinition} can detect and reject recursion
-   * (a macro that references itself, directly or transitively). Empty at top level.
+   * Threaded so a {@link PipelineCommandDefinition} can detect and reject recursion.
    */
   expansionStack: string[];
 }
 
 /**
  * The typed outcome of running a command — the pipeline's output boundary.
- * - `cards`: the command produced/selected cards; they flow to the next stage as
- *   its input (and the final stage's cards become the new selection).
- * - `needsInput`: the command requires user entry; the pipeline halts and the
- *   presenter opens the matching input sheet.
- * - `review`: the command requests the review session be opened; pipeline halts.
- * - `noop`: the command completed with no cards to pass downstream.
  */
 export type CommandResult =
   | { kind: "cards"; cards: Card[] }
-  | { kind: "needsInput"; mode: "ask" | "source" }
+  | {
+      kind: "needsInput";
+      mode: "ask" | "source";
+      resume?: {
+        command: string;
+        inputCards: Card[];
+        remainingPipeline: string;
+      };
+    }
   | { kind: "review" }
   | { kind: "noop" };
 
 /**
  * A single pipeline command. Implementations depend only on the ports they need
- * (repositories, gateways) via constructor injection and throw {@link UseCaseError}
- * subclasses for expected, user-recoverable failures.
+ * via constructor injection.
  */
 export interface PipelineCommand {
   /** The lowercase command keyword as typed in a pipeline (e.g. "chunk"). */

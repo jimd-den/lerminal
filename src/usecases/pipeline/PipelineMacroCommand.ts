@@ -24,7 +24,7 @@ export class PipelineMacroCommand implements PipelineCommand {
 
   constructor(
     private readonly definition: PipelineCommandDefinition,
-    private readonly getRunner: () => PipelineRunner
+    private readonly getRunner: () => PipelineRunner,
   ) {
     this.name = definition.name;
   }
@@ -50,6 +50,9 @@ export class PipelineMacroCommand implements PipelineCommand {
       model: ctx.model,
       systemPrompt: ctx.systemPrompt,
       chunkSystemPrompt: ctx.chunkSystemPrompt,
+      assistantProfiles: ctx.assistantProfiles,
+      activeProfileIds: ctx.activeProfileIds,
+      cardTypes: ctx.cardTypes,
       // The outer pipeline applies auto-grouping to the macro's output as a whole;
       // disable it inside so a macro doesn't double-wrap its own stages.
       autoGroup: false,
@@ -57,7 +60,7 @@ export class PipelineMacroCommand implements PipelineCommand {
     });
 
     if (outcome.kind === "needsInput") {
-      return { kind: "needsInput", mode: outcome.mode };
+      return { kind: "needsInput", mode: outcome.mode, resume: outcome.resume };
     }
     if (outcome.kind === "review") {
       return { kind: "review" };

@@ -47,6 +47,14 @@ export function CaptureReceipt({
       </Text>
       <Text style={[styles.summary, { color: theme.text }]}>{receipt.summary}</Text>
 
+      {receipt.localFallbackReason ? (
+        <View style={[styles.fallbackNotice, { borderColor: theme.warning, backgroundColor: `${theme.warning}14` }]}>
+          <Text style={[styles.fallbackText, { color: theme.warning }]}>
+            {receipt.localFallbackReason}
+          </Text>
+        </View>
+      ) : null}
+
       <Text style={[styles.destination, { color: theme.textMuted }]}>
         Added to {receipt.destinationLabel}
         {receipt.selectionChanged ? " · now selected, ready for the next step" : ""}
@@ -129,6 +137,8 @@ const styles = StyleSheet.create({
   status: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
   summary: { fontSize: TypeScale.title, lineHeight: 28, fontWeight: "700", marginTop: 8 },
   destination: { fontSize: TypeScale.meta, lineHeight: 19, marginTop: 5 },
+  fallbackNotice: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 10 },
+  fallbackText: { fontSize: TypeScale.meta, lineHeight: 18, fontWeight: "600" },
   nextLabel: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2, marginTop: 14 },
   actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
   nextAction: {

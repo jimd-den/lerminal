@@ -4,7 +4,7 @@ import { ResearchResult } from "../../entities/research";
 import { BUILTIN_ASSISTANT_PROFILES } from "../../entities/assistantProfile";
 import { AgentGateway } from "../../adapters/gateways/AgentGateway";
 import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { EmptySelectionError, MissingApiKeyError, UngroundedBriefError } from "../errors";
+import { AgentRequestError, EmptySelectionError, MissingApiKeyError, UngroundedBriefError } from "../errors";
 
 const RESEARCH_BRIEF_PROFILE = BUILTIN_ASSISTANT_PROFILES.find(p => p.id === "builtin-research-brief")!;
 
@@ -60,7 +60,7 @@ export class CreateResearchBriefInteractor {
       })
     );
 
-    const agentCards = await this.agentGateway.ask(
+    const askResult = await this.agentGateway.ask(
       request.query,
       sourceCards,
       request.apiKey,
@@ -68,6 +68,15 @@ export class CreateResearchBriefInteractor {
       RESEARCH_BRIEF_PROFILE.systemPrompt,
       "chunks-v1"
     );
+
+    // A brief is a claim about evidence. Template text has read no evidence at all, so
+    // it is refused outright rather than saved with a caveat.
+    if (askResult.isLocalFallback) {
+      throw new AgentRequestError(
+        askResult.fallbackReason ?? "No model answered, so no cited brief was written"
+      );
+    }
+    const agentCards = askResult.cards;
 
     const sourceCardById = new Map(sourceCards.map(c => [c.id, c]));
     const grounded = agentCards.filter(item => item.sourceCardId && sourceCardById.has(item.sourceCardId));

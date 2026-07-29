@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { CreateResearchBriefInteractor } from "../CreateResearchBriefInteractor";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentGateway, AgentCardResponse } from "../../../adapters/gateways/AgentGateway";
+import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../../adapters/gateways/AgentGateway";
 import { Card } from "../../../entities/card";
 import { normalizeSearchResults, ResearchResult } from "../../../entities/research";
 import { EmptySelectionError, MissingApiKeyError, UngroundedBriefError } from "../../errors";
@@ -9,9 +9,9 @@ import { EmptySelectionError, MissingApiKeyError, UngroundedBriefError } from ".
 class StubAgentGateway implements AgentGateway {
   lastContextCards: Card[] = [];
   constructor(private response: AgentCardResponse[]) {}
-  async ask(_query: string, contextCards: Card[]): Promise<AgentCardResponse[]> {
+  async ask(_query: string, contextCards: Card[]): Promise<AgentAskResult> {
     this.lastContextCards = contextCards;
-    return this.response;
+    return { cards: this.response, isLocalFallback: false };
   }
   async fetchModels() {
     return [];
@@ -111,12 +111,12 @@ describe("CreateResearchBriefInteractor", () => {
     // The gateway's sourceCardId must match whatever synthetic source card id the interactor
     // generates internally, so we intercept it via a gateway that echoes it back.
     const echoGateway: AgentGateway = {
-      async ask(_query, contextCards): Promise<AgentCardResponse[]> {
+      async ask(_query, contextCards): Promise<AgentAskResult> {
         const sourceId = contextCards[0].id;
-        return [
+        return { cards: [
           { title: "Cited claim", body: "The guide states X.", sourceCardId: sourceId, sourceExcerpt: "X" },
           { title: "Stray uncited claim", body: "Unsupported." },
-        ];
+        ], isLocalFallback: false };
       },
       async fetchModels() {
         return [];

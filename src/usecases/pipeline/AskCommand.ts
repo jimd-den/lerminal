@@ -1,4 +1,5 @@
 import { createCard } from "../../entities/card";
+import { createProvenance } from "../../entities/provenance";
 import { resolveAssistantProfile } from "../../entities/assistantProfile";
 import { AgentGateway } from "../../adapters/gateways/AgentGateway";
 import { CardRepository } from "../../adapters/repositories/CardRepository";
@@ -70,9 +71,9 @@ export class AskCommand implements PipelineCommand {
       .filter(Boolean)
       .join("\n\n");
 
-    let agentCards;
+    let result;
     try {
-      agentCards = await this.agentGateway.ask(
+      result = await this.agentGateway.ask(
         query,
         ctx.inputCards,
         ctx.apiKey,
@@ -84,7 +85,9 @@ export class AskCommand implements PipelineCommand {
       throw new AgentRequestError(err?.message);
     }
 
-    const cards = agentCards.map(item =>
+    // Provenance records whether a model actually wrote this, so a card can always
+    // answer "where did you come from?" long after the run that made it.
+    const cards = result.cards.map(item =>
       createCard({
         workspaceId: ctx.workspaceId,
         type: "chunk",
@@ -92,6 +95,13 @@ export class AskCommand implements PipelineCommand {
         body: item.body,
         cite: query.substring(0, 16),
         parentId: ctx.parentId ?? undefined,
+        provenance: createProvenance({
+          mode: "agent",
+          sourceCardIds: ctx.inputCards.map(card => card.id),
+          assistantProfileId: profile.id,
+          model: ctx.model,
+          isLocalFallback: result.isLocalFallback || undefined,
+        }),
       })
     );
 

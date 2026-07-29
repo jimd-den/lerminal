@@ -2,7 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { Card, createCard } from "../../../entities/card";
 import { Workspace } from "../../../entities/workspace";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentCardResponse, AgentGateway, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import {
+  AgentAskResult, AgentCardResponse,
+  AgentGateway,
+  AgentModel,
+} from "../../../adapters/gateways/AgentGateway";
 import {
   EmptySelectionError,
   MissingArgumentError,
@@ -19,11 +23,19 @@ import { MoveCommand } from "../MoveCommand";
 import { ReviewCommand } from "../ReviewCommand";
 
 class MockAgentGateway implements AgentGateway {
-  async ask(query: string): Promise<AgentCardResponse[]> {
-    return [
+  lastSystemPrompt = "";
+  async ask(
+    query: string,
+    _contextCards: Card[],
+    _apiKey: string,
+    _model: string,
+    systemPrompt?: string,
+  ): Promise<AgentAskResult> {
+    this.lastSystemPrompt = systemPrompt ?? "";
+    return { cards: [
       { title: "A", body: `Answer for ${query}` },
       { title: "B", body: "More detail" },
-    ];
+    ], isLocalFallback: false };
   }
   async fetchModels(): Promise<AgentModel[]> {
     return [];
@@ -32,8 +44,10 @@ class MockAgentGateway implements AgentGateway {
 
 const WS_ID = "ws-1";
 
-function buildRunner(cardRepo: MemoryCardRepository): PipelineRunner {
-  const gw = new MockAgentGateway();
+function buildRunner(
+  cardRepo: MemoryCardRepository,
+  gw: MockAgentGateway = new MockAgentGateway(),
+): PipelineRunner {
   return new PipelineRunner([
     new AskCommand(gw, cardRepo),
     new SourceCommand(cardRepo),
@@ -45,7 +59,9 @@ function buildRunner(cardRepo: MemoryCardRepository): PipelineRunner {
   ]);
 }
 
-function env(overrides: Partial<PipelineEnvironment> = {}): PipelineEnvironment {
+function env(
+  overrides: Partial<PipelineEnvironment> = {},
+): PipelineEnvironment {
   return {
     workspaceId: WS_ID,
     parentId: null,
@@ -73,6 +89,22 @@ describe("PipelineRunner", () => {
     expect((await repo.getCardsByWorkspace(WS_ID)).length).toBe(2);
   });
 
+  it("combines the active assistant role with the Settings instruction", async () => {
+    const gateway = new MockAgentGateway();
+    const runner = buildRunner(new MemoryCardRepository(), gateway);
+
+    await runner.run(
+      'ask "react"',
+      env({ systemPrompt: "Use question titles and concise model answers." }),
+    );
+
+    expect(gateway.lastSystemPrompt).toContain("expert tutor");
+    expect(gateway.lastSystemPrompt).toContain(
+      "Use question titles and concise model answers.",
+    );
+    expect(gateway.lastSystemPrompt).toContain("has priority");
+  });
+
   it("threads ask output into chunk (chaining across stages)", async () => {
     const repo = new MemoryCardRepository();
     const runner = buildRunner(repo);
@@ -84,15 +116,23 @@ describe("PipelineRunner", () => {
     expect(outcome.kind).toBe("completed");
     if (outcome.kind !== "completed") return;
     expect(outcome.cards.length).toBeGreaterThan(0);
-    expect(outcome.cards.every(c => c.type === "chunk")).toBe(true);
+    expect(outcome.cards.every((c) => c.type === "chunk")).toBe(true);
   });
 
   it("recall converts chunk input into a question card", async () => {
     const repo = new MemoryCardRepository();
     const runner = buildRunner(repo);
-    const chunk = createCard({ workspaceId: WS_ID, type: "chunk", title: "T", body: "Body text here." });
+    const chunk = createCard({
+      workspaceId: WS_ID,
+      type: "chunk",
+      title: "T",
+      body: "Body text here.",
+    });
 
-    const outcome = await runner.run("recall", env({ initialInputCards: [chunk] }));
+    const outcome = await runner.run(
+      "recall",
+      env({ initialInputCards: [chunk] }),
+    );
 
     expect(outcome.kind).toBe("completed");
     if (outcome.kind !== "completed") return;
@@ -103,7 +143,13 @@ describe("PipelineRunner", () => {
   it("space schedules question cards", async () => {
     const repo = new MemoryCardRepository();
     const runner = buildRunner(repo);
-    const q = createCard({ workspaceId: WS_ID, type: "question", title: "Q?", body: "", answer: "a" });
+    const q = createCard({
+      workspaceId: WS_ID,
+      type: "question",
+      title: "Q?",
+      body: "",
+      answer: "a",
+    });
 
     const outcome = await runner.run("space", env({ initialInputCards: [q] }));
 
@@ -113,63 +159,121 @@ describe("PipelineRunner", () => {
   });
 
   it("ask with no argument halts for input", async () => {
-    const outcome = await buildRunner(new MemoryCardRepository()).run("ask", env());
-    expect(outcome).toEqual({ kind: "needsInput", mode: "ask", command: "ask" });
+    const outcome = await buildRunner(new MemoryCardRepository()).run(
+      "ask",
+      env(),
+    );
+    expect(outcome).toEqual({
+      kind: "needsInput",
+      mode: "ask",
+      command: "ask",
+    });
+  });
+
+  it("preserves downstream stages when a command needs input", async () => {
+    const outcome = await buildRunner(new MemoryCardRepository()).run(
+      "ask | recall | space",
+      env(),
+    );
+    expect(outcome).toEqual({
+      kind: "needsInput",
+      mode: "ask",
+      command: "ask",
+      resume: {
+        command: "ask",
+        inputCards: [],
+        remainingPipeline: "recall | space",
+      },
+    });
   });
 
   it("source with no argument halts for input", async () => {
-    const outcome = await buildRunner(new MemoryCardRepository()).run("source", env());
-    expect(outcome).toEqual({ kind: "needsInput", mode: "source", command: "source" });
+    const outcome = await buildRunner(new MemoryCardRepository()).run(
+      "source",
+      env(),
+    );
+    expect(outcome).toEqual({
+      kind: "needsInput",
+      mode: "source",
+      command: "source",
+    });
   });
 
   it("review halts the pipeline", async () => {
-    const outcome = await buildRunner(new MemoryCardRepository()).run("review", env());
+    const outcome = await buildRunner(new MemoryCardRepository()).run(
+      "review",
+      env(),
+    );
     expect(outcome).toEqual({ kind: "review" });
   });
 
   it("move reassigns cards and yields no downstream cards", async () => {
     const repo = new MemoryCardRepository();
     const runner = buildRunner(repo);
-    const card = createCard({ workspaceId: WS_ID, type: "chunk", title: "T", body: "b" });
+    const card = createCard({
+      workspaceId: WS_ID,
+      type: "chunk",
+      title: "T",
+      body: "b",
+    });
     await repo.saveCard(card);
     const target: Workspace = { id: "ws-2", name: "Other", createdAt: 0 };
 
-    const outcome = await runner.run("move Other", env({ initialInputCards: [card], workspaces: [target] }));
+    const outcome = await runner.run(
+      "move Other",
+      env({ initialInputCards: [card], workspaces: [target] }),
+    );
 
     expect(outcome).toEqual({ kind: "completed", cards: [] });
     expect((await repo.getCardsByWorkspace("ws-2")).length).toBe(1);
   });
 
   it("chunk with no chunkable input throws EmptySelectionError", async () => {
-    const q = createCard({ workspaceId: WS_ID, type: "question", title: "Q?", body: "" });
+    const q = createCard({
+      workspaceId: WS_ID,
+      type: "question",
+      title: "Q?",
+      body: "",
+    });
     await expect(
-      buildRunner(new MemoryCardRepository()).run("chunk", env({ initialInputCards: [q] }))
+      buildRunner(new MemoryCardRepository()).run(
+        "chunk",
+        env({ initialInputCards: [q] }),
+      ),
     ).rejects.toBeInstanceOf(EmptySelectionError);
   });
 
   it("move without target throws MissingArgumentError", async () => {
     await expect(
-      buildRunner(new MemoryCardRepository()).run("move", env())
+      buildRunner(new MemoryCardRepository()).run("move", env()),
     ).rejects.toBeInstanceOf(MissingArgumentError);
   });
 
   it("move to unknown workspace throws WorkspaceNotFoundError", async () => {
-    const card = createCard({ workspaceId: WS_ID, type: "chunk", title: "T", body: "b" });
+    const card = createCard({
+      workspaceId: WS_ID,
+      type: "chunk",
+      title: "T",
+      body: "b",
+    });
     await expect(
-      buildRunner(new MemoryCardRepository()).run("move nope", env({ initialInputCards: [card] }))
+      buildRunner(new MemoryCardRepository()).run(
+        "move nope",
+        env({ initialInputCards: [card] }),
+      ),
     ).rejects.toBeInstanceOf(WorkspaceNotFoundError);
   });
 
   it("unknown command throws UnknownCommandError", async () => {
     await expect(
-      buildRunner(new MemoryCardRepository()).run("frobnicate", env())
+      buildRunner(new MemoryCardRepository()).run("frobnicate", env()),
     ).rejects.toBeInstanceOf(UnknownCommandError);
   });
 
   it("parses hyphenated commands correctly without truncating at the hyphen", async () => {
     const dummyCommand: PipelineCommand = {
       name: "my-custom-command",
-      execute: async () => ({ kind: "cards", cards: [] })
+      execute: async () => ({ kind: "cards", cards: [] }),
     };
     const runner = new PipelineRunner([dummyCommand]);
     const outcome = await runner.run("my-custom-command arg", env());

@@ -6,7 +6,7 @@ import { MemorySettingsRepository } from "../../repositories/MemorySettingsRepos
 import { MemoryCommandDefinitionRepository } from "../../repositories/MemoryCommandDefinitionRepository";
 import { MemoryCardTypeRepository } from "../../repositories/MemoryCardTypeRepository";
 import { MemoryPromptPresetRepository } from "../../repositories/MemoryPromptPresetRepository";
-import { AgentGateway, AgentModel, AgentCardResponse } from "../../gateways/AgentGateway";
+import { AgentGateway, AgentModel, AgentAskResult, AgentCardResponse } from "../../gateways/AgentGateway";
 import { SearchGateway, SearchResult } from "../../gateways/SearchGateway";
 import { ExtractionGateway } from "../../gateways/ExtractionGateway";
 import { Card } from "../../../entities/card";
@@ -23,14 +23,14 @@ class MockAgentGateway implements AgentGateway {
     apiKey: string,
     model: string,
     systemPrompt?: string
-  ): Promise<AgentCardResponse[]> {
+  ): Promise<AgentAskResult> {
     this.lastApiKey = apiKey;
     this.lastModel = model;
     this.lastSystemPrompt = systemPrompt;
-    return [
+    return { cards: [
       { title: "Mock Chunks 1", body: `Answer for ${query}` },
       { title: "Mock Chunks 2", body: "Detailed explanation" }
-    ];
+    ], isLocalFallback: false };
   }
   async fetchModels(): Promise<AgentModel[]> {
     return [
@@ -517,9 +517,9 @@ describe("Learnimal App Controller", () => {
     // A gateway that fails once, then succeeds — so we can retry and see it recover.
     let shouldFail = true;
     const flaky: AgentGateway = {
-      async ask(): Promise<AgentCardResponse[]> {
+      async ask(): Promise<AgentAskResult> {
         if (shouldFail) throw new Error("model unavailable");
-        return [{ title: "Recovered", body: "It worked the second time" }];
+        return { cards: [{ title: "Recovered", body: "It worked the second time" }], isLocalFallback: false };
       },
       async fetchModels() { return []; },
     };
@@ -558,7 +558,7 @@ describe("Learnimal App Controller", () => {
 
   it("keeps the failure card when a retry fails again, rather than piling up records", async () => {
     const alwaysFails: AgentGateway = {
-      async ask(): Promise<AgentCardResponse[]> { throw new Error("still down"); },
+      async ask(): Promise<AgentAskResult> { throw new Error("still down"); },
       async fetchModels() { return []; },
     };
 
@@ -666,7 +666,7 @@ describe("Learnimal App Controller", () => {
 
   it("leaves no sheet stranded when a run fails", async () => {
     const failing: AgentGateway = {
-      async ask(): Promise<AgentCardResponse[]> { throw new Error("down"); },
+      async ask(): Promise<AgentAskResult> { throw new Error("down"); },
       async fetchModels() { return []; },
     };
     const controller = new LearnimalController({

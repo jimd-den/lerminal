@@ -42,6 +42,12 @@ export interface CaptureReceiptModel {
   selectionChanged: boolean;
   /** True when this run can still be reversed — see `UndoOperationInteractor`. */
   canUndo: boolean;
+  /**
+   * Set when the created cards came from a local template because no model answered.
+   * Read from the cards' own provenance rather than tracked separately, so the warning
+   * and the card's permanent record can never disagree.
+   */
+  localFallbackReason: string | null;
 }
 
 /**
@@ -85,6 +91,9 @@ export function presentCaptureReceipt(state: AppState): CaptureReceiptModel | nu
     nextActions,
     selectionChanged: createdCards.some(card => state.selection.has(card.id)),
     canUndo: Boolean(state.undoableOperationId),
+    localFallbackReason: createdCards.some(card => card.provenance?.isLocalFallback)
+      ? "No model answered, so these were written from a local template — not an AI response."
+      : null,
   };
 }
 

@@ -46,7 +46,7 @@ export class GenerateSyllabusInteractor {
       throw new MissingApiKeyError("Generating a syllabus");
     }
 
-    const responses = await this.agentGateway.ask(
+    const askResult = await this.agentGateway.ask(
       buildQueryStrategistPrompt(request.mission.goalTitle, request.mission),
       [],
       request.apiKey,
@@ -54,6 +54,14 @@ export class GenerateSyllabusInteractor {
       SYLLABUS_PROFILE.systemPrompt,
       "cards-v1"
     );
+
+    // A syllabus of template prerequisites would be confidently wrong about the goal.
+    if (askResult.isLocalFallback) {
+      throw new AgentRequestError(
+        askResult.fallbackReason ?? "No model answered, so no syllabus was generated"
+      );
+    }
+    const responses = askResult.cards;
 
     const valid = responses.filter(
       r => typeof r?.title === "string" && r.title.trim() && typeof r?.body === "string"

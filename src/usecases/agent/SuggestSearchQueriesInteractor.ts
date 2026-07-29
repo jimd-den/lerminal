@@ -57,7 +57,7 @@ export class SuggestSearchQueriesInteractor {
       throw new MissingApiKeyError("Suggesting search queries");
     }
 
-    const cards = await this.agentGateway.ask(
+    const result = await this.agentGateway.ask(
       buildQueryStrategistPrompt(request.topic, request.mission),
       [],
       request.apiKey,
@@ -65,6 +65,14 @@ export class SuggestSearchQueriesInteractor {
       QUERY_STRATEGIST_PROFILE.systemPrompt,
       "cards-v1"
     );
+
+    // Template queries would be generic filler dressed as strategy — worse than none.
+    if (result.isLocalFallback) {
+      throw new AgentRequestError(
+        result.fallbackReason ?? "No model answered, so no queries were suggested"
+      );
+    }
+    const cards = result.cards;
 
     const seen = new Set<string>();
     const queries: string[] = [];
