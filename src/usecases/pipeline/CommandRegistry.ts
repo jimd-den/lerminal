@@ -19,6 +19,7 @@ import { RecallCommand } from "./RecallCommand";
 import { SpaceCommand } from "./SpaceCommand";
 import { MoveCommand } from "./MoveCommand";
 import { ReviewCommand } from "./ReviewCommand";
+import { GoalCommand } from "./GoalCommand";
 import { GroupCommand } from "./GroupCommand";
 import { UngroupCommand } from "./UngroupCommand";
 import { DeleteCommand } from "./DeleteCommand";
@@ -102,6 +103,7 @@ function buildBuiltinCommands(
     new SpaceCommand(deps.cardRepo),
     new MoveCommand(deps.cardRepo),
     new ReviewCommand(),
+    new GoalCommand(),
     new GroupCommand(deps.groupCards),
     new UngroupCommand(deps.cardRepo),
     new DeleteCommand(deps.cardRepo),

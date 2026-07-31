@@ -3,6 +3,8 @@ import { DomainState, UiState } from "./AppSessionStore";
 import { breadcrumbPath, directChildren } from "../../entities/tree";
 import { ResearchState } from "../../usecases/research/ResearchWorkflow";
 import { MissionState } from "../../usecases/mission/MissionWorkflow";
+import { GoalArchitectState } from "../../usecases/goal/GoalArchitectWorkflow";
+import { presentGoalArchitect } from "./GoalArchitectPresenter";
 import { OperationsState } from "../../usecases/operations/OperationsWorkflow";
 import { ReviewSessionState } from "../../usecases/review/ReviewSession";
 import { GapReport } from "../../usecases/report/GapReportInteractor";
@@ -27,6 +29,10 @@ export interface PresentAppStateInput {
   ui: UiState;
   research: ResearchState;
   mission: MissionState;
+  /** The goal-architect session, projected through its own presenter. */
+  goalArchitect: GoalArchitectState;
+  /** Whether the session has enough to draft a mission — the workflow owns the rule. */
+  canProposeMission: boolean;
   operations: OperationsState;
   review: ReviewSessionState;
   /** Recomputed per projection — the report is a view of current cards, never stored. */
@@ -117,6 +123,8 @@ export function presentAppState(input: PresentAppStateInput): AppState {
 
     // --- Owned by MissionWorkflow ---
     gapReport: input.gapReport,
+    goalArchitect: presentGoalArchitect(input.goalArchitect, input.canProposeMission),
+
     isGapReportOpen: mission.isGapReportOpen,
     isMissionEditorOpen: mission.isEditorOpen,
     missionDraft: {

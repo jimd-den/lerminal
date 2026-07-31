@@ -108,6 +108,13 @@ import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction"
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
 import { AppearanceSettings, FontChoice } from "../../entities/appearance";
 import {
+  GoalArchitectWorkflow,
+  GoalArchitectHost,
+} from "../../usecases/goal/GoalArchitectWorkflow";
+import { CreateMissionPlanInteractor } from "../../usecases/goal/CreateMissionPlanInteractor";
+import { GoalQuestionId, RecommendedResearch } from "../../entities/goalArchitect";
+import { GoalArchitectViewModel } from "./GoalArchitectPresenter";
+import {
   FontCategory,
   FontFormat,
   RankedFontFamily,
@@ -259,6 +266,8 @@ export interface AppState {
   isMissionEditorOpen: boolean;
   /** The in-progress mission edit, valid while `isMissionEditorOpen`. */
   missionDraft: MissionDraft;
+  /** The goal-architect sheet's full view model. */
+  goalArchitect: GoalArchitectViewModel;
 }
 
 /** What a completed run hands to the undo log once its cards have settled. */
@@ -336,6 +345,10 @@ export class LearnimalController {
   private reviewLogRepo?: ReviewLogRepository;
   private research: ResearchWorkflow;
   private mission: MissionWorkflow;
+  private goalArchitect: GoalArchitectWorkflow;
+  private createMissionPlanInteractor: CreateMissionPlanInteractor;
+  /** When the current goal session began, for an accurate receipt. */
+  private goalSessionStartedAt = 0;
   private runResearchInteractor: RunResearchInteractor;
   private extractResearchResultInteractor: ExtractResearchResultInteractor;
   private createResearchBriefInteractor: CreateResearchBriefInteractor;
@@ -490,6 +503,12 @@ export class LearnimalController {
     // supplies context and effects, then delegates to it.
     this.research = this.buildResearchWorkflow(deps);
     this.mission = this.buildMissionWorkflow(deps);
+    this.goalArchitect = this.buildGoalArchitectWorkflow(deps);
+    this.createMissionPlanInteractor = new CreateMissionPlanInteractor(
+      deps.cardRepo,
+      deps.workspaceRepo,
+      this.operationLogRepo,
+    );
     this.operations = this.buildOperationsWorkflow(deps);
     this.review = this.buildReviewSession(deps);
 
@@ -545,6 +564,133 @@ export class LearnimalController {
    * The host object is the seam: it hands the workflow the surrounding context it needs
    * to read and the effects it needs to cause, without handing over the controller itself.
    */
+  /**
+   * Wires the goal architect to the app around it.
+   *
+   * The host's only web-facing method hands queries to the *existing* research preflight
+   * rather than running a search, which is what keeps "the agent never browses without
+   * approval" true by construction instead of by convention.
+   */
+  private buildGoalArchitectWorkflow(
+    deps: LearnimalControllerDeps,
+  ): GoalArchitectWorkflow {
+    const host: GoalArchitectHost = {
+      apiKey: () => this.domain.openRouterKey ?? "",
+      model: () => this.domain.selectedModel,
+      onChange: () => this.emit(),
+      requestResearchApproval: (queries: RecommendedResearch[]) => {
+        // Pre-fills the normal preflight; the user still sees and approves the query.
+        this.ui.activePreflightPresetId = "research-web";
+        this.ui.preflightQuery = queries[0]?.query ?? "";
+        this.ui.aiQuerySuggestions = queries.map((item) => item.query);
+        this.emit();
+      },
+    };
+
+    return new GoalArchitectWorkflow({ host, agentGateway: deps.agentGateway });
+  }
+
+  // --- Goal Architect ---
+
+  /** Opens a fresh goal session. */
+  openGoalArchitect(): void {
+    this.goalSessionStartedAt = Date.now();
+    this.goalArchitect.open();
+  }
+
+  closeGoalArchitect(): void {
+    this.goalArchitect.close();
+  }
+
+  submitGoalAnswer(text: string): void {
+    this.goalArchitect.submitAnswer(text);
+  }
+
+  skipGoalQuestion(): void {
+    this.goalArchitect.skipCurrent();
+  }
+
+  editGoalAnswer(questionId: GoalQuestionId, text: string): void {
+    this.goalArchitect.editAnswer(questionId, text);
+  }
+
+  /** Explicitly asks the model for suggestions. Never automatic. */
+  async requestGoalAgentTurn(): Promise<void> {
+    await this.goalArchitect.requestAgentTurn();
+  }
+
+  proposeMission(): void {
+    this.goalArchitect.proposeMission();
+  }
+
+  backToGoalQuestions(): void {
+    this.goalArchitect.backToQuestions();
+  }
+
+  requestGoalResearch(): void {
+    this.goalArchitect.requestResearch();
+  }
+
+  /**
+   * Accepts the draft: creates the mission cards, sets the workspace mission, and leaves
+   * the user on the canvas with a receipt they can undo.
+   *
+   * The receipt is built from what the session actually recorded — whether a model
+   * contributed, whether a search really ran — so it can never credit work that did not
+   * happen.
+   */
+  async acceptMission(): Promise<boolean> {
+    const session = this.goalArchitect.state;
+    const proposal = session.proposal;
+    const workspaceId = this.domain.activeWorkspaceId;
+
+    if (!proposal || !workspaceId) return false;
+
+    const operationId = this.addPendingOperation("Creating mission");
+    try {
+      const outcome = await this.createMissionPlanInteractor.execute({
+        workspaceId,
+        proposal,
+        map: session.map,
+        answerIds: session.answers.map((answer) => answer.questionId),
+        modelUsed: session.modelUsed,
+        webUsed: session.webUsed,
+        model: session.modelUsed ? this.domain.selectedModel : undefined,
+        startedAt: this.goalSessionStartedAt || Date.now(),
+      });
+
+      this.removePendingOperation(operationId);
+      this.goalArchitect.close();
+      await this.loadCardsForActiveWorkspace();
+
+      // Selection genuinely changes here, so saying so is accurate.
+      this.domain.selection = new Set(
+        outcome.cards.filter((card) => card.id !== outcome.group.id).map((card) => card.id),
+      );
+      this.domain.workspaces = this.domain.workspaces.map((workspace) =>
+        workspace.id === outcome.workspace.id ? outcome.workspace : workspace,
+      );
+
+      this.operations.present({
+        summary: outcome.operation.summary,
+        createdCardIds: outcome.operation.createdCardIds,
+        destination: { spaceId: workspaceId, groupId: outcome.group.id },
+        primaryActionLabel: "Open mission",
+      });
+      // The interactor already wrote the receipt — it knows what actually ran. This only
+      // points undo at it, rather than logging a second, vaguer record of the same run.
+      this.operations.markUndoable(outcome.operation.id);
+      this.emit();
+      return true;
+    } catch (error: any) {
+      this.setPendingOperationError(
+        operationId,
+        error instanceof UseCaseError ? error.userMessage : "Couldn't create the mission",
+      );
+      return false;
+    }
+  }
+
   private buildMissionWorkflow(deps: LearnimalControllerDeps): MissionWorkflow {
       return new MissionWorkflow({
         workspaceRepo: deps.workspaceRepo,
@@ -750,6 +896,8 @@ export class LearnimalController {
       ui: this.ui,
       research: this.research.state,
       mission: this.mission.state,
+      goalArchitect: this.goalArchitect.state,
+      canProposeMission: this.goalArchitect.canPropose,
       operations: this.operations.state,
       review: this.review.state,
       gapReport: this.mission.computeGapReport(),
@@ -1819,6 +1967,10 @@ export class LearnimalController {
       }
       if (outcome.kind === "review") {
         this.startReview();
+        return true;
+      }
+      if (outcome.kind === "goal") {
+        this.openGoalArchitect();
         return true;
       }
 

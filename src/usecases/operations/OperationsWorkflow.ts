@@ -183,6 +183,18 @@ export class OperationsWorkflow {
   // --- Undo ---
 
   /**
+   * Adopts a record some other use case already wrote as the undoable one.
+   *
+   * For operations that build their own receipt because they know things this workflow
+   * doesn't — mission acceptance records which model and which queries were genuinely
+   * used. Re-recording it here would write a second, less accurate log entry for the same
+   * run, so the caller saves the record and this only marks it as the one undo targets.
+   */
+  markUndoable(operationId: string): void {
+    this.patch({ undoableOperationId: operationId });
+  }
+
+  /**
    * Records a completed run so it can be taken back. Snapshots are the caller's
    * responsibility to capture *after* the cards have settled, so a later undo compares
    * against what the user actually saw.

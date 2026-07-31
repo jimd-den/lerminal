@@ -65,6 +65,10 @@ export class PipelineMacroCommand implements PipelineCommand {
     if (outcome.kind === "review") {
       return { kind: "review" };
     }
+    // Both session commands halt the macro rather than yielding cards into the next stage.
+    if (outcome.kind === "goal") {
+      return { kind: "goal" };
+    }
     return { kind: "cards", cards: outcome.cards };
   }
 }

@@ -53,7 +53,9 @@ export type PipelineOutcome =
         remainingPipeline: string;
       };
     }
-  | { kind: "review" };
+  | { kind: "review" }
+  /** The pipeline hit `goal`; the presenter opens the Goal Architect. */
+  | { kind: "goal" };
 
 /**
  * # Pipeline Runner (Clean Architecture Application Use Case)
@@ -142,6 +144,10 @@ export class PipelineRunner {
       if (result.kind === "review") {
         this.logger.debug("pipeline.halted", { reason: "review" });
         return { kind: "review" };
+      }
+      if (result.kind === "goal") {
+        this.logger.debug("pipeline.halted", { reason: "goal" });
+        return { kind: "goal" };
       }
       cards = result.kind === "cards" ? result.cards : [];
     }

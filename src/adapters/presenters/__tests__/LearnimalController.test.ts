@@ -704,4 +704,140 @@ describe("Learnimal App Controller", () => {
 
     expect(controller.getState().isMissionEditorOpen).toBe(true);
   });
+
+  describe("goal architect", () => {
+    const makeController = () =>
+      new LearnimalController({
+        cardRepo,
+        workspaceRepo,
+        settingsRepo,
+        agentGateway,
+        commandDefinitionRepo,
+        cardTypeRepo,
+        promptPresetRepo,
+        assistantProfileRepo,
+        searchGateway,
+        extractionGateway,
+      });
+
+    it("opens from the goal command in the palette", async () => {
+      const controller = makeController();
+      await controller.init();
+
+      await controller.runPipeline("goal");
+
+      expect(controller.getState().goalArchitect.isOpen).toBe(true);
+      expect(controller.getState().goalArchitect.prompt).toContain(
+        "What do you want to be able to make",
+      );
+    });
+
+    it("runs the whole flow to created cards with no API key", async () => {
+      const controller = makeController();
+      await controller.init();
+      // No key is ever set: the deterministic path must reach real cards on its own.
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a playable puzzle game");
+      controller.proposeMission();
+
+      expect(controller.getState().goalArchitect.proposal).toBeTruthy();
+      const created = await controller.acceptMission();
+
+      expect(created).toBe(true);
+      const state = controller.getState();
+      expect(state.goalArchitect.isOpen).toBe(false);
+      expect(state.cards.some((card) => card.role === "goal")).toBe(true);
+      expect(state.cards.some((card) => card.title === "Known gaps")).toBe(true);
+    });
+
+    it("sets the workspace mission on acceptance", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Learn to weld");
+      controller.proposeMission();
+      await controller.acceptMission();
+
+      const state = controller.getState();
+      const workspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+      expect(workspace?.mission?.goalTitle).toBe("Learn to weld");
+    });
+
+    it("creates nothing while the mission is still a draft", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a synth");
+      controller.proposeMission();
+
+      // The draft says nothing has been created; that must be literally true.
+      expect(controller.getState().cards).toHaveLength(0);
+    });
+
+    it("leaves an undoable receipt naming the created cards", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a synth");
+      controller.proposeMission();
+      await controller.acceptMission();
+
+      const state = controller.getState();
+      expect(state.undoableOperationId).toBeTruthy();
+      expect(state.operationResult?.createdCardIds.length).toBeGreaterThan(0);
+    });
+
+    it("undoes an accepted mission, removing the cards it created", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a synth");
+      controller.proposeMission();
+      await controller.acceptMission();
+      expect(controller.getState().cards.length).toBeGreaterThan(0);
+
+      const undone = await controller.undoLastOperation();
+
+      expect(undone).toBe(true);
+      expect(controller.getState().cards).toHaveLength(0);
+    });
+
+    it("enrols nothing in spaced repetition", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a synth");
+      controller.proposeMission();
+      await controller.acceptMission();
+
+      expect(
+        controller.getState().cards.every((card) => card.schedule === undefined),
+      ).toBe(true);
+    });
+
+    it("reports that no model was used when none was", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a synth");
+      controller.proposeMission();
+
+      expect(controller.getState().goalArchitect.provenanceSummary).toContain(
+        "No model was used",
+      );
+    });
+
+    it("explains what needs a key rather than failing silently", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a synth");
+
+      await controller.requestGoalAgentTurn();
+
+      expect(controller.getState().goalArchitect.agentError).toContain("No API key");
+      // The answer survives the refused model call.
+      expect(controller.getState().goalArchitect.mapSections.length).toBeGreaterThan(0);
+    });
+  });
 });

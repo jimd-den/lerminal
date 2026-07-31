@@ -64,6 +64,8 @@ export type CommandResult =
       };
     }
   | { kind: "review" }
+  /** Open the Goal Architect. Like `review`, ends the pipeline and creates nothing. */
+  | { kind: "goal" }
   | { kind: "noop" };
 
 /**

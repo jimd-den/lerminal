@@ -10,6 +10,41 @@ import {
 import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
 import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
 
+/**
+ * The Goal Architect's instruction.
+ *
+ * Written to constrain the failure modes that matter rather than to elicit enthusiasm: no
+ * claiming to have searched, no inventing what the user said, small numbers of questions,
+ * and scope reduction over aspirational planning. The app validates and re-labels
+ * everything this returns anyway — the prompt is the first line of defence, not the only
+ * one.
+ */
+const GOAL_ARCHITECT_SYSTEM_PROMPT = `You are a goal architect helping someone turn an ambition into an achievable learning mission.
+
+You are given the user's answers so far and the app's current working map. Respond with a single JSON object:
+
+{
+  "message": "brief prose: what you noticed, or what you'd add. 2-4 sentences.",
+  "question": { "id": "kebab-id", "prompt": "one high-leverage question", "rationale": "why it matters", "optional": true, "choices": ["optional", "suggested answers"] },
+  "workingMap": {
+    "goal": "restated goal, only if the user's is unclear",
+    "deliverable": "concrete finished artifact, only if implied but unstated",
+    "constraints": [], "assumptions": [], "unknowns": [],
+    "prerequisites": [], "risks": [], "candidateNextActions": []
+  },
+  "recommendedResearch": [ { "query": "a real search query", "rationale": "why", "sourceKinds": ["official docs","comparable project","paper","tutorial"] } ]
+}
+
+Rules:
+- Everything you contribute is treated as a hypothesis the user must verify. Do not state guesses as facts.
+- NEVER claim you searched, read, browsed, or cited anything. You have no web access. Suggest queries in recommendedResearch; the app runs them only with the user's approval.
+- Never invent what the user told you. If something is unknown, put it in "unknowns".
+- Ask at most ONE question, and only if it materially reduces ambiguity. Omit "question" entirely otherwise.
+- Prefer reducing scope and validating early over aspirational planning. Challenge vague goals directly but respectfully.
+- Propose concrete, testable milestones and experiments. No lectures, no motivational filler.
+- Omit any field you have nothing real to add to. Empty is better than padded.
+- Output JSON only. No markdown fences, no commentary.`;
+
 const PROMPT_ARCHITECT_SYSTEM_PROMPT = `You are a prompt architect for a study application.
 
 Convert the learner's goal into a concise system instruction for one named assistant capability. Ask at most one clarifying question if needed.
@@ -165,6 +200,82 @@ export class OpenRouterAgentGateway implements AgentGateway {
    * Prompts the AI Prompt Architect to design or refine an AssistantProfile system instruction
    * based on the user's stated learning goal.
    */
+  /**
+   * Asks the model for one Goal Architect turn.
+   *
+   * Returns the **raw parsed payload** rather than a typed turn: validation and
+   * origin-tagging happen in `normalizeGoalArchitectTurn`, so this method cannot
+   * accidentally hand malformed output to the UI wearing the right shape.
+   *
+   * Throws rather than falling back. Every other path in this gateway can degrade to
+   * locally-generated cards clearly flagged as a fallback, but there is no honest
+   * fallback for a planning turn — an invented follow-up question is indistinguishable
+   * from a real one, and the workflow's deterministic path is the correct answer instead.
+   */
+  async designGoalArchitectTurn(input: {
+    briefing: string;
+    apiKey: string;
+    model: string;
+  }): Promise<unknown> {
+    const cleanKey = input.apiKey?.trim();
+    if (!cleanKey) {
+      throw new Error("API key is required for goal planning");
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] [OpenRouterAgentGateway.designGoalArchitectTurn] model="${input.model}" | briefingChars=${input.briefing.length}`
+    );
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cleanKey}`,
+        "HTTP-Referer": "https://github.com/dbslim/lerminal",
+        "X-Title": "Learnimal",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [
+          { role: "system", content: GOAL_ARCHITECT_SYSTEM_PROMPT },
+          { role: "user", content: input.briefing },
+        ],
+        // The turn is consumed as JSON; asking for it directly beats parsing prose.
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
+      try {
+        const errData = await response.json();
+        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error("The model returned an empty response");
+    }
+
+    // Some models still wrap JSON in a fence despite response_format.
+    const cleanJson = content
+      .replace(/^```json/i, "")
+      .replace(/^```/, "")
+      .replace(/```$/, "")
+      .trim();
+
+    try {
+      return JSON.parse(cleanJson);
+    } catch {
+      // Deliberately not salvaged into a partial turn — the caller shows an honest
+      // failure state and keeps the user's answers.
+      throw new Error("The model's reply was not valid JSON");
+    }
+  }
+
   async designAssistantProfile(input: {
     messages: ChatMessage[];
     capability: AssistantCapability;
