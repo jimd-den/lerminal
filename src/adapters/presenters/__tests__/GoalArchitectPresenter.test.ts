@@ -188,6 +188,26 @@ describe("presentGoalArchitect", () => {
     expect(presentGoalArchitect(state({ answers: [] }), false).transcript).toEqual([]);
   });
 
+  it("condenses the log to one tagged line per turn, not the question replayed", () => {
+    const answers = [answer("outcome", "Build a synth"), answer("motivation", "For fun")];
+    const view = presentGoalArchitect(state({ answers }), true);
+
+    expect(view.logEntries).toEqual([
+      { tag: "OUTCOME", text: "Build a synth", skipped: false },
+      { tag: "MOTIVATION", text: "For fun", skipped: false },
+    ]);
+    // The log never repeats the assistant's own prompt text.
+    for (const entry of view.logEntries) {
+      expect(entry.text).not.toBe(findGoalQuestion("outcome")!.prompt);
+    }
+  });
+
+  it("marks a skipped question in the log honestly", () => {
+    const view = presentGoalArchitect(state({ answers: [skip("motivation")] }), true);
+
+    expect(view.logEntries).toEqual([{ tag: "MOTIVATION", text: "skipped", skipped: true }]);
+  });
+
   it("carries the web-search toggle and citations straight through", () => {
     const view = presentGoalArchitect(
       state({

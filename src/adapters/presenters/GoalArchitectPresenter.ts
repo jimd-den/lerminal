@@ -49,6 +49,19 @@ export interface TranscriptEntry {
   skipped?: boolean;
 }
 
+/**
+ * One turn, condensed to what a log should actually show: what was decided, tagged with
+ * *which* question it answers — not the question's full prompt text replayed a second
+ * time. A log that repeats every prompt verbatim just reproduces the form it's meant to
+ * summarize; a short tag is enough to place the answer in context.
+ */
+export interface LogEntry {
+  /** Short, stable tag for the question this answers, e.g. "OUTCOME". */
+  tag: string;
+  text: string;
+  skipped: boolean;
+}
+
 export interface GoalArchitectViewModel {
   isOpen: boolean;
   stage: GoalArchitectStage;
@@ -59,6 +72,8 @@ export interface GoalArchitectViewModel {
    * transcript is rebuilt from the current answer set on every projection, never patched.
    */
   transcript: TranscriptEntry[];
+  /** The same conversation, condensed to one tagged line per turn — see {@link LogEntry}. */
+  logEntries: LogEntry[];
   /** The prompt shown above the input, whether from the app's bank or the model. */
   prompt: string | null;
   /** Why this question is being asked. Never empty when there is a prompt. */
@@ -148,6 +163,21 @@ function buildTranscript(answers: GoalAnswer[]): TranscriptEntry[] {
   return entries;
 }
 
+/** Condenses the answers straight into log lines — no assistant prompt replay. */
+function buildLogEntries(answers: GoalAnswer[]): LogEntry[] {
+  return answers
+    .map(answer => {
+      const question = findGoalQuestion(answer.questionId);
+      if (!question) return null;
+      return {
+        tag: question.id.toUpperCase(),
+        text: answer.skipped ? "skipped" : answer.text,
+        skipped: answer.skipped,
+      };
+    })
+    .filter((entry): entry is LogEntry => entry !== null);
+}
+
 export function presentGoalArchitect(
   state: GoalArchitectState,
   canPropose: boolean
@@ -183,6 +213,7 @@ export function presentGoalArchitect(
     isOpen: state.isOpen,
     stage: state.stage,
     transcript: buildTranscript(state.answers),
+    logEntries: buildLogEntries(state.answers),
     prompt: agentQuestion?.prompt ?? bankQuestion?.prompt ?? null,
     rationale: agentQuestion?.rationale ?? bankQuestion?.rationale ?? null,
     choices: agentQuestion?.choices ?? [],

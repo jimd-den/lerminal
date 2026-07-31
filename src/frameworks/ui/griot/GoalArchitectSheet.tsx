@@ -17,7 +17,7 @@ import {
 } from "../../../adapters/presenters/GriotController";
 import {
   InsightRow,
-  TranscriptEntry,
+  LogEntry,
   WorkingMapSection,
 } from "../../../adapters/presenters/GoalArchitectPresenter";
 import { GriotTheme, Structure, TypeScale } from "./theme";
@@ -193,6 +193,45 @@ function TransmitSquare({ active, theme }: { active: boolean; theme: GriotTheme 
 }
 
 /** Three dots that step through opacity in sequence — the "thinking" indicator. */
+/**
+ * Reveals `text` a chunk at a time — the "it's typing" feel for the live readout.
+ *
+ * Reveals whole words, not characters: a character-by-character crawl over a paragraph
+ * takes visibly long and adds nothing but delay once the sentence is more than a few
+ * words. Skipped entirely under reduced motion, and whenever `text` changes mid-reveal
+ * the effect restarts from empty rather than jumping — a readout that half-shows the old
+ * message and half the new one would misreport what's actually being said.
+ */
+function TypewriterText({
+  text,
+  style,
+}: {
+  text: string;
+  style: any;
+}) {
+  const reducedMotion = useReducedMotion();
+  const [shown, setShown] = useState(text);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      setShown(text);
+      return;
+    }
+    const all = text.split(" ");
+    let count = 0;
+    setShown("");
+    const interval = setInterval(() => {
+      count += 1;
+      setShown(all.slice(0, count).join(" "));
+      if (count >= all.length) clearInterval(interval);
+    }, 45);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, reducedMotion]);
+
+  return <Text style={style}>{shown}</Text>;
+}
+
 function ThinkingDots({ theme }: { theme: GriotTheme }) {
   const reducedMotion = useReducedMotion();
   const dots = useRef([0, 1, 2].map(() => new Animated.Value(0.3))).current;
@@ -381,9 +420,10 @@ function ChatIntentStage({
                   MODEL UNAVAILABLE
                 </Text>
               ) : null}
-              <Text style={[styles.centerText, { color: theme.text, fontFamily: theme.fontSans }]}>
-                {liveText ?? "That's everything I need to ask."}
-              </Text>
+              <TypewriterText
+                text={liveText ?? "That's everything I need to ask."}
+                style={[styles.centerText, { color: theme.text, fontFamily: theme.fontSans }]}
+              />
               {!view.agentError && (showsBankPrompt || view.isAgentQuestion) && view.rationale ? (
                 <Text style={[styles.centerCaption, { color: theme.textMuted }]}>
                   {view.rationale}
@@ -425,13 +465,14 @@ function ChatIntentStage({
           ) : null}
         </View>
 
-        {/* Everything already said, receding beneath the live exchange as a log. */}
-        {view.transcript.length > 0 ? (
+        {/* What's already been decided, condensed to one tagged line each — not the
+            full form replayed a second time underneath the live exchange. */}
+        {view.logEntries.length > 0 ? (
           <View style={styles.log}>
             <Text style={[styles.logHeading, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
               LOG
             </Text>
-            {[...view.transcript].reverse().map((entry, index) => (
+            {[...view.logEntries].reverse().map((entry, index) => (
               <LogLine key={index} entry={entry} theme={theme} />
             ))}
           </View>
@@ -484,12 +525,11 @@ function ChatIntentStage({
   );
 }
 
-function LogLine({ entry, theme }: { entry: TranscriptEntry; theme: GriotTheme }) {
-  const isAssistant = entry.speaker === "assistant";
+function LogLine({ entry, theme }: { entry: LogEntry; theme: GriotTheme }) {
   return (
     <View style={styles.logLine}>
-      <Text style={[styles.logSpeaker, { color: isAssistant ? theme.accent : theme.textFaint, fontFamily: theme.fontMono }]}>
-        {isAssistant ? "GRIOT" : "YOU"}
+      <Text style={[styles.logSpeaker, { color: theme.accent, fontFamily: theme.fontMono }]}>
+        {entry.tag}
       </Text>
       <Text
         numberOfLines={2}
@@ -962,7 +1002,12 @@ const styles = StyleSheet.create({
   log: { gap: 4 },
   logHeading: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4, marginBottom: 4 },
   logLine: { flexDirection: "row", gap: 8, paddingVertical: 3 },
-  logSpeaker: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6, width: 48 },
+  logSpeaker: {
+    fontSize: TypeScale.label,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    width: 92,
+  },
   logText: { flex: 1, fontSize: TypeScale.meta, lineHeight: 18 },
   composer: {
     flexDirection: "row",
