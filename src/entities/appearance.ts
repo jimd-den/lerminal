@@ -69,6 +69,12 @@ export interface Palette {
   accentInk: string;
   danger: string;
   warning: string;
+  /**
+   * Web-derived evidence. A distinct semantic slot rather than a reuse of the accent,
+   * because "this came from the open web" must stay readable no matter what accent the
+   * user picks — including an accent that happens to be the same hue.
+   */
+  evidence: string;
 }
 
 /**
@@ -98,6 +104,7 @@ export const PALETTES: Palette[] = [
     accentInk: "#0B0700",
     danger: "#FF6B4A",
     warning: "#FFD866",
+    evidence: "#7FD1FF",
   },
   {
     id: "green",
@@ -116,6 +123,7 @@ export const PALETTES: Palette[] = [
     accentInk: "#000F00",
     danger: "#FF6B6B",
     warning: "#FFE066",
+    evidence: "#7FE3FF",
   },
   {
     id: "cga",
@@ -134,6 +142,7 @@ export const PALETTES: Palette[] = [
     accentInk: "#000000",
     danger: "#FF5555",
     warning: "#FFFF55",
+    evidence: "#FF55FF",
   },
   {
     id: "console",
@@ -152,6 +161,26 @@ export const PALETTES: Palette[] = [
     accentInk: "#06110F",
     danger: "#FF5F69",
     warning: "#FFB45B",
+    evidence: "#8AB4FF",
+  },
+  {
+    id: "mission",
+    label: "Mission Console",
+    provenance: "A deep blue-black workstation panel — calm, layered, low-ornament",
+    mode: "dark",
+    background: "#070B10",
+    panel: "#0D141C",
+    panelStrong: "#111A24",
+    panelMuted: "#0A1119",
+    text: "#E8F0F4",
+    textMuted: "#9AAEBB",
+    textFaint: "#5E7383",
+    line: "#1E2C38",
+    accent: "#4FD8C4",
+    accentInk: "#04100E",
+    danger: "#FF6B72",
+    warning: "#F5B45B",
+    evidence: "#7FA9FF",
   },
   {
     id: "paper",
@@ -170,6 +199,7 @@ export const PALETTES: Palette[] = [
     accentInk: "#FFFFFF",
     danger: "#B3261E",
     warning: "#8A5A00",
+    evidence: "#1F5FBF",
   },
 ];
 

@@ -228,4 +228,5 @@ export const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 7,
   },
+  selectionHint: { fontSize: 12, lineHeight: 17, marginTop: 8 },
 });

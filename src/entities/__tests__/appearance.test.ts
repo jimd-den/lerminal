@@ -9,8 +9,34 @@ import {
 } from "../appearance";
 
 describe("PALETTES", () => {
-  it("ships the DOS-heritage sets plus a modern dark/light pair", () => {
-    expect(PALETTES.map(p => p.id)).toEqual(["amber", "green", "cga", "console", "paper"]);
+  it("ships the DOS-heritage sets, the mission console, and a modern dark/light pair", () => {
+    expect(PALETTES.map(p => p.id)).toEqual([
+      "amber",
+      "green",
+      "cga",
+      "console",
+      "mission",
+      "paper",
+    ]);
+  });
+
+  it("keeps every semantic state distinguishable in every palette", () => {
+    for (const palette of PALETTES) {
+      // Warning, danger, and evidence each carry a distinct meaning. A palette that
+      // collapses any two of them into one colour makes a caution indistinguishable
+      // from an error, or web evidence from the app's own accent.
+      const semantic = [palette.danger, palette.warning, palette.evidence, palette.accent];
+      const unique = new Set(semantic.map(c => c.toLowerCase()));
+      expect(unique.size).toBe(semantic.length);
+    }
+  });
+
+  it("keeps semantic colours off the palette's own background", () => {
+    for (const palette of PALETTES) {
+      for (const color of [palette.danger, palette.warning, palette.evidence]) {
+        expect(color.toLowerCase()).not.toBe(palette.background.toLowerCase());
+      }
+    }
   });
 
   it("gives every palette a complete colour set, so no caller has to invent one", () => {

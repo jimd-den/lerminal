@@ -117,6 +117,8 @@ export interface LearningTheme {
   accentInk: string;
   danger: string;
   warning: string;
+  /** Web-derived evidence — kept distinct from the accent. See `Palette.evidence`. */
+  evidence: string;
   /** The face for commands, metadata, IDs, and system labels — the console's own voice. */
   fontMono: string;
   /** The face for reading-length prose. Falls back to the platform UI font. */
@@ -191,6 +193,7 @@ export function resolveLearningTheme(
         accentInk: dark ? "#06110F" : "#07110F",
         danger: "#FF5F69",
         warning: "#FFB45B",
+        evidence: dark ? "#8AB4FF" : "#1F5FBF",
       };
 
   return {
@@ -208,6 +211,7 @@ export function resolveLearningTheme(
     accentInk: base.accentInk,
     danger: base.danger,
     warning: base.warning,
+    evidence: base.evidence,
     fontMono: resolveFontFamily(resolved.monoFont, "mono") ?? SYSTEM_MONO_FAMILY,
     fontSans: resolveFontFamily(resolved.sansFont, "sans"),
   };
