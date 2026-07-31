@@ -6,11 +6,12 @@ import {
 } from "../../../../adapters/presenters/GriotController";
 import {
   GriotDeckModel,
-  materialLabel,
 } from "../../../../adapters/presenters/GriotDeckPresenter";
+import { presentMissionCanvas } from "../../../../adapters/presenters/MissionCanvasPresenter";
 import { SectionLabel, Slab, SystemHeader } from "../components";
 import { CaptureReceipt } from "../CaptureReceipt";
-import { MissionControlModule } from "../MissionControl";
+import { MissionCanvasHeader } from "../MissionCanvas";
+import { ContextCardRow } from "../ContextCards";
 import { GriotTheme } from "../theme";
 import { CaptureIntent, SharedProps } from "./types";
 import { QuickAction, EmptyReadout } from "./shared";
@@ -53,6 +54,9 @@ export function DeckScreen({
     else onCapture("note");
   };
 
+  const activeWorkspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+  const mission = presentMissionCanvas(state.gapReport, activeWorkspace?.name ?? "");
+
   return (
     <ScrollView
       style={styles.screen}
@@ -73,12 +77,23 @@ export function DeckScreen({
         onOpenOutput={onOpenResult}
       />
 
-
-      <MissionControlModule
-        controller={controller}
-        state={state}
+      {/*
+       * The mission is the first thing on the deck, not a small module below the fold —
+       * this screen is the guide *from* which a mission gets created conversationally
+       * (via the Goal Architect) and *to* which it reports back, so it leads.
+       */}
+      <MissionCanvasHeader
+        view={mission}
         theme={theme}
         onOpenReport={() => controller.openGapReport()}
+        onDefineMission={() => controller.openGoalArchitect()}
+        onRunNextAction={() =>
+          void controller.dispatchSuggestedAction(
+            mission.nextAction?.presetId
+              ? { kind: "preflight", presetId: mission.nextAction.presetId }
+              : { kind: "status" },
+          )
+        }
       />
 
       <View
@@ -210,25 +225,16 @@ export function DeckScreen({
         />
       ) : (
         model.recentCards.map((card) => (
-          <View
+          <ContextCardRow
             key={card.id}
-            style={[styles.activityRow, { borderColor: theme.line }]}
-          >
-            <Text
-              style={[
-                styles.activityCode,
-                { color: theme.accent, fontFamily: theme.fontMono },
-              ]}
-            >
-              {materialLabel(card).slice(0, 4)}
-            </Text>
-            <Text
-              numberOfLines={1}
-              style={[styles.activityText, { color: theme.text }]}
-            >
-              {card.title}
-            </Text>
-          </View>
+            card={card}
+            theme={theme}
+            selected={state.selection.has(card.id)}
+            onPress={() =>
+              card.type === "group" ? onOpenDocument(card.id) : controller.toggleSelect(card.id)
+            }
+            onLongPress={() => controller.toggleSelect(card.id)}
+          />
         ))
       )}
     </ScrollView>
