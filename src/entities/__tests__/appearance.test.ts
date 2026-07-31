@@ -11,6 +11,7 @@ import {
 describe("PALETTES", () => {
   it("ships the DOS-heritage sets, the mission console, and a modern dark/light pair", () => {
     expect(PALETTES.map(p => p.id)).toEqual([
+      "proof",
       "amber",
       "green",
       "cga",
@@ -75,7 +76,7 @@ describe("findPalette", () => {
 });
 
 describe("resolveAppearance", () => {
-  it("resolves settings written before this feature existed to the default console", () => {
+  it("resolves settings written before this feature existed to the default palette", () => {
     const resolved = resolveAppearance(undefined);
 
     expect(resolved.palette.id).toBe(DEFAULT_PALETTE_ID);
@@ -96,10 +97,12 @@ describe("resolveAppearance", () => {
   });
 
   it("ignores an invalid override instead of guessing at it", () => {
-    const console = PALETTES.find(p => p.id === "console")!;
+    // Reads the default rather than naming a palette, so changing which palette ships
+    // as the default doesn't fail a test about override validation.
+    const fallback = PALETTES.find(p => p.id === DEFAULT_PALETTE_ID)!;
 
-    expect(resolveAppearance({ accentOverride: "not-a-color" }).accent).toBe(console.accent);
-    expect(resolveAppearance({ accentOverride: "" }).accent).toBe(console.accent);
+    expect(resolveAppearance({ accentOverride: "not-a-color" }).accent).toBe(fallback.accent);
+    expect(resolveAppearance({ accentOverride: "" }).accent).toBe(fallback.accent);
   });
 
   it("carries installed fonts through so they can be re-loaded next launch", () => {

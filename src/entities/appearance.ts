@@ -88,6 +88,26 @@ export interface Palette {
  */
 export const PALETTES: Palette[] = [
   {
+    id: "proof",
+    label: "Proof School",
+    provenance: "GRIOT's own — deep field green, lime signal, evidence blue",
+    mode: "dark",
+    background: "#0a0d0c",
+    panel: "#111713",
+    panelStrong: "#17221b",
+    panelMuted: "#0e1510",
+    text: "#eff4e9",
+    textMuted: "#a0aea1",
+    textFaint: "#829283",
+    line: "#2b4132",
+    // Lime is the signal colour: focus, primary action, active state. Nothing else.
+    accent: "#d5ff8a",
+    accentInk: "#15200c",
+    danger: "#ff918c",
+    warning: "#ffd070",
+    evidence: "#9cc8ff",
+  },
+  {
     id: "amber",
     label: "Amber Phosphor",
     provenance: "Monochrome amber CRTs, the classic late-night terminal",
@@ -203,7 +223,7 @@ export const PALETTES: Palette[] = [
   },
 ];
 
-export const DEFAULT_PALETTE_ID = "console";
+export const DEFAULT_PALETTE_ID = "proof";
 
 export function findPalette(id: string | undefined): Palette {
   return PALETTES.find(palette => palette.id === id) ?? PALETTES.find(p => p.id === DEFAULT_PALETTE_ID)!;
