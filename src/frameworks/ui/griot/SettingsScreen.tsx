@@ -32,7 +32,7 @@ import {
   DEFAULT_CARD_INSTRUCTION,
   DEFAULT_CHUNK_INSTRUCTION,
 } from "../../../entities/promptPreset";
-import { Chip, SectionLabel, Slab, SystemHeader } from "./components";
+import { Chip, CollapsibleSection, SectionLabel, Slab, SystemHeader } from "./components";
 import { ACCENT_OPTIONS, GriotTheme } from "./theme";
 import { AppearanceSettingsSection } from "./AppearanceSettings";
 import { TrashIcon } from "./Icons";
@@ -152,6 +152,7 @@ export function SettingsScreen({
         theme={theme}
       />
 
+      <CollapsibleSection theme={theme} title="APPEARANCE" defaultOpen>
       <SectionLabel theme={theme}>DISPLAY MODE</SectionLabel>
       <View style={styles.rowWrap}>
         <Chip
@@ -200,8 +201,9 @@ export function SettingsScreen({
       </View>
 
       <AppearanceSettingsSection controller={controller} state={state} theme={theme} />
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>AI LINK // OPENROUTER</SectionLabel>
+      <CollapsibleSection theme={theme} title="AI LINK // OPENROUTER">
       <Panel theme={theme}>
         <Text style={[styles.helperText, { color: theme.textMuted }]}>
           Model features — Explain, Research, Study cards, and every agent-backed
@@ -346,8 +348,9 @@ export function SettingsScreen({
           onPress={() => controller.setSelectedModel(customModel)}
         />
       </Panel>
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>STUDY BEHAVIOR</SectionLabel>
+      <CollapsibleSection theme={theme} title="STUDY BEHAVIOR">
       <ToggleRow
         title="Group by command"
         detail="Route generated output into command groups"
@@ -366,8 +369,9 @@ export function SettingsScreen({
           controller.setInterleaveReviews(!state.interleaveReviews)
         }
       />
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>LEARNING SPACES</SectionLabel>
+      <CollapsibleSection theme={theme} title="LEARNING SPACES">
       <Panel theme={theme}>
         {state.workspaces.map((workspace) => (
           <Pressable
@@ -455,8 +459,9 @@ export function SettingsScreen({
           </Text>
         </Pressable>
       </Panel>
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>ASSISTANT PROFILES</SectionLabel>
+      <CollapsibleSection theme={theme} title="ASSISTANT PROFILES">
       <Panel theme={theme}>
         {CAPABILITIES.map((capability) => (
           <View key={capability.id} style={styles.profileSection}>
@@ -541,8 +546,9 @@ export function SettingsScreen({
           onPress={() => setDesignerOpen(true)}
         />
       </Panel>
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>SEARCH SCOPES</SectionLabel>
+      <CollapsibleSection theme={theme} title="SEARCH SCOPES">
       <Panel theme={theme}>
         {Object.entries(state.searchSiteFlags).map(([name, domain]) => (
           <View
@@ -620,8 +626,9 @@ export function SettingsScreen({
           />
         </View>
       </Panel>
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>PROMPT MEMORY</SectionLabel>
+      <CollapsibleSection theme={theme} title="PROMPT MEMORY">
       <Panel theme={theme}>
         <View
           style={[
@@ -762,8 +769,9 @@ export function SettingsScreen({
           />
         </View>
       </Panel>
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>CARD TYPE REGISTRY</SectionLabel>
+      <CollapsibleSection theme={theme} title="CARD TYPE REGISTRY">
       <Panel theme={theme}>
         {state.cardTypes.map((type) => (
           <View
@@ -939,8 +947,9 @@ export function SettingsScreen({
           onPress={() => void createType()}
         />
       </Panel>
+      </CollapsibleSection>
 
-      <SectionLabel theme={theme}>COMMAND SYSTEM</SectionLabel>
+      <CollapsibleSection theme={theme} title="COMMAND SYSTEM">
       <Slab
         title="Commands and pipelines"
         label={`${state.commandDefinitions.length} CUSTOM // ${state.pinnedCommands.length} PINNED`}
@@ -948,6 +957,7 @@ export function SettingsScreen({
         theme={theme}
         onPress={() => controller.setModalOpen(true)}
       />
+      </CollapsibleSection>
 
       <AssistantDesignerModal
         visible={designerOpen}

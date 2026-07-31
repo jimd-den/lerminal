@@ -57,6 +57,61 @@ export function SectionLabel({ children, theme, code }: { children: React.ReactN
   );
 }
 
+/**
+ * # Collapsible Section
+ *
+ * ## Business Value & Purpose
+ * A settings screen with nine sections each fully expanded is a long scroll past mostly
+ * irrelevant controls to reach the one you actually want. Pressing a section's heading to
+ * expand it means the screen's default state is a table of contents, not a wall — you see
+ * every section's name at a glance and open only the one you came for.
+ *
+ * A plain expand/collapse rather than an animated height: RN's layout animation for
+ * variable-height content is expensive and finicky across platforms, and the content
+ * appearing is itself the feedback that something happened — no motion needed to convey it.
+ */
+export function CollapsibleSection({
+  title,
+  code,
+  theme,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  code?: string;
+  theme: GriotTheme;
+  /** Only the first section a user is likely to touch should start open. */
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <View style={styles.collapsible}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen(o => !o)}
+        style={({ pressed }) => [styles.collapsibleHead, pressed && styles.pressed]}
+      >
+        <Text style={[styles.sectionLabel, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
+          {title}
+        </Text>
+        <View style={styles.collapsibleHeadRight}>
+          {code ? (
+            <Text style={[styles.sectionCode, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+              {code}
+            </Text>
+          ) : null}
+          <Text style={[styles.collapsibleChevron, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+            {open ? "▾" : "▸"}
+          </Text>
+        </View>
+      </Pressable>
+      {open ? <View style={styles.collapsibleBody}>{children}</View> : null}
+    </View>
+  );
+}
+
 export function Slab({
   title,
   meta,
@@ -166,6 +221,16 @@ const styles = StyleSheet.create({
   textButton: { minHeight: 38, justifyContent: "center" },
   textButtonText: { fontSize: 12, fontWeight: "800", letterSpacing: 1 },
   sectionLabelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24, marginBottom: 9 },
+  collapsible: { marginTop: 24 },
+  collapsibleHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    minHeight: 44,
+  },
+  collapsibleHeadRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  collapsibleChevron: { fontSize: 14, fontWeight: "900" },
+  collapsibleBody: { marginTop: 9 },
   sectionLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1.6 },
   sectionCode: { fontSize: 12, letterSpacing: 1 },
   slab: { minHeight: 88, borderTopLeftRadius: 5, borderTopRightRadius: 14, borderBottomRightRadius: 14, borderBottomLeftRadius: 14, borderWidth: 1, marginBottom: 9, flexDirection: "row", overflow: "hidden", alignItems: "center" },
