@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { OpenRouterAgentGateway } from "../OpenRouterAgentGateway";
+import { extractWebCitations, OpenRouterAgentGateway } from "../OpenRouterAgentGateway";
 import { createCard } from "../../../entities/card";
 
 describe("OpenRouter Agent Gateway", () => {
@@ -307,5 +307,39 @@ describe("OpenRouter Agent Gateway - fetchModels", () => {
       console.warn = originalWarn;
       console.error = originalError;
     }
+  });
+});
+
+describe("extractWebCitations", () => {
+  it("reads url_citation annotations OpenRouter's web plugin attaches", () => {
+    const citations = extractWebCitations({
+      annotations: [
+        { type: "url_citation", url_citation: { url: "https://a.com", title: "A" } },
+      ],
+    });
+
+    expect(citations).toEqual([{ url: "https://a.com", title: "A" }]);
+  });
+
+  it("falls back to the URL itself when no title is given", () => {
+    const citations = extractWebCitations({
+      annotations: [{ type: "url_citation", url_citation: { url: "https://a.com" } }],
+    });
+
+    expect(citations).toEqual([{ url: "https://a.com", title: "https://a.com" }]);
+  });
+
+  it("skips an annotation with no usable url rather than throwing", () => {
+    const citations = extractWebCitations({
+      annotations: [{ type: "url_citation", url_citation: {} }, { type: "other" }],
+    });
+
+    expect(citations).toEqual([]);
+  });
+
+  it("returns no citations when the plugin wasn't used at all", () => {
+    expect(extractWebCitations({})).toEqual([]);
+    expect(extractWebCitations({ annotations: null })).toEqual([]);
+    expect(extractWebCitations(undefined)).toEqual([]);
   });
 });

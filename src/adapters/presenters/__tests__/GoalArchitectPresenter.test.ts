@@ -21,6 +21,13 @@ const answer = (questionId: GoalQuestionId, text: string): GoalAnswer => ({
   answeredAt: 0,
 });
 
+const skip = (questionId: GoalQuestionId): GoalAnswer => ({
+  questionId,
+  text: "",
+  skipped: true,
+  answeredAt: 0,
+});
+
 const state = (overrides: Partial<GoalArchitectState> = {}): GoalArchitectState => ({
   ...INITIAL_GOAL_ARCHITECT_STATE,
   isOpen: true,
@@ -151,5 +158,52 @@ describe("presentGoalArchitect", () => {
     );
 
     expect(view.agentError).toContain("answers are safe");
+  });
+
+  it("rebuilds the conversation as alternating assistant/user lines, in order", () => {
+    const answers = [answer("outcome", "Build a synth"), answer("motivation", "For fun")];
+    const view = presentGoalArchitect(state({ answers }), true);
+
+    expect(view.transcript.map(e => e.speaker)).toEqual([
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(view.transcript[0].text).toBe(findGoalQuestion("outcome")!.prompt);
+    expect(view.transcript[1].text).toBe("Build a synth");
+  });
+
+  it("shows a skipped question honestly rather than inventing an answer", () => {
+    const view = presentGoalArchitect(state({ answers: [skip("motivation")] }), true);
+
+    expect(view.transcript[1]).toEqual({
+      speaker: "user",
+      text: "(skipped)",
+      skipped: true,
+    });
+  });
+
+  it("has an empty transcript before anything has been answered", () => {
+    expect(presentGoalArchitect(state({ answers: [] }), false).transcript).toEqual([]);
+  });
+
+  it("carries the web-search toggle and citations straight through", () => {
+    const view = presentGoalArchitect(
+      state({
+        webSearchEnabled: true,
+        webCitations: [{ url: "https://example.com", title: "Example" }],
+      }),
+      true,
+    );
+
+    expect(view.webSearchEnabled).toBe(true);
+    expect(view.webCitations).toEqual([{ url: "https://example.com", title: "Example" }]);
+  });
+
+  it("says web results were used once webUsed is true", () => {
+    const view = presentGoalArchitect(state({ webUsed: true }), true);
+
+    expect(view.provenanceSummary).toContain("Web results were used");
   });
 });

@@ -55,6 +55,25 @@ export interface ChatMessage {
 /**
  * Response structure returned by the AI Prompt Architect for assistant profile creation.
  */
+/** One citation a provider's own web search actually returned. */
+export interface GoalArchitectCitation {
+  url: string;
+  title: string;
+}
+
+/**
+ * What a Goal Architect turn call returns: the model's raw payload, plus whatever real
+ * web citations the provider's own search attached — kept as a *separate* field rather
+ * than merged into `raw` so the caller can tell "the model said X" from "the provider's
+ * search actually found Y" without guessing which parts of the JSON came from where.
+ */
+export interface GoalArchitectTurnResult {
+  /** The model's raw parsed payload — validated by `normalizeGoalArchitectTurn`. */
+  raw: unknown;
+  /** Empty unless `webSearchEnabled` was set and the provider's search actually ran. */
+  webCitations: GoalArchitectCitation[];
+}
+
 export interface PromptDesignResponse {
   needsClarification: boolean;
   question: string | null;
@@ -140,7 +159,17 @@ export interface AgentGateway {
      * omitted, so every existing caller keeps working unchanged.
      */
     systemPrompt?: string;
-  }): Promise<unknown>;
+    /**
+     * Opt-in only — never defaulted true. When set, the implementation may use its
+     * provider's own web-grounded search (e.g. OpenRouter's `web` plugin) for this turn.
+     * This is deliberately a *different* search path from `SearchGateway`: it is the
+     * model's own provider performing the search, not this app's own gateway, so the
+     * result is reported back as {@link GoalArchitectTurnResult.webCitations} rather than
+     * merged into the turn's JSON — the app must be able to say *which* search path
+     * actually ran, never blend the two into one undifferentiated "the web was used".
+     */
+    webSearchEnabled?: boolean;
+  }): Promise<GoalArchitectTurnResult>;
 
   /**
    * Asks the model to pick one next action for a freshly captured card, from a fixed

@@ -81,6 +81,14 @@ export interface GoalArchitectState {
   /** True when a model contributed to the current map. Drives the receipt's honesty. */
   modelUsed: boolean;
   /**
+   * User-controlled, off by default. When true, the *next* agent turn may use the
+   * provider's own web-grounded search (distinct from the SearchGateway research
+   * preflight — see {@link GoalArchitectHost}). Never flips itself on.
+   */
+  webSearchEnabled: boolean;
+  /** Citations the provider's own search actually returned, most recent turn only. */
+  webCitations: { url: string; title: string }[];
+  /**
    * True when this session opened itself on a first launch rather than being asked for.
    * The sheet uses it to offer "Start blank instead" in place of a bare close, so an
    * uninvited sheet always names the way out.
@@ -102,6 +110,8 @@ export const INITIAL_GOAL_ARCHITECT_STATE: GoalArchitectState = {
   recommendedResearch: [],
   webUsed: false,
   modelUsed: false,
+  webSearchEnabled: false,
+  webCitations: [],
   isFirstRun: false,
 };
 
@@ -159,6 +169,17 @@ export class GoalArchitectWorkflow {
 
   close(): void {
     this.patch({ isOpen: false });
+  }
+
+  /**
+   * Turns the provider's own web search on or off for the *next* agent turn.
+   *
+   * Off by default and never flips itself — the user is opting a specific model call
+   * into a different kind of web access than the SearchGateway preflight, and that has
+   * to stay a decision they made, not a default they didn't notice.
+   */
+  setWebSearchEnabled(enabled: boolean): void {
+    this.patch({ webSearchEnabled: enabled });
   }
 
   /**
@@ -294,17 +315,18 @@ export class GoalArchitectWorkflow {
       return;
     }
 
-    this.patch({ isAgentThinking: true, agentError: null });
+    this.patch({ isAgentThinking: true, agentError: null, webCitations: [] });
 
     try {
-      const raw = await gateway.designGoalArchitectTurn({
+      const result = await gateway.designGoalArchitectTurn({
         briefing: this.briefing(),
         apiKey,
         model: this.deps.host.model(),
         systemPrompt: this.deps.host.systemPrompt(),
+        webSearchEnabled: this.current.webSearchEnabled,
       });
 
-      const turn = normalizeGoalArchitectTurn(raw);
+      const turn = normalizeGoalArchitectTurn(result.raw);
       if (!turn) {
         // The answers are untouched; the user loses a suggestion, not their work.
         this.patch({
@@ -329,6 +351,11 @@ export class GoalArchitectWorkflow {
           : null,
         recommendedResearch: turn.recommendedResearch ?? this.current.recommendedResearch,
         modelUsed: true,
+        // Only true when the provider's search actually returned something — never
+        // inferred from the toggle being on, since a toggled-on search can still find
+        // nothing or the model can answer without invoking it.
+        webUsed: this.current.webUsed || result.webCitations.length > 0,
+        webCitations: result.webCitations,
         proposal:
           this.current.stage === "proposal"
             ? buildMissionProposal(map, turn.recommendedResearch ?? this.current.recommendedResearch)

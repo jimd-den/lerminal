@@ -3,6 +3,8 @@ import {
   GoalArchitectStage,
 } from "../../usecases/goal/GoalArchitectWorkflow";
 import {
+  findGoalQuestion,
+  GoalAnswer,
   Insight,
   InsightOrigin,
   MissionProposal,
@@ -39,9 +41,24 @@ export interface WorkingMapSection {
   rows: InsightRow[];
 }
 
+/** One line of the conversation, in the order it actually happened. */
+export interface TranscriptEntry {
+  speaker: "assistant" | "user";
+  text: string;
+  /** Set only on an assistant entry that was skipped rather than answered. */
+  skipped?: boolean;
+}
+
 export interface GoalArchitectViewModel {
   isOpen: boolean;
   stage: GoalArchitectStage;
+  /**
+   * The conversation so far, oldest first — what makes the sheet read as a chat rather
+   * than a form that forgets what was already said. Reconstructed from `state.answers`,
+   * which is why it stays accurate even after an earlier answer is edited: the whole
+   * transcript is rebuilt from the current answer set on every projection, never patched.
+   */
+  transcript: TranscriptEntry[];
   /** The prompt shown above the input, whether from the app's bank or the model. */
   prompt: string | null;
   /** Why this question is being asked. Never empty when there is a prompt. */
@@ -76,6 +93,10 @@ export interface GoalArchitectViewModel {
   proposalStatus: string;
   /** Plain statement of what a model and the web did, for the draft's footer. */
   provenanceSummary: string;
+  /** Whether the *next* agent turn may use the provider's own web search. User-set. */
+  webSearchEnabled: boolean;
+  /** Citations the provider's search actually returned on the most recent turn. */
+  webCitations: { url: string; title: string }[];
 }
 
 const ORIGIN_LABELS: Record<InsightOrigin, string> = {
@@ -99,6 +120,32 @@ function toRow(item: Insight): InsightRow {
 function section(heading: string, items: Insight[]): WorkingMapSection | null {
   if (items.length === 0) return null;
   return { heading, rows: items.map(toRow) };
+}
+
+/**
+ * Rebuilds the conversation as alternating assistant/user lines, in the order the
+ * answers actually happened.
+ *
+ * The label shown for each assistant turn is the app's own bank prompt
+ * (`findGoalQuestion`), because that's the only wording this state durably keeps — an
+ * agent-authored follow-up's exact phrasing isn't retained per answer (the workflow
+ * records it against the bank question it stood in for; see `GoalArchitectWorkflow`).
+ * That's a known, honest simplification: the transcript shows what was functionally
+ * asked, not always the model's exact words, and never invents wording it doesn't have.
+ */
+function buildTranscript(answers: GoalAnswer[]): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
+  for (const answer of answers) {
+    const question = findGoalQuestion(answer.questionId);
+    if (!question) continue;
+    entries.push({ speaker: "assistant", text: question.prompt });
+    entries.push({
+      speaker: "user",
+      text: answer.skipped ? "(skipped)" : answer.text,
+      skipped: answer.skipped,
+    });
+  }
+  return entries;
 }
 
 export function presentGoalArchitect(
@@ -135,6 +182,7 @@ export function presentGoalArchitect(
   return {
     isOpen: state.isOpen,
     stage: state.stage,
+    transcript: buildTranscript(state.answers),
     prompt: agentQuestion?.prompt ?? bankQuestion?.prompt ?? null,
     rationale: agentQuestion?.rationale ?? bankQuestion?.rationale ?? null,
     choices: agentQuestion?.choices ?? [],
@@ -154,6 +202,8 @@ export function presentGoalArchitect(
     recommendedResearch: state.recommendedResearch,
     proposalStatus: "DRAFT MISSION — NOTHING HAS BEEN CREATED YET",
     provenanceSummary: describeProvenance(state),
+    webSearchEnabled: state.webSearchEnabled,
+    webCitations: state.webCitations,
   };
 }
 
@@ -172,7 +222,7 @@ function describeProvenance(state: GoalArchitectState): string {
   );
   parts.push(
     state.webUsed
-      ? "Web results you kept are cited on the cards they produced."
+      ? "Web results were used — see the citations on the turns that used them."
       : "The web was not searched."
   );
   return parts.join(" ");

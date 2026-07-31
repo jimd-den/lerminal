@@ -926,6 +926,29 @@ describe("GRIOT App Controller", () => {
       // The answer survives the refused model call.
       expect(controller.getState().goalArchitect.mapSections.length).toBeGreaterThan(0);
     });
+
+    it("keeps provider web search off by default and toggles it explicitly", () => {
+      const controller = makeController();
+      controller.openGoalArchitect();
+      expect(controller.getState().goalArchitect.webSearchEnabled).toBe(false);
+
+      controller.setGoalWebSearchEnabled(true);
+      expect(controller.getState().goalArchitect.webSearchEnabled).toBe(true);
+
+      controller.setGoalWebSearchEnabled(false);
+      expect(controller.getState().goalArchitect.webSearchEnabled).toBe(false);
+    });
+
+    it("presents the conversation as a transcript once questions are answered", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.openGoalArchitect();
+      controller.submitGoalAnswer("Build a synth");
+
+      const transcript = controller.getState().goalArchitect.transcript;
+      expect(transcript[0].speaker).toBe("assistant");
+      expect(transcript[1]).toEqual({ speaker: "user", text: "Build a synth", skipped: false });
+    });
   });
 
   describe("ask GRIOT for a next-move suggestion", () => {

@@ -33,11 +33,12 @@ class RecordingHost implements GoalArchitectHost {
 /** A gateway that records every call, so "did this browse?" is directly assertable. */
 class SpyGateway implements AgentGateway {
   askCalls = 0;
-  turnCalls: { briefing: string; systemPrompt?: string }[] = [];
+  turnCalls: { briefing: string; systemPrompt?: string; webSearchEnabled?: boolean }[] = [];
 
   constructor(
     private turn: unknown = { message: "ok", workingMap: {} },
-    private failure?: Error
+    private failure?: Error,
+    private webCitations: { url: string; title: string }[] = []
   ) {}
 
   async ask() {
@@ -52,10 +53,15 @@ class SpyGateway implements AgentGateway {
     apiKey: string;
     model: string;
     systemPrompt?: string;
+    webSearchEnabled?: boolean;
   }) {
-    this.turnCalls.push({ briefing: input.briefing, systemPrompt: input.systemPrompt });
+    this.turnCalls.push({
+      briefing: input.briefing,
+      systemPrompt: input.systemPrompt,
+      webSearchEnabled: input.webSearchEnabled,
+    });
     if (this.failure) throw this.failure;
-    return this.turn;
+    return { raw: this.turn, webCitations: this.webCitations };
   }
 }
 
@@ -362,5 +368,60 @@ describe("research", () => {
     workflow.markWebUsed();
 
     expect(workflow.state.webUsed).toBe(true);
+  });
+});
+
+describe("provider web search", () => {
+  it("is off by default and never sent unless enabled", async () => {
+    const gateway = new SpyGateway();
+    const workflow = started(new RecordingHost("key"), gateway);
+
+    await workflow.requestAgentTurn();
+
+    expect(gateway.turnCalls[0].webSearchEnabled).toBe(false);
+    expect(workflow.state.webSearchEnabled).toBe(false);
+  });
+
+  it("is sent only after the user explicitly turns it on", async () => {
+    const gateway = new SpyGateway();
+    const workflow = started(new RecordingHost("key"), gateway);
+
+    workflow.setWebSearchEnabled(true);
+    await workflow.requestAgentTurn();
+
+    expect(gateway.turnCalls[0].webSearchEnabled).toBe(true);
+  });
+
+  it("marks webUsed only when the provider actually returned citations", async () => {
+    const gateway = new SpyGateway({ message: "ok", workingMap: {} }, undefined, [
+      { url: "https://example.com/a", title: "A" },
+    ]);
+    const workflow = started(new RecordingHost("key"), gateway);
+    workflow.setWebSearchEnabled(true);
+
+    await workflow.requestAgentTurn();
+
+    expect(workflow.state.webUsed).toBe(true);
+    expect(workflow.state.webCitations).toEqual([{ url: "https://example.com/a", title: "A" }]);
+  });
+
+  it("does not claim web use when the toggle was on but nothing was returned", async () => {
+    const workflow = started(new RecordingHost("key"), new SpyGateway());
+    workflow.setWebSearchEnabled(true);
+
+    await workflow.requestAgentTurn();
+
+    // Toggling it on is not the same as it having run — only real citations count.
+    expect(workflow.state.webUsed).toBe(false);
+    expect(workflow.state.webCitations).toEqual([]);
+  });
+
+  it("can be turned back off", () => {
+    const workflow = started(new RecordingHost("key"), new SpyGateway());
+
+    workflow.setWebSearchEnabled(true);
+    workflow.setWebSearchEnabled(false);
+
+    expect(workflow.state.webSearchEnabled).toBe(false);
   });
 });

@@ -637,6 +637,11 @@ export class GriotController {
     await this.goalArchitect.requestAgentTurn();
   }
 
+  /** Opts the *next* agent turn into the provider's own web search, or opts back out. */
+  setGoalWebSearchEnabled(enabled: boolean): void {
+    this.goalArchitect.setWebSearchEnabled(enabled);
+  }
+
   proposeMission(): void {
     this.goalArchitect.proposeMission();
   }

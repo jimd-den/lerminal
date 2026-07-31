@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Modal,
   Pressable,
   ScrollView,
@@ -15,9 +17,12 @@ import {
 } from "../../../adapters/presenters/GriotController";
 import {
   InsightRow,
+  TranscriptEntry,
   WorkingMapSection,
 } from "../../../adapters/presenters/GoalArchitectPresenter";
 import { GriotTheme, Structure, TypeScale } from "./theme";
+import { ArrivalView } from "../motion/communicative";
+import { useReducedMotion } from "../useReducedMotion";
 
 /**
  * # Goal Architect Sheet
@@ -45,6 +50,9 @@ export function GoalArchitectSheet({
 }) {
   const view = state.goalArchitect;
   const [draft, setDraft] = useState("");
+  // A local display preference, not app state: switching it never touches the
+  // conversation itself, so it needs no controller round-trip and nothing to persist.
+  const [mode, setMode] = useState<"chat" | "form">("chat");
 
   const submit = () => {
     const text = draft.trim();
@@ -66,28 +74,53 @@ export function GoalArchitectSheet({
     >
       <View style={[styles.root, { backgroundColor: theme.background }]}>
         <View style={[styles.header, { borderBottomColor: theme.line }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
-              {view.stage === "proposal" ? "DRAFT MISSION" : "MISSION INTENT"}
-            </Text>
-            <Text style={[styles.title, { color: theme.text, fontFamily: theme.fontSans }]}>
-              Goal architect
-            </Text>
+          <View style={styles.headerTop}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                {view.stage === "proposal" ? "DRAFT MISSION" : "MISSION INTENT"}
+              </Text>
+              <Text style={[styles.title, { color: theme.text, fontFamily: theme.fontSans }]}>
+                Goal architect
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => controller.closeGoalArchitect()}
+              style={styles.close}
+            >
+              <Text style={[styles.closeText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                {view.dismissLabel}
+              </Text>
+            </Pressable>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => controller.closeGoalArchitect()}
-            style={styles.close}
-          >
-            <Text style={[styles.closeText, { color: theme.accent, fontFamily: theme.fontMono }]}>
-              {view.dismissLabel}
-            </Text>
-          </Pressable>
+
+          {view.stage === "intent" ? (
+            <View style={styles.headerControls}>
+              <View style={styles.headerControlsLeft}>
+                <TransmitSquare active={view.isAgentThinking} theme={theme} />
+                <Text
+                  numberOfLines={1}
+                  style={[styles.modelTag, { color: theme.textFaint, fontFamily: theme.fontMono }]}
+                >
+                  MODEL: {state.selectedModel || "NOT SET"}
+                </Text>
+              </View>
+              <View style={styles.headerControlsRight}>
+                <ToggleChip
+                  theme={theme}
+                  label="WEB"
+                  active={view.webSearchEnabled}
+                  onPress={() => controller.setGoalWebSearchEnabled(!view.webSearchEnabled)}
+                />
+                <ModeSwitch theme={theme} mode={mode} onChange={setMode} />
+              </View>
+            </View>
+          ) : null}
         </View>
 
-        <ScrollView style={styles.body} contentContainerStyle={styles.content}>
-          {view.stage === "intent" ? (
-            <IntentStage
+        {view.stage === "intent" ? (
+          mode === "chat" ? (
+            <ChatIntentStage
               view={view}
               theme={theme}
               draft={draft}
@@ -96,8 +129,24 @@ export function GoalArchitectSheet({
               onSkip={skip}
               onAskAgent={() => void controller.requestGoalAgentTurn()}
               onPropose={() => controller.proposeMission()}
+              hasApiKey={Boolean(state.openRouterKey.trim())}
             />
           ) : (
+            <ScrollView style={styles.body} contentContainerStyle={styles.content}>
+              <FormIntentStage
+                view={view}
+                theme={theme}
+                draft={draft}
+                setDraft={setDraft}
+                onSubmit={submit}
+                onSkip={skip}
+                onAskAgent={() => void controller.requestGoalAgentTurn()}
+                onPropose={() => controller.proposeMission()}
+              />
+            </ScrollView>
+          )
+        ) : (
+          <ScrollView style={styles.body} contentContainerStyle={styles.content}>
             <ProposalStage
               view={view}
               theme={theme}
@@ -105,14 +154,359 @@ export function GoalArchitectSheet({
               onResearch={() => controller.requestGoalResearch()}
               onAccept={() => void controller.acceptMission()}
             />
-          )}
-        </ScrollView>
+          </ScrollView>
+        )}
       </View>
     </Modal>
   );
 }
 
-function IntentStage({
+/** A small pulsing square — "transmitting" while a turn is in flight, idle otherwise. */
+function TransmitSquare({ active, theme }: { active: boolean; theme: GriotTheme }) {
+  const reducedMotion = useReducedMotion();
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!active || reducedMotion) {
+      pulse.setValue(active ? 1 : 0.35);
+      return;
+    }
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 0.25, duration: 500, easing: Easing.linear, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 500, easing: Easing.linear, useNativeDriver: true }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [active, reducedMotion, pulse]);
+
+  return (
+    <Animated.View
+      accessibilityLabel={active ? "Transmitting" : "Idle"}
+      style={[
+        styles.transmitSquare,
+        { backgroundColor: theme.accent, opacity: pulse },
+      ]}
+    />
+  );
+}
+
+/** Three dots that step through opacity in sequence — the "thinking" indicator. */
+function ThinkingDots({ theme }: { theme: GriotTheme }) {
+  const reducedMotion = useReducedMotion();
+  const dots = useRef([0, 1, 2].map(() => new Animated.Value(0.3))).current;
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    const animations = dots.map((dot, index) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(index * 180),
+          Animated.timing(dot, { toValue: 1, duration: 260, easing: Easing.linear, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 260, easing: Easing.linear, useNativeDriver: true }),
+          Animated.delay((2 - index) * 180),
+        ])
+      )
+    );
+    animations.forEach(a => a.start());
+    return () => animations.forEach(a => a.stop());
+  }, [reducedMotion, dots]);
+
+  if (reducedMotion) {
+    return <Text style={[styles.centerText, { color: theme.textMuted, fontFamily: theme.fontMono }]}>…</Text>;
+  }
+
+  return (
+    <View style={styles.dotsRow} accessibilityLabel="Thinking">
+      {dots.map((dot, index) => (
+        <Animated.View
+          key={index}
+          style={[styles.dot, { backgroundColor: theme.accent, opacity: dot }]}
+        />
+      ))}
+    </View>
+  );
+}
+
+function ModeSwitch({
+  theme,
+  mode,
+  onChange,
+}: {
+  theme: GriotTheme;
+  mode: "chat" | "form";
+  onChange: (mode: "chat" | "form") => void;
+}) {
+  return (
+    <View style={[styles.modeSwitch, { borderColor: theme.line }]}>
+      {(["chat", "form"] as const).map(option => {
+        const active = mode === option;
+        return (
+          <Pressable
+            key={option}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            onPress={() => onChange(option)}
+            style={[styles.modeOption, active && { backgroundColor: theme.accentSoft }]}
+          >
+            <Text
+              style={[
+                styles.modeOptionText,
+                { color: active ? theme.accent : theme.textFaint, fontFamily: theme.fontMono },
+              ]}
+            >
+              {option.toUpperCase()}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ToggleChip({
+  theme,
+  label,
+  active,
+  onPress,
+}: {
+  theme: GriotTheme;
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[
+        styles.toggleChip,
+        {
+          borderColor: active ? theme.evidence : theme.line,
+          backgroundColor: active ? `${theme.evidence}22` : "transparent",
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.toggleChipText,
+          { color: active ? theme.evidence : theme.textFaint, fontFamily: theme.fontMono },
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * # Chat Intent Stage — the mainframe readout
+ *
+ * ## Business Value & Purpose
+ * The current exchange dominates the screen, centered and large, the way a terminal
+ * shows you only what's happening *now*; everything already said recedes into a compact
+ * log beneath it rather than scrolling away entirely. A persistent composer at the
+ * bottom means there is always exactly one place to type, whether answering the app's
+ * own next question or just talking — either way it becomes the next answer via the
+ * same `submitAnswer` path the form uses, so nothing about the underlying, fully
+ * deterministic question flow changes: only how it's presented does.
+ */
+function ChatIntentStage({
+  view,
+  theme,
+  draft,
+  setDraft,
+  onSubmit,
+  onSkip,
+  onAskAgent,
+  onPropose,
+  hasApiKey,
+}: {
+  view: AppState["goalArchitect"];
+  theme: GriotTheme;
+  draft: string;
+  setDraft: (value: string) => void;
+  onSubmit: () => void;
+  onSkip: () => void;
+  onAskAgent: () => void;
+  onPropose: () => void;
+  hasApiKey: boolean;
+}) {
+  // Chat is a live conversation with the model, not the deterministic question bank —
+  // that bank is Form mode's job, which is what keeps the flow usable with no key. So
+  // chat only ever shows a question the app *asked the model for*: the one required
+  // opening question (which needs no model — there's nothing to converse about yet),
+  // and after that, only `agentQuestion`. Once the opening question is answered, this
+  // requests the next turn automatically — the user already acted by answering, so a
+  // follow-up call is a continuation of that action, not an unprompted one.
+  const needsAgentTurn =
+    hasApiKey &&
+    view.answeredCount > 0 &&
+    !view.isAgentThinking &&
+    !view.isAgentQuestion &&
+    !view.agentError;
+
+  useEffect(() => {
+    if (needsAgentTurn) onAskAgent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsAgentTurn]);
+
+  const showsBankPrompt = view.answeredCount === 0;
+  const liveText = view.agentError
+    ? view.agentError
+    : showsBankPrompt || view.isAgentQuestion
+      ? view.prompt
+      : !hasApiKey
+        ? "This conversation needs a model to continue. Add an API key in Settings, or switch to Form mode — Form works fully without one."
+        : null;
+  const canType = (showsBankPrompt || view.isAgentQuestion) && !view.isAgentThinking;
+
+  return (
+    <View style={styles.chatWrap}>
+      <ScrollView style={styles.body} contentContainerStyle={styles.chatContent}>
+        {/* The live readout — what's happening right now, big and centered. */}
+        <View style={styles.centerStage}>
+          {view.isAgentThinking ? (
+            <ThinkingDots theme={theme} />
+          ) : (
+            <ArrivalView key={liveText ?? "done"}>
+              {view.isAgentQuestion ? (
+                <Text style={[styles.centerBadge, { color: theme.warning, fontFamily: theme.fontMono }]}>
+                  AGENT ASKS
+                </Text>
+              ) : view.agentError ? (
+                <Text style={[styles.centerBadge, { color: theme.danger, fontFamily: theme.fontMono }]}>
+                  MODEL UNAVAILABLE
+                </Text>
+              ) : null}
+              <Text style={[styles.centerText, { color: theme.text, fontFamily: theme.fontSans }]}>
+                {liveText ?? "That's everything I need to ask."}
+              </Text>
+              {!view.agentError && (showsBankPrompt || view.isAgentQuestion) && view.rationale ? (
+                <Text style={[styles.centerCaption, { color: theme.textMuted }]}>
+                  {view.rationale}
+                </Text>
+              ) : null}
+            </ArrivalView>
+          )}
+
+          {!view.isAgentThinking && canType && view.choices.length > 0 ? (
+            <View style={styles.choiceRow}>
+              {view.choices.map(choice => (
+                <Pressable
+                  key={choice}
+                  accessibilityRole="button"
+                  onPress={() => setDraft(choice)}
+                  style={({ pressed }) => [
+                    styles.choice,
+                    { borderColor: theme.line, backgroundColor: theme.panelMuted },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.choiceText, { color: theme.textMuted }]}>{choice}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          {/* A failed turn doesn't retry itself — that would hammer a bad key silently. */}
+          {!view.isAgentThinking && view.agentError && hasApiKey ? (
+            <GhostButton theme={theme} label="RETRY" onPress={onAskAgent} />
+          ) : null}
+
+          {/* Always reachable once there's enough to draft from — chat has no "bank
+              exhausted" moment to gate this on, since it doesn't use the bank. */}
+          {!view.isAgentThinking && view.canPropose ? (
+            <View style={styles.actionRow}>
+              <PrimaryButton theme={theme} label="DRAFT THE MISSION" onPress={onPropose} />
+            </View>
+          ) : null}
+        </View>
+
+        {/* Everything already said, receding beneath the live exchange as a log. */}
+        {view.transcript.length > 0 ? (
+          <View style={styles.log}>
+            <Text style={[styles.logHeading, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+              LOG
+            </Text>
+            {[...view.transcript].reverse().map((entry, index) => (
+              <LogLine key={index} entry={entry} theme={theme} />
+            ))}
+          </View>
+        ) : null}
+
+        <WorkingMap sections={view.mapSections} theme={theme} />
+      </ScrollView>
+
+      <View style={[styles.composer, { borderTopColor: theme.line, backgroundColor: theme.panel }]}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          placeholder={canType ? "Type your answer…" : "Nothing open right now"}
+          placeholderTextColor={theme.textFaint}
+          editable={canType}
+          multiline
+          style={[
+            styles.composerInput,
+            {
+              color: theme.text,
+              borderColor: theme.line,
+              backgroundColor: canType ? theme.panelMuted : theme.background,
+              opacity: canType ? 1 : 0.5,
+            },
+          ]}
+        />
+        {view.canSkip && canType ? (
+          <Pressable accessibilityRole="button" onPress={onSkip} style={styles.composerSkip}>
+            <Text style={[styles.composerSkipText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+              SKIP
+            </Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          accessibilityRole="button"
+          disabled={!canType || !draft.trim()}
+          onPress={onSubmit}
+          style={({ pressed }) => [
+            styles.sendButton,
+            { backgroundColor: theme.accent, opacity: !canType || !draft.trim() ? 0.4 : 1 },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={[styles.sendButtonText, { color: theme.accentInk, fontFamily: theme.fontMono }]}>
+            SEND
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function LogLine({ entry, theme }: { entry: TranscriptEntry; theme: GriotTheme }) {
+  const isAssistant = entry.speaker === "assistant";
+  return (
+    <View style={styles.logLine}>
+      <Text style={[styles.logSpeaker, { color: isAssistant ? theme.accent : theme.textFaint, fontFamily: theme.fontMono }]}>
+        {isAssistant ? "GRIOT" : "YOU"}
+      </Text>
+      <Text
+        numberOfLines={2}
+        style={[
+          styles.logText,
+          { color: entry.skipped ? theme.textFaint : theme.textMuted },
+          entry.skipped && { fontStyle: "italic" },
+        ]}
+      >
+        {entry.text}
+      </Text>
+    </View>
+  );
+}
+
+/** The original one-panel-per-question layout, kept as the FORM mode alternative to chat. */
+function FormIntentStage({
   view,
   theme,
   draft,
@@ -525,19 +919,77 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   pressed: { opacity: 0.7 },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
     paddingHorizontal: 18,
     paddingTop: 56,
-    paddingBottom: 14,
+    paddingBottom: 10,
     borderBottomWidth: 1,
+    gap: 10,
   },
+  headerTop: { flexDirection: "row", alignItems: "center" },
+  headerControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headerControlsLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  headerControlsRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  transmitSquare: { width: 8, height: 8, borderRadius: 2 },
+  modelTag: { fontSize: TypeScale.label, fontWeight: "700", letterSpacing: 0.6, flexShrink: 1 },
+  toggleChip: {
+    borderWidth: 1,
+    borderRadius: Structure.radiusElbow,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  toggleChipText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
+  modeSwitch: { flexDirection: "row", borderWidth: 1, borderRadius: Structure.radiusElbow, overflow: "hidden" },
+  modeOption: { paddingHorizontal: 10, paddingVertical: 5 },
+  modeOptionText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
   eyebrow: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
   title: { fontSize: 22, fontWeight: "800", marginTop: 2 },
   close: { minHeight: Structure.tap, justifyContent: "center", paddingHorizontal: 8 },
   closeText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
   body: { flex: 1 },
   content: { padding: 16, paddingBottom: 48, gap: 12 },
+  chatWrap: { flex: 1 },
+  chatContent: { padding: 16, paddingBottom: 24, gap: 16 },
+  centerStage: { alignItems: "center", paddingVertical: 28, gap: 12 },
+  centerBadge: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2 },
+  centerText: { fontSize: 24, fontWeight: "700", lineHeight: 31, textAlign: "center" },
+  centerCaption: { fontSize: TypeScale.body, lineHeight: 21, textAlign: "center", maxWidth: 340 },
+  dotsRow: { flexDirection: "row", gap: 8, paddingVertical: 8 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  log: { gap: 4 },
+  logHeading: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4, marginBottom: 4 },
+  logLine: { flexDirection: "row", gap: 8, paddingVertical: 3 },
+  logSpeaker: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6, width: 48 },
+  logText: { flex: 1, fontSize: TypeScale.meta, lineHeight: 18 },
+  composer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
+    padding: 12,
+    borderTopWidth: 1,
+  },
+  composerInput: {
+    flex: 1,
+    minHeight: Structure.tap,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: TypeScale.body,
+  },
+  composerSkip: { minHeight: Structure.tap, justifyContent: "center", paddingHorizontal: 6 },
+  composerSkipText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1 },
+  sendButton: {
+    minHeight: Structure.tap,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 16,
+    justifyContent: "center",
+  },
+  sendButtonText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
   panel: { borderWidth: 1, borderRadius: Structure.radiusControl, padding: 14, gap: 8 },
   label: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2 },
   question: { fontSize: 18, fontWeight: "700", lineHeight: 25 },

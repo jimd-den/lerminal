@@ -5,6 +5,8 @@ import {
   AgentGateway,
   AgentModel,
   ChatMessage,
+  GoalArchitectCitation,
+  GoalArchitectTurnResult,
   PromptDesignResponse,
 } from "../../usecases/ports/gateways/AgentGateway";
 import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
@@ -270,14 +272,15 @@ export class OpenRouterAgentGateway implements AgentGateway {
     apiKey: string;
     model: string;
     systemPrompt?: string;
-  }): Promise<unknown> {
+    webSearchEnabled?: boolean;
+  }): Promise<GoalArchitectTurnResult> {
     const cleanKey = input.apiKey?.trim();
     if (!cleanKey) {
       throw new Error("API key is required for goal planning");
     }
 
     console.log(
-      `[${new Date().toISOString()}] [OpenRouterAgentGateway.designGoalArchitectTurn] model="${input.model}" | briefingChars=${input.briefing.length}`
+      `[${new Date().toISOString()}] [OpenRouterAgentGateway.designGoalArchitectTurn] model="${input.model}" | briefingChars=${input.briefing.length} | webSearch=${Boolean(input.webSearchEnabled)}`
     );
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -296,6 +299,10 @@ export class OpenRouterAgentGateway implements AgentGateway {
         ],
         // The turn is consumed as JSON; asking for it directly beats parsing prose.
         response_format: { type: "json_object" },
+        // OpenRouter's own web-grounded search — a genuinely different search path from
+        // this app's SearchGateway, so it is only ever added when the caller explicitly
+        // opted in for this one turn, never on by default.
+        ...(input.webSearchEnabled ? { plugins: [{ id: "web" }] } : {}),
       }),
     });
 
@@ -309,7 +316,8 @@ export class OpenRouterAgentGateway implements AgentGateway {
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content?.trim();
+    const message = data.choices?.[0]?.message;
+    const content = message?.content?.trim();
     if (!content) {
       throw new Error("The model returned an empty response");
     }
@@ -321,13 +329,16 @@ export class OpenRouterAgentGateway implements AgentGateway {
       .replace(/```$/, "")
       .trim();
 
+    let raw: unknown;
     try {
-      return JSON.parse(cleanJson);
+      raw = JSON.parse(cleanJson);
     } catch {
       // Deliberately not salvaged into a partial turn — the caller shows an honest
       // failure state and keeps the user's answers.
       throw new Error("The model's reply was not valid JSON");
     }
+
+    return { raw, webCitations: extractWebCitations(message) };
   }
 
   async designAssistantProfile(input: {
@@ -547,4 +558,30 @@ export class OpenRouterAgentGateway implements AgentGateway {
       },
     ];
   }
+}
+
+/**
+ * Reads real web citations back out of an OpenRouter response message.
+ *
+ * OpenRouter's `web` plugin attaches `annotations: [{ type: "url_citation",
+ * url_citation: { url, title } }, ...]` to the assistant message when its search
+ * actually ran. Parsed defensively — this is provider response shape, not a contract
+ * this app controls — so an unexpected or missing shape degrades to no citations rather
+ * than throwing and losing the turn the model otherwise answered correctly.
+ */
+export function extractWebCitations(message: any): GoalArchitectCitation[] {
+  const annotations = message?.annotations;
+  if (!Array.isArray(annotations)) return [];
+
+  const citations: GoalArchitectCitation[] = [];
+  for (const item of annotations) {
+    const citation = item?.url_citation;
+    const url = citation?.url;
+    if (typeof url !== "string" || !url) continue;
+    citations.push({
+      url,
+      title: typeof citation?.title === "string" && citation.title ? citation.title : url,
+    });
+  }
+  return citations;
 }
