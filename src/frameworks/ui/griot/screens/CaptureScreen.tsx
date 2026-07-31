@@ -5,18 +5,42 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { GriotController } from "../../../../adapters/presenters/GriotController";
-import { Chip, SectionLabel, SystemHeader } from "../components";
-import { GriotTheme } from "../theme";
+import { Chip } from "../components";
+import { GriotTheme, Structure, TypeScale } from "../theme";
 import { CaptureIntent } from "./types";
 import { encodeCommandArg } from "./shared";
-import { styles } from "./screenStyles";
-import { systemLabel } from "../../../../entities/brand";
+import { styles as screenStyles } from "./screenStyles";
+import { BRAND_NAME } from "../../../../entities/brand";
 
+/**
+ * # Capture Screen — the familiar door
+ *
+ * ## Business Value & Purpose
+ * The first minute of the app, and deliberately the least ambitious screen in it. A
+ * newcomer opens a notes app because notes are safe; asking them to understand missions,
+ * pipelines, and provenance before they can write anything down is how a learning tool
+ * loses someone in the first thirty seconds.
+ *
+ * So this screen asks for one thing: put something here. Everything the app can do with
+ * that material is offered *after* it is safely saved.
+ *
+ * ## The promise in the small print
+ * The line under the input — that captured items stay yours and the app suggests rather
+ * than takes over — is load-bearing, not filler. It is the first statement of the
+ * contract the rest of the app keeps: nothing calls a model or reaches the network
+ * without being asked.
+ *
+ * ## Power is present but quiet
+ * Intent chips and the `/` command layer are still here, one tap below the primary path.
+ * A novice never has to notice them; someone who knows what they want types `/` and gets
+ * the whole pipeline. Neither audience pays for the other.
+ */
 export function CaptureScreen({
   controller,
   theme,
@@ -39,8 +63,11 @@ export function CaptureScreen({
   onInputRequired: () => void;
 }) {
   const [intent, setIntent] = useState<CaptureIntent>(initialIntent);
+  const [showOptions, setShowOptions] = useState(false);
 
   useEffect(() => setIntent(initialIntent), [initialIntent]);
+
+  const isCommand = value.startsWith("/");
 
   const submit = async () => {
     const text = value.trim();
@@ -72,19 +99,18 @@ export function CaptureScreen({
     }
   };
 
-  const prompt = value.startsWith("/") ? "COMMAND" : intent.toUpperCase();
   const placeholder =
-    intent === "note"
-      ? "Write what you noticed..."
+    intent === "link"
+      ? "https://…"
       : intent === "paste"
-        ? "Paste a passage or long document..."
-        : intent === "link"
-          ? "https://..."
-          : "What are you learning?";
+        ? "Paste a passage or a long document…"
+        : intent === "ask"
+          ? "What do you want to understand?"
+          : "I want to understand how real-time renderers keep a large world responsive on mobile…";
 
   return (
     <KeyboardAvoidingView
-      style={styles.screen}
+      style={screenStyles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
@@ -92,64 +118,37 @@ export function CaptureScreen({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <SystemHeader
-          eyebrow={systemLabel("CAPTURE")}
-          title="Input terminal"
-          theme={theme}
-        />
-        <Text style={[styles.intro, { color: theme.textMuted }]}>
-          Choose an intent, enter only your material, then route it. Start with{" "}
-          <Text style={{ color: theme.accent, fontFamily: theme.fontMono }}>
-            /
-          </Text>{" "}
-          for the command layer.
-        </Text>
-
-        <SectionLabel theme={theme}>INPUT INTENT</SectionLabel>
-        <View style={styles.intentGrid}>
-          {(["paste", "link", "note", "ask"] as CaptureIntent[]).map(
-            (option) => (
-              <Chip
-                key={option}
-                label={option.toUpperCase()}
-                active={intent === option && !value.startsWith("/")}
-                theme={theme}
-                onPress={() => setIntent(option)}
-              />
-            ),
-          )}
-        </View>
-
-        <View
-          style={[
-            styles.terminal,
-            {
-              backgroundColor: theme.panelStrong,
-              borderColor: value.startsWith("/") ? theme.warning : theme.accent,
-            },
-          ]}
-        >
-          <View style={styles.terminalHead}>
-            <Text
-              style={[
-                styles.terminalMode,
-                {
-                  color: value.startsWith("/") ? theme.warning : theme.accent,
-                  fontFamily: theme.fontMono,
-                },
-              ]}
-            >
-              {prompt} // READY
-            </Text>
-            <Text
-              style={[
-                styles.terminalCursor,
-                { color: theme.textFaint, fontFamily: theme.fontMono },
-              ]}
-            >
-              IN:01
+        <View style={[styles.topBar, { borderBottomColor: theme.line }]}>
+          <View style={{ flex: 1 }}>
+            <View style={styles.brandRow}>
+              <View style={[styles.brandDot, { backgroundColor: theme.accent }]} />
+              <Text
+                style={[styles.brandName, { color: theme.text, fontFamily: theme.fontSans }]}
+              >
+                {BRAND_NAME}
+              </Text>
+            </View>
+            <Text style={[styles.brandSub, { color: theme.textMuted }]}>
+              Start anywhere. We'll find the next useful move.
             </Text>
           </View>
+          <Text style={[styles.topTag, { color: theme.accent, fontFamily: theme.fontMono }]}>
+            {isCommand ? "COMMAND" : "CAPTURE"}
+          </Text>
+        </View>
+
+        <View style={styles.hero}>
+          <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
+            YOUR FIRST MINUTE
+          </Text>
+          <Text style={[styles.headline, { color: theme.text, fontFamily: theme.fontSans }]}>
+            Put one thing you want to understand or make here.
+          </Text>
+          <Text style={[styles.lede, { color: theme.textMuted }]}>
+            A rough thought, URL, question, copied passage, or project idea is enough.
+            No course setup required.
+          </Text>
+
           <TextInput
             autoFocus
             multiline
@@ -161,17 +160,32 @@ export function CaptureScreen({
             autoCapitalize={intent === "link" ? "none" : "sentences"}
             autoCorrect={intent !== "link"}
             style={[
-              styles.terminalInput,
-              { color: theme.text, fontFamily: theme.fontMono },
+              styles.input,
+              {
+                color: theme.text,
+                backgroundColor: theme.panelMuted,
+                // A typed command changes what the button will do, so the field says so
+                // before it runs rather than after.
+                borderColor: isCommand ? theme.warning : theme.line,
+                fontFamily: isCommand ? theme.fontMono : theme.fontSans,
+              },
             ]}
           />
+
+          <Text style={[styles.hint, { color: theme.textFaint }]}>
+            {isCommand
+              ? "This will run as a command pipeline."
+              : "Captured items remain yours. The app suggests next steps; it does not take over."}
+          </Text>
+
           <Pressable
+            accessibilityRole="button"
             disabled={!value.trim() || working}
-            onPress={submit}
+            onPress={() => void submit()}
             style={({ pressed }) => [
-              styles.routeButton,
+              styles.primary,
               {
-                backgroundColor: theme.accent,
+                backgroundColor: isCommand ? theme.warning : theme.accent,
                 opacity: !value.trim() || working ? 0.4 : 1,
               },
               pressed && styles.pressed,
@@ -180,46 +194,114 @@ export function CaptureScreen({
             {working ? (
               <ActivityIndicator color={theme.accentInk} />
             ) : (
-              <>
-                <Text
-                  style={[
-                    styles.routeGlyph,
-                    { color: theme.accentInk, fontFamily: theme.fontMono },
-                  ]}
-                >
-                  |&gt;
-                </Text>
-                <Text
-                  style={[
-                    styles.routeText,
-                    { color: theme.accentInk, fontFamily: theme.fontMono },
-                  ]}
-                >
-                  RUN / ROUTE
-                </Text>
-              </>
+              <Text
+                style={[
+                  styles.primaryText,
+                  { color: theme.accentInk, fontFamily: theme.fontSans },
+                ]}
+              >
+                {isCommand ? "Run this command" : "Save to my workspace"}
+              </Text>
             )}
           </Pressable>
-        </View>
 
-        <SectionLabel theme={theme}>POWER COMMANDS</SectionLabel>
-        <Text
-          style={[
-            styles.commandHelp,
-            { color: theme.textMuted, fontFamily: theme.fontMono },
-          ]}
-        >
-          /chunk /recall /cloze /group /move
-        </Text>
-        <Text style={[styles.commandHint, { color: theme.textFaint }]}>
-          Commands operate on the current selection and can still be piped with{" "}
-          <Text style={{ fontFamily: theme.fontMono, color: theme.accent }}>
-            |
-          </Text>
-          .
-        </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setShowOptions(open => !open)}
+            style={styles.link}
+          >
+            <Text style={[styles.linkText, { color: theme.textMuted }]}>
+              {showOptions ? "Hide options" : "Paste a source instead"}
+            </Text>
+          </Pressable>
+
+          {showOptions ? (
+            <View style={styles.options}>
+              <Text
+                style={[
+                  styles.optionsLabel,
+                  { color: theme.textFaint, fontFamily: theme.fontMono },
+                ]}
+              >
+                WHAT IS THIS?
+              </Text>
+              <View style={styles.intentGrid}>
+                {(["note", "paste", "link", "ask"] as CaptureIntent[]).map(option => (
+                  <Chip
+                    key={option}
+                    label={option.toUpperCase()}
+                    active={intent === option && !isCommand}
+                    theme={theme}
+                    onPress={() => setIntent(option)}
+                  />
+                ))}
+              </View>
+              <Text style={[styles.optionsHint, { color: theme.textFaint }]}>
+                Start with{" "}
+                <Text style={{ color: theme.accent, fontFamily: theme.fontMono }}>/</Text>{" "}
+                to run a command instead —{" "}
+                <Text style={{ fontFamily: theme.fontMono }}>
+                  chunk, recall, cloze, group, move
+                </Text>
+                . Commands operate on the current selection and compose with{" "}
+                <Text style={{ color: theme.accent, fontFamily: theme.fontMono }}>|</Text>.
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+const styles = StyleSheet.create({
+  pressed: { opacity: 0.75 },
+  content: { paddingHorizontal: 18, paddingBottom: 48 },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  brandDot: { width: 9, height: 9, borderRadius: 3 },
+  brandName: { fontSize: 17, fontWeight: "800", letterSpacing: 0.5 },
+  brandSub: { fontSize: TypeScale.meta, marginTop: 3, lineHeight: 18 },
+  topTag: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1.3 },
+  hero: { paddingTop: 30 },
+  eyebrow: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1.4 },
+  // Tight tracking on the headline is what gives the mockup its editorial weight.
+  headline: {
+    fontSize: 30,
+    fontWeight: "800",
+    letterSpacing: -1,
+    lineHeight: 35,
+    marginTop: 12,
+  },
+  lede: { fontSize: 15, lineHeight: 22, marginTop: 12 },
+  input: {
+    minHeight: 120,
+    borderWidth: 1,
+    borderRadius: Structure.radius,
+    padding: 14,
+    fontSize: TypeScale.body,
+    lineHeight: 23,
+    marginTop: 20,
+    textAlignVertical: "top",
+  },
+  hint: { fontSize: TypeScale.meta, lineHeight: 18, marginTop: 10, marginBottom: 18 },
+  primary: {
+    minHeight: Structure.tapLarge,
+    borderRadius: Structure.radiusControl + 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  primaryText: { fontSize: TypeScale.bodyStrong, fontWeight: "800" },
+  link: { minHeight: Structure.tap, alignItems: "center", justifyContent: "center" },
+  linkText: { fontSize: TypeScale.body },
+  options: { marginTop: 6, gap: 10 },
+  optionsLabel: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1.2 },
+  intentGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  optionsHint: { fontSize: TypeScale.meta, lineHeight: 19 },
+});

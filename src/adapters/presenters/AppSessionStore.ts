@@ -74,6 +74,12 @@ export interface UiState {
   preflightQuery: string;
   aiQuerySuggestions: string[];
   isSuggestingQueries: boolean;
+  /** Id of the card the "ask GRIOT what's next" suggestion is for, or null when idle. */
+  suggestedActionForCardId: string | null;
+  suggestedActionId: string | null;
+  suggestedActionReason: string | null;
+  isSuggestingNextAction: boolean;
+  suggestedActionError: string | null;
   captureIntent: "note" | "paste" | "link" | "ask" | null;
   pendingGroupNavigation: string | null;
   isInstallingFont: boolean;
@@ -149,6 +155,11 @@ export function createInitialUiState(): UiState {
     preflightQuery: "",
     aiQuerySuggestions: [],
     isSuggestingQueries: false,
+    suggestedActionForCardId: null,
+    suggestedActionId: null,
+    suggestedActionReason: null,
+    isSuggestingNextAction: false,
+    suggestedActionError: null,
     captureIntent: null,
     pendingGroupNavigation: null,
     isInstallingFont: false,

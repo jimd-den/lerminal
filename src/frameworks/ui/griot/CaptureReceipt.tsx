@@ -1,5 +1,5 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   AppState,
   GriotController,
@@ -33,6 +33,10 @@ export function CaptureReceipt({
   const receipt = presentCaptureReceipt(state);
   if (!receipt) return null;
 
+  // The suggestion is scoped to the run's representative card, the same one
+  // `nextActionsForCard` keyed the menu off — see CaptureReceiptPresenter.
+  const primaryCard = receipt.createdCards[0] ?? null;
+
   return (
     // Keyed on the run's output so a *new* result animates in, but unrelated re-renders
     // don't replay the arrival — that would drain the motion of its meaning.
@@ -62,26 +66,81 @@ export function CaptureReceipt({
 
       {receipt.nextActions.length > 0 ? (
         <>
-          <Text style={[styles.nextLabel, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
-            NEXT
-          </Text>
-          <View style={styles.actionRow}>
-            {receipt.nextActions.map((action) => (
+          <View style={styles.nextHeader}>
+            <Text style={[styles.nextLabel, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+              NEXT
+            </Text>
+            {/* The agentic layer: not a new capability, only a highlighted pick among
+                the same actions below — see SuggestNextActionInteractor. */}
+            {primaryCard &&
+            state.suggestedActionForCardId !== primaryCard.id &&
+            !state.isSuggestingNextAction ? (
               <Pressable
-                key={action.id}
                 accessibilityRole="button"
-                onPress={() => void controller.dispatchSuggestedAction(action.dispatch)}
-                style={({ pressed }) => [
-                  styles.nextAction,
-                  { borderColor: theme.accent, backgroundColor: theme.accentSoft },
-                  pressed && styles.pressed,
-                ]}
+                onPress={() => primaryCard && void controller.suggestNextActionFor(primaryCard)}
               >
-                <Text numberOfLines={1} style={[styles.nextActionText, { color: theme.accent }]}>
-                  {action.label}
+                <Text style={[styles.askLink, { color: theme.evidence, fontFamily: theme.fontMono }]}>
+                  ASK GRIOT
                 </Text>
               </Pressable>
-            ))}
+            ) : null}
+          </View>
+
+          {state.isSuggestingNextAction && state.suggestedActionForCardId === primaryCard?.id ? (
+            <View style={styles.thinkingRow}>
+              <ActivityIndicator size="small" color={theme.evidence} />
+              <Text style={[styles.thinkingText, { color: theme.textFaint }]}>Thinking…</Text>
+            </View>
+          ) : null}
+
+          {state.suggestedActionError && state.suggestedActionForCardId === primaryCard?.id ? (
+            <Text style={[styles.suggestError, { color: theme.textFaint }]}>
+              {state.suggestedActionError}
+            </Text>
+          ) : null}
+
+          {state.suggestedActionReason && state.suggestedActionForCardId === primaryCard?.id ? (
+            <View style={[styles.suggestionNote, { borderColor: theme.evidence }]}>
+              <Text style={[styles.suggestionLabel, { color: theme.evidence, fontFamily: theme.fontMono }]}>
+                GRIOT SUGGESTS
+              </Text>
+              <Text style={[styles.suggestionReason, { color: theme.textMuted }]}>
+                {state.suggestedActionReason}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.actionRow}>
+            {receipt.nextActions.map((action) => {
+              const highlighted =
+                state.suggestedActionForCardId === primaryCard?.id &&
+                state.suggestedActionId === action.id;
+              return (
+                <Pressable
+                  key={action.id}
+                  accessibilityRole="button"
+                  onPress={() => void controller.dispatchSuggestedAction(action.dispatch)}
+                  style={({ pressed }) => [
+                    styles.nextAction,
+                    {
+                      borderColor: highlighted ? theme.evidence : theme.accent,
+                      backgroundColor: highlighted ? `${theme.evidence}22` : theme.accentSoft,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.nextActionText,
+                      { color: highlighted ? theme.evidence : theme.accent },
+                    ]}
+                  >
+                    {action.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         </>
       ) : null}
@@ -139,7 +198,25 @@ const styles = StyleSheet.create({
   destination: { fontSize: TypeScale.meta, lineHeight: 19, marginTop: 5 },
   fallbackNotice: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 10 },
   fallbackText: { fontSize: TypeScale.meta, lineHeight: 18, fontWeight: "600" },
-  nextLabel: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2, marginTop: 14 },
+  nextHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+  },
+  nextLabel: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2 },
+  askLink: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1 },
+  thinkingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
+  thinkingText: { fontSize: TypeScale.meta },
+  suggestError: { fontSize: TypeScale.meta, marginTop: 8, lineHeight: 18 },
+  suggestionNote: {
+    borderLeftWidth: 2,
+    paddingLeft: 10,
+    marginTop: 8,
+    gap: 2,
+  },
+  suggestionLabel: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
+  suggestionReason: { fontSize: TypeScale.meta, lineHeight: 18 },
   actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
   nextAction: {
     minHeight: Structure.tap,

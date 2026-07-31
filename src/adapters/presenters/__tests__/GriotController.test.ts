@@ -39,6 +39,15 @@ class MockAgentGateway implements AgentGateway {
       { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", free: false }
     ];
   }
+
+  nextActionReply: string | Error = "id: explain\nreason: It's worth understanding before anything else.";
+  suggestNextActionCalls: string[] = [];
+
+  async suggestNextAction(input: { prompt: string; apiKey: string; model: string }) {
+    this.suggestNextActionCalls.push(input.prompt);
+    if (this.nextActionReply instanceof Error) throw this.nextActionReply;
+    return this.nextActionReply;
+  }
 }
 
 class MockExtractionGateway implements ExtractionGateway {
@@ -916,6 +925,74 @@ describe("GRIOT App Controller", () => {
       expect(controller.getState().goalArchitect.agentError).toContain("No API key");
       // The answer survives the refused model call.
       expect(controller.getState().goalArchitect.mapSections.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("ask GRIOT for a next-move suggestion", () => {
+    const makeController = () =>
+      new GriotController({
+        cardRepo,
+        workspaceRepo,
+        settingsRepo,
+        agentGateway,
+        commandDefinitionRepo,
+        cardTypeRepo,
+        promptPresetRepo,
+        assistantProfileRepo,
+        searchGateway,
+        extractionGateway,
+      });
+
+    it("highlights an action from the card's own menu, never a new one", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.setOpenRouterKey("key");
+      const card = await controller.createNote({ content: "raw notes" });
+
+      await controller.suggestNextActionFor(card);
+
+      const state = controller.getState();
+      expect(state.suggestedActionId).toBeTruthy();
+      expect(state.suggestedActionReason).toContain("worth understanding");
+      expect(state.suggestedActionError).toBeNull();
+    });
+
+    it("never runs without being explicitly asked", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.setOpenRouterKey("key");
+      await controller.createNote({ content: "raw notes" });
+
+      // Creating the card alone must not have triggered a model call.
+      expect((agentGateway as MockAgentGateway).suggestNextActionCalls).toHaveLength(0);
+    });
+
+    it("reports a rejected suggestion honestly rather than guessing", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.setOpenRouterKey("key");
+      (agentGateway as MockAgentGateway).nextActionReply = "id: not-a-real-action\nreason: r";
+      const card = await controller.createNote({ content: "raw notes" });
+
+      await controller.suggestNextActionFor(card);
+
+      const state = controller.getState();
+      expect(state.suggestedActionId).toBeNull();
+      expect(state.suggestedActionError).toContain("wasn't one of the offered actions");
+    });
+
+    it("clears when the receipt it belonged to is dismissed", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.setOpenRouterKey("key");
+      const card = await controller.createNote({ content: "raw notes" });
+      await controller.suggestNextActionFor(card);
+      expect(controller.getState().suggestedActionId).toBeTruthy();
+
+      controller.dismissOperationResult();
+
+      expect(controller.getState().suggestedActionId).toBeNull();
+      expect(controller.getState().suggestedActionForCardId).toBeNull();
     });
   });
 });

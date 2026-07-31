@@ -107,6 +107,7 @@ import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabu
 import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction";
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
 import { AppearanceSettings, FontChoice } from "../../entities/appearance";
+import { SuggestNextActionInteractor } from "../../usecases/capture/SuggestNextActionInteractor";
 import {
   GoalArchitectWorkflow,
   GoalArchitectHost,
@@ -222,6 +223,12 @@ export interface AppState {
   fontResults: RankedFontFamily[];
   /** True while the font catalog or a search is loading. */
   isSearchingFonts: boolean;
+  /** Id of the card the "ask GRIOT what's next" suggestion is for, or null when idle. */
+  suggestedActionForCardId: string | null;
+  suggestedActionId: string | null;
+  suggestedActionReason: string | null;
+  isSuggestingNextAction: boolean;
+  suggestedActionError: string | null;
   /**
    * Set when the catalog itself couldn't be fetched. The browser is then unavailable and
    * the UI should say so and fall back to install-by-name — an empty list would read as
@@ -339,6 +346,7 @@ export class GriotController {
   private deleteCardTypeInteractor: DeleteCardTypeInteractor;
   private deleteCardInteractor: DeleteCardInteractor;
   private createNoteUseCase: CreateNote;
+  private suggestNextActionInteractor: SuggestNextActionInteractor;
   private extractUrlInteractor: ExtractUrlInteractor;
   private groupCardsInteractor: GroupCardsInteractor;
   private fsrsScheduler: FsrsScheduler;
@@ -403,6 +411,7 @@ export class GriotController {
     // Which commands exist, and how a runner is built from them, belongs to the
     // registry; the controller only asks it to rebuild when definitions change.
     this.createNoteUseCase = new CreateNote(deps.cardRepo);
+    this.suggestNextActionInteractor = new SuggestNextActionInteractor(deps.agentGateway);
     this.groupCardsInteractor = new GroupCardsInteractor(deps.cardRepo);
     this.commandRegistry = new CommandRegistry({
       cardRepo: deps.cardRepo,
@@ -1194,6 +1203,56 @@ export class GriotController {
   }
 
   /**
+   * Asks the model to highlight one of a card's existing next-move suggestions.
+   *
+   * Explicitly invoked — never automatic — because a model call the user didn't ask for
+   * is exactly the invisible agent behaviour this app is built to avoid. The chosen
+   * action is always one already offered by {@link nextActionsForCard}; the interactor
+   * refuses anything else, so this can only ever *highlight*, never add a capability.
+   */
+  async suggestNextActionFor(card: Card): Promise<void> {
+    this.ui.suggestedActionForCardId = card.id;
+    this.ui.suggestedActionId = null;
+    this.ui.suggestedActionReason = null;
+    this.ui.suggestedActionError = null;
+    this.ui.isSuggestingNextAction = true;
+    this.emit();
+
+    try {
+      const { action, reason } = await this.suggestNextActionInteractor.execute(
+        card,
+        this.domain.openRouterKey,
+        this.domain.selectedModel,
+        { hasMission: Boolean(this.activeWorkspace()?.mission) },
+      );
+      // The card may have changed (or the user moved on) while the request was in
+      // flight; a stale suggestion landing on a different card would be confusing.
+      if (this.ui.suggestedActionForCardId !== card.id) return;
+      this.ui.suggestedActionId = action.id;
+      this.ui.suggestedActionReason = reason;
+    } catch (err: any) {
+      if (this.ui.suggestedActionForCardId !== card.id) return;
+      this.ui.suggestedActionError =
+        err instanceof UseCaseError ? err.userMessage : "Couldn't get a suggestion";
+    } finally {
+      if (this.ui.suggestedActionForCardId === card.id) {
+        this.ui.isSuggestingNextAction = false;
+        this.emit();
+      }
+    }
+  }
+
+  /** Clears any pending or shown suggestion, e.g. when the receipt it belonged to closes. */
+  clearSuggestedAction(): void {
+    this.ui.suggestedActionForCardId = null;
+    this.ui.suggestedActionId = null;
+    this.ui.suggestedActionReason = null;
+    this.ui.suggestedActionError = null;
+    this.ui.isSuggestingNextAction = false;
+    this.emit();
+  }
+
+  /**
    * Downloads a Google font and registers it for use. Only recorded in settings once it
    * has actually loaded — see {@link InstallFontInteractor} — so the font list can never
    * advertise a typeface that won't render.
@@ -1320,6 +1379,8 @@ export class GriotController {
 
   dismissOperationResult(): void {
     this.operations.dismissResult();
+    // The suggestion belongs to the receipt it appeared on; it shouldn't outlive it.
+    this.clearSuggestedAction();
   }
 
   /** Reverses the most recent run, or explains why it can't. */

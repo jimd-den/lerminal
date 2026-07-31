@@ -212,6 +212,59 @@ export class OpenRouterAgentGateway implements AgentGateway {
    * fallback for a planning turn — an invented follow-up question is indistinguishable
    * from a real one, and the workflow's deterministic path is the correct answer instead.
    */
+  /**
+   * Asks the model to choose one next action for a card from the caller-supplied menu.
+   *
+   * No response-format constraint and no output-contract system prompt: the prompt
+   * itself, built by `SuggestNextActionInteractor`, already specifies the exact
+   * `id:`/`reason:` shape, and the interactor — not this gateway — validates the id
+   * against the menu it sent. This method's only job is to get the model's raw text back.
+   */
+  async suggestNextAction(input: {
+    prompt: string;
+    apiKey: string;
+    model: string;
+  }): Promise<string> {
+    const cleanKey = input.apiKey?.trim();
+    if (!cleanKey) {
+      throw new Error("API key is required to suggest a next action");
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] [OpenRouterAgentGateway.suggestNextAction] model="${input.model}"`
+    );
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cleanKey}`,
+        "HTTP-Referer": "https://github.com/dbslim/lerminal",
+        "X-Title": "GRIOT",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [{ role: "user", content: input.prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
+      try {
+        const errData = await response.json();
+        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error("The model returned an empty response");
+    }
+    return content;
+  }
+
   async designGoalArchitectTurn(input: {
     briefing: string;
     apiKey: string;

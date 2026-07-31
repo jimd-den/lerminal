@@ -135,6 +135,25 @@ export interface AgentGateway {
   }): Promise<unknown>;
 
   /**
+   * Asks the model to pick one next action for a freshly captured card, from a fixed
+   * menu the caller supplies.
+   *
+   * A dedicated method rather than a call to {@link ask}, whose contract always demands
+   * card-shaped JSON via the output-contract system — asking it to instead return a
+   * chosen id and a reason would be fighting its own prompt. Returns the raw text; the
+   * use-case layer parses and validates against the same menu it sent, so a hallucinated
+   * id, invented action, or missing key can never surface as a suggestion.
+   *
+   * Optional so existing and mocked gateways remain valid.
+   */
+  suggestNextAction?(input: {
+    /** Rendered with the card and the candidate ids already inline — see the use case. */
+    prompt: string;
+    apiKey: string;
+    model: string;
+  }): Promise<string>;
+
+  /**
    * Prompts the AI Prompt Architect to design or refine an AssistantProfile system instruction
    * based on the user's stated learning goal.
    */
