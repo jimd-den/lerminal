@@ -53,6 +53,13 @@ export interface WorkspaceMission {
   currentPhase: WorkspacePhase;
   createdAt: number;
   updatedAt: number;
+  /**
+   * The `group` card the mission's cards live under, when it was created through the
+   * Goal Architect (see `CreateMissionPlanInteractor`). Optional and absent on a
+   * mission set by hand through the editor, or one written before this field existed —
+   * callers must treat `undefined` as "no group to show", never guess one.
+   */
+  missionGroupId?: string;
 }
 
 export interface CreateWorkspaceMissionParams {
@@ -63,6 +70,7 @@ export interface CreateWorkspaceMissionParams {
   currentPhase?: WorkspacePhase;
   createdAt?: number;
   updatedAt?: number;
+  missionGroupId?: string;
 }
 
 /** Factory for a valid {@link WorkspaceMission}. */
@@ -76,6 +84,7 @@ export function createWorkspaceMission(params: CreateWorkspaceMissionParams): Wo
     currentPhase: params.currentPhase ?? "define",
     createdAt: params.createdAt ?? now,
     updatedAt: params.updatedAt ?? now,
+    missionGroupId: params.missionGroupId,
   };
 }
 

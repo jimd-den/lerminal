@@ -64,6 +64,7 @@ export function CaptureScreen({
 }) {
   const [intent, setIntent] = useState<CaptureIntent>(initialIntent);
   const [showOptions, setShowOptions] = useState(false);
+  const [title, setTitle] = useState("");
 
   useEffect(() => setIntent(initialIntent), [initialIntent]);
 
@@ -78,25 +79,36 @@ export function CaptureScreen({
       if (text.startsWith("/")) {
         succeeded = await controller.runPipeline(text.slice(1));
       } else if (intent === "note") {
-        await controller.createNote({ content: text });
+        await controller.createNote({ content: text, title: title.trim() || undefined });
       } else if (intent === "ask") {
         succeeded = await controller.runPipeline(
           `ask "${encodeCommandArg(text)}"`,
         );
+        // A model writes this card's own title; the user's request only overrides it
+        // when they actually typed one — never blanks a real title to apply nothing.
+        if (succeeded && title.trim()) await renamePrimaryResult(title);
       } else {
         succeeded = await controller.runPipeline(
           `source "${encodeCommandArg(text)}"`,
         );
+        if (succeeded && title.trim()) await renamePrimaryResult(title);
       }
       if (!succeeded) {
         if (controller.getState().isInputSheetOpen) onInputRequired();
         return;
       }
       onChangeText("");
+      setTitle("");
       onComplete();
     } finally {
       onWorkingChange(false);
     }
+  };
+
+  /** Renames the run's first created card — the one the receipt treats as representative. */
+  const renamePrimaryResult = async (requestedTitle: string) => {
+    const createdId = controller.getState().operationResult?.createdCardIds[0];
+    if (createdId) await controller.setCardTitle(createdId, requestedTitle);
   };
 
   const placeholder =
@@ -149,6 +161,19 @@ export function CaptureScreen({
             No course setup required.
           </Text>
 
+          {!isCommand ? (
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Give it a title (optional)"
+              placeholderTextColor={theme.textFaint}
+              style={[
+                styles.titleInput,
+                { color: theme.text, backgroundColor: theme.panelMuted, borderColor: theme.line },
+              ]}
+            />
+          ) : null}
+
           <TextInput
             autoFocus
             multiline
@@ -165,9 +190,11 @@ export function CaptureScreen({
                 color: theme.text,
                 backgroundColor: theme.panelMuted,
                 // A typed command changes what the button will do, so the field says so
-                // before it runs rather than after.
+                // before it runs rather than after. It also hides the title field above,
+                // so this needs the full top margin that field would otherwise carry.
                 borderColor: isCommand ? theme.warning : theme.line,
                 fontFamily: isCommand ? theme.fontMono : theme.fontSans,
+                marginTop: isCommand ? 20 : 10,
               },
             ]}
           />
@@ -280,6 +307,15 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   lede: { fontSize: 15, lineHeight: 22, marginTop: 12 },
+  titleInput: {
+    minHeight: Structure.tap,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 14,
+    fontSize: TypeScale.bodyStrong,
+    fontWeight: "700",
+    marginTop: 20,
+  },
   input: {
     minHeight: 120,
     borderWidth: 1,
@@ -287,7 +323,7 @@ const styles = StyleSheet.create({
     padding: 14,
     fontSize: TypeScale.body,
     lineHeight: 23,
-    marginTop: 20,
+    marginTop: 10,
     textAlignVertical: "top",
   },
   hint: { fontSize: TypeScale.meta, lineHeight: 18, marginTop: 10, marginBottom: 18 },

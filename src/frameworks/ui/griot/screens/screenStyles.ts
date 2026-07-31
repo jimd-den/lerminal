@@ -229,4 +229,6 @@ export const styles = StyleSheet.create({
     marginTop: 7,
   },
   selectionHint: { fontSize: 12, lineHeight: 17, marginTop: 8 },
+  viewAllRow: { minHeight: 44, justifyContent: "center", alignItems: "center" },
+  viewAllLink: { fontSize: 12, fontWeight: "800", letterSpacing: 1 },
 });

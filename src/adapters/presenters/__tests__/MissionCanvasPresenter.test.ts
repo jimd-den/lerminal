@@ -67,6 +67,24 @@ describe("presentMissionCanvas", () => {
     expect(view.nextAction?.reason.length).toBeGreaterThan(0);
   });
 
+  it("carries the mission's own group id through when the caller supplies one", () => {
+    const view = presentMissionCanvas(report(), "ws", "group-42");
+
+    expect(view.groupId).toBe("group-42");
+  });
+
+  it("has no group id when the caller doesn't supply one — never guesses", () => {
+    const view = presentMissionCanvas(report(), "ws");
+
+    expect(view.groupId).toBeNull();
+  });
+
+  it("has no group id when there is no mission at all", () => {
+    const view = presentMissionCanvas(report({ hasMission: false }), "ws", "group-42");
+
+    expect(view.groupId).toBeNull();
+  });
+
   it("has no next action when the report recommends none", () => {
     const view = presentMissionCanvas(report({ recommendedActions: [] }), "ws");
 

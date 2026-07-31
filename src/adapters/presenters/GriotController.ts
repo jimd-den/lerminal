@@ -1697,6 +1697,26 @@ export class GriotController {
     this.emit();
   }
 
+  /**
+   * Renames a card in place.
+   *
+   * The one field capture explicitly asks the user for rather than deriving from
+   * content — a title generated from the first line of a note or the raw text of a
+   * question is a guess, and this is how the guess gets corrected. Blank input is a
+   * no-op rather than clearing the title: an empty title is never an improvement.
+   */
+  async setCardTitle(cardId: string, title: string): Promise<void> {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const card = this.domain.cards.find((c) => c.id === cardId);
+    if (!card || card.title === trimmed) return;
+    const updated: Card = { ...card, title: trimmed };
+    await this.cardRepo.saveCard(updated);
+    this.domain.cards = this.domain.cards.map((c) => (c.id === cardId ? updated : c));
+    this.review.applyCardUpdate(updated);
+    this.emit();
+  }
+
   /** Re-assigns a card's modular type (e.g. to make it render as interactive HTML). */
   async setCardType(cardId: string, typeId: string): Promise<void> {
     const card = this.domain.cards.find((c) => c.id === cardId);

@@ -995,4 +995,51 @@ describe("GRIOT App Controller", () => {
       expect(controller.getState().suggestedActionForCardId).toBeNull();
     });
   });
+
+  describe("setCardTitle", () => {
+    const makeController = () =>
+      new GriotController({
+        cardRepo,
+        workspaceRepo,
+        settingsRepo,
+        agentGateway,
+        commandDefinitionRepo,
+        cardTypeRepo,
+        promptPresetRepo,
+        assistantProfileRepo,
+        searchGateway,
+        extractionGateway,
+      });
+
+    it("renames a card, since capture derives a title rather than asking for one", async () => {
+      const controller = makeController();
+      await controller.init();
+      const note = await controller.createNote({ content: "raw first line as title" });
+
+      await controller.setCardTitle(note.id, "A title the user actually chose");
+
+      const updated = controller.getState().cards.find((c) => c.id === note.id);
+      expect(updated?.title).toBe("A title the user actually chose");
+    });
+
+    it("ignores a blank title rather than clearing the existing one", async () => {
+      const controller = makeController();
+      await controller.init();
+      const note = await controller.createNote({ content: "keep me", title: "Original" });
+
+      await controller.setCardTitle(note.id, "   ");
+
+      expect(controller.getState().cards.find((c) => c.id === note.id)?.title).toBe(
+        "Original",
+      );
+    });
+
+    it("does nothing for a card that no longer exists", async () => {
+      const controller = makeController();
+      await controller.init();
+
+      // Must not throw when the run this title belonged to was undone in the meantime.
+      await controller.setCardTitle("missing-id", "New title");
+    });
+  });
 });

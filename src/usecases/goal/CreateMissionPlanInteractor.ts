@@ -182,12 +182,16 @@ export class CreateMissionPlanInteractor {
           goalDescription: proposal.goalStatement,
           successCriteria: proposal.successCriteria,
           targetDeliverable: proposal.targetDeliverable,
+          // A re-accepted mission points at its newest group — the previous one, if
+          // any, is left as an ordinary group rather than deleted.
+          missionGroupId: group.id,
         })
       : createWorkspaceMission({
           goalTitle: proposal.title,
           goalDescription: proposal.goalStatement,
           successCriteria: proposal.successCriteria,
           targetDeliverable: proposal.targetDeliverable,
+          missionGroupId: group.id,
         });
 
     const updatedWorkspace: Workspace = { ...workspace, mission };

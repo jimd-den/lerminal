@@ -51,6 +51,13 @@ export interface MissionCanvasViewModel {
   /** At most four. Fewer when a count would be noise rather than signal. */
   counters: MissionCounter[];
   nextAction: MissionNextAction | null;
+  /**
+   * The card group the mission's own cards live under, when it was created through the
+   * Goal Architect. Null when the mission predates that link or was set by hand — the
+   * screen falls back to showing nothing rather than guessing which group is "the
+   * mission's".
+   */
+  groupId: string | null;
 }
 
 /** How each semantic role presents itself on the canvas. */
@@ -80,7 +87,9 @@ export function presentRole(role: SemanticRole | undefined): RolePresentation | 
 
 export function presentMissionCanvas(
   report: GapReport | null,
-  workspaceName: string
+  workspaceName: string,
+  /** From `Workspace.mission.missionGroupId` — the caller resolves it, this only carries it. */
+  missionGroupId: string | null = null
 ): MissionCanvasViewModel {
   const contextLine = workspaceName ? `Workspace / ${workspaceName}` : "Workspace";
 
@@ -95,6 +104,7 @@ export function presentMissionCanvas(
       // exists and is unstarted, rather than that there is nothing to measure yet.
       counters: [],
       nextAction: null,
+      groupId: null,
     };
   }
 
@@ -125,6 +135,7 @@ export function presentMissionCanvas(
           presetId: recommended.presetId,
         }
       : null,
+    groupId: missionGroupId,
   };
 }
 

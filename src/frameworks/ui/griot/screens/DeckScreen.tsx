@@ -55,7 +55,16 @@ export function DeckScreen({
   };
 
   const activeWorkspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
-  const mission = presentMissionCanvas(state.gapReport, activeWorkspace?.name ?? "");
+  const mission = presentMissionCanvas(
+    state.gapReport,
+    activeWorkspace?.name ?? "",
+    activeWorkspace?.mission?.missionGroupId ?? null,
+  );
+  // The mission's own cards — "the previous card group" the HUD shows once a mission
+  // exists, so the deck reflects the actual mission material rather than counters alone.
+  const missionCards = mission.groupId
+    ? state.cards.filter((card) => card.parentId === mission.groupId)
+    : [];
 
   return (
     <ScrollView
@@ -95,6 +104,42 @@ export function DeckScreen({
           )
         }
       />
+
+      {mission.hasMission && missionCards.length > 0 ? (
+        <>
+          <SectionLabel
+            theme={theme}
+            code={`${missionCards.length.toString().padStart(2, "0")} CARDS`}
+          >
+            MISSION MATERIAL
+          </SectionLabel>
+          {missionCards.slice(0, 4).map((card) => (
+            <ContextCardRow
+              key={card.id}
+              card={card}
+              theme={theme}
+              selected={state.selection.has(card.id)}
+              onPress={() =>
+                card.type === "group"
+                  ? onOpenDocument(card.id)
+                  : controller.toggleSelect(card.id)
+              }
+              onLongPress={() => controller.toggleSelect(card.id)}
+            />
+          ))}
+          {missionCards.length > 4 && mission.groupId ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onOpenDocument(mission.groupId!)}
+              style={styles.viewAllRow}
+            >
+              <Text style={[styles.viewAllLink, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                VIEW ALL {missionCards.length} →
+              </Text>
+            </Pressable>
+          ) : null}
+        </>
+      ) : null}
 
       <View
         style={[

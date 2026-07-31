@@ -36,26 +36,37 @@ export function MissionCanvasHeader({
   onRunNextAction: () => void;
 }) {
   if (!view.hasMission) {
+    // No mission is the HUD's most important state, not its least: with nothing else to
+    // show, the one thing worth doing fills the space instead of sitting in a small
+    // dashed card easy to scroll past.
     return (
       <Pressable
         accessibilityRole="button"
         onPress={onDefineMission}
         style={({ pressed }) => [
-          styles.panel,
+          styles.heroPanel,
           {
-            backgroundColor: theme.panelMuted,
-            borderColor: theme.line,
-            borderStyle: "dashed",
+            backgroundColor: theme.panelStrong,
+            borderColor: theme.accent,
           },
           pressed && styles.pressed,
         ]}
       >
         <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
-          MISSION
+          NO MISSION YET
         </Text>
-        <Text style={[styles.title, { color: theme.text, fontFamily: theme.fontSans }]}>
+        <Text style={[styles.heroTitle, { color: theme.text, fontFamily: theme.fontSans }]}>
           {view.title}
         </Text>
+        <Text style={[styles.heroBody, { color: theme.textMuted }]}>
+          Describe what you're trying to make, understand, or solve — the Goal Architect
+          will ask a few questions and turn it into a mission you can actually work from.
+        </Text>
+        <View style={[styles.heroCta, { backgroundColor: theme.accent }]}>
+          <Text style={[styles.heroCtaText, { color: theme.accentInk, fontFamily: theme.fontMono }]}>
+            START THE GOAL ARCHITECT
+          </Text>
+        </View>
       </Pressable>
     );
   }
@@ -187,6 +198,25 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   statusText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.1 },
+  heroPanel: {
+    borderWidth: 2,
+    borderRadius: Structure.radius,
+    padding: 22,
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  heroTitle: { fontSize: 26, fontWeight: "800", lineHeight: 32, marginTop: 4 },
+  heroBody: { fontSize: TypeScale.body, lineHeight: 22 },
+  heroCta: {
+    marginTop: 8,
+    minHeight: Structure.tapLarge,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 20,
+    justifyContent: "center",
+    alignSelf: "stretch",
+    alignItems: "center",
+  },
+  heroCtaText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2 },
   panel: {
     borderWidth: 1,
     borderRadius: Structure.radiusControl,
