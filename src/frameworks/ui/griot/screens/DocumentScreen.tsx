@@ -4,10 +4,10 @@ import {
   DocumentModel,
   MaterialFilter,
   filterMaterials,
-  materialLabel,
 } from "../../../../adapters/presenters/GriotDeckPresenter";
 import { Card } from "../../../../entities/card";
 import { Chip, SectionLabel, Slab, SystemHeader } from "../components";
+import { ContextCardRow } from "../ContextCards";
 import { CaptureIntent, SharedProps } from "./types";
 import { CommandSlab, ContextPanel, EmptyReadout, encodeCommandArg } from "./shared";
 import { styles } from "./screenStyles";
@@ -248,12 +248,10 @@ export function DocumentScreen({
           text="No document items match this filter."
         />
       ) : (
-        filtered.map((card, index) => (
-          <Slab
+        filtered.map((card) => (
+          <ContextCardRow
             key={card.id}
-            title={card.title}
-            label={`${String(index + 1).padStart(2, "0")} // ${materialLabel(card)}`}
-            meta={card.body}
+            card={card}
             theme={theme}
             selected={state.selection.has(card.id)}
             onPress={() => openMaterial(card)}
