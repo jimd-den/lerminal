@@ -196,18 +196,25 @@ export function resolveGriotTheme(
         evidence: dark ? "#8AB4FF" : "#1F5FBF",
       };
 
+  // High contrast pushes body text to the mode's absolute extreme and strengthens
+  // borders/selection — it never touches accent, danger, warning, or evidence, so a
+  // caution card stays exactly as distinguishable as it was; only legibility changes.
+  const text = resolved.highContrast ? (dark ? "#FFFFFF" : "#000000") : base.text;
+  const line = resolved.highContrast ? (dark ? "#5A6B72" : "#8A9490") : base.line;
+  const accentSoftAlpha = resolved.highContrast ? "3A" : "22";
+
   return {
     mode: dark ? "dark" : "light",
     background: base.background,
     panel: base.panel,
     panelStrong: base.panelStrong,
     panelMuted: base.panelMuted,
-    text: base.text,
+    text,
     textMuted: base.textMuted,
     textFaint: base.textFaint,
-    line: base.line,
+    line,
     accent,
-    accentSoft: `${accent}22`,
+    accentSoft: `${accent}${accentSoftAlpha}`,
     accentInk: base.accentInk,
     danger: base.danger,
     warning: base.warning,

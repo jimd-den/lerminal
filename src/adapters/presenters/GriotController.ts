@@ -106,7 +106,13 @@ import { SuggestSearchQueriesInteractor } from "../../usecases/agent/SuggestSear
 import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabusInteractor";
 import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction";
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
-import { AppearanceSettings, FontChoice } from "../../entities/appearance";
+import {
+  AppearanceSettings,
+  Density,
+  FontChoice,
+  MotionPreference,
+  SurfaceTint,
+} from "../../entities/appearance";
 import { SuggestNextActionInteractor } from "../../usecases/capture/SuggestNextActionInteractor";
 import {
   GoalArchitectWorkflow,
@@ -1142,6 +1148,31 @@ export class GriotController {
   /** Overrides the palette's accent. An invalid hex is ignored by `resolveAppearance`, not guessed at. */
   setAccentOverride(hex: string | undefined): void {
     this.domain.appearance = { ...this.domain.appearance, accentOverride: hex };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  /** Recolours the active palette's neutrals only — never accent/danger/warning/evidence. */
+  setSurfaceTint(surfaceTint: SurfaceTint): void {
+    this.domain.appearance = { ...this.domain.appearance, surfaceTint };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  setDensity(density: Density): void {
+    this.domain.appearance = { ...this.domain.appearance, density };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  setMotionPreference(motion: MotionPreference): void {
+    this.domain.appearance = { ...this.domain.appearance, motion };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  setHighContrast(highContrast: boolean): void {
+    this.domain.appearance = { ...this.domain.appearance, highContrast };
     this.saveCurrentSettings();
     this.emit();
   }

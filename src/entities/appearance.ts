@@ -225,6 +225,74 @@ export const PALETTES: Palette[] = [
 
 export const DEFAULT_PALETTE_ID = "proof";
 
+/**
+ * A surface-only recolour, layered on top of whichever palette is active.
+ *
+ * Deliberately narrow: a tint may only touch `background`/`panel`/`panelStrong`/
+ * `panelMuted`/`line` — the neutrals. `text`, `accent`, `accentInk`, `danger`, `warning`,
+ * and `evidence` always come from the palette untouched, which is what keeps a tint from
+ * being able to do what a custom accent already isn't allowed to: repaint what a colour
+ * *means*. "Surface tint" is a wall colour, not a rewiring of the building's signage.
+ */
+export type SurfaceTint = "neutral" | "graphite" | "deep-green" | "blue-black" | "warm-paper";
+
+/** The neutrals a tint overrides. Never `accent`/`danger`/`warning`/`evidence`/`text*`. */
+export interface SurfaceOverride {
+  background: string;
+  panel: string;
+  panelStrong: string;
+  panelMuted: string;
+  line: string;
+}
+
+/**
+ * `neutral` has no entry — it means "use the palette's own surfaces", not "override to
+ * grey". Each other preset is dark-mode-first; applying one to a light palette still
+ * shifts it dark, which is an accepted, visible trade rather than a silent contradiction —
+ * a light palette with a "deep-green" tint is not a combination this module hides.
+ */
+export const SURFACE_TINTS: Partial<Record<SurfaceTint, SurfaceOverride>> = {
+  graphite: {
+    background: "#0C0D0E",
+    panel: "#161718",
+    panelStrong: "#1E2021",
+    panelMuted: "#121314",
+    line: "#2B2D2F",
+  },
+  "deep-green": {
+    background: "#050E0A",
+    panel: "#0B1912",
+    panelStrong: "#10231A",
+    panelMuted: "#08140E",
+    line: "#1D3A2A",
+  },
+  "blue-black": {
+    background: "#050810",
+    panel: "#0B1220",
+    panelStrong: "#111B2E",
+    panelMuted: "#080E1A",
+    line: "#1E2C48",
+  },
+  "warm-paper": {
+    background: "#F3EEE4",
+    panel: "#FBF8F0",
+    panelStrong: "#FFFFFF",
+    panelMuted: "#EAE3D3",
+    line: "#D8CFB8",
+  },
+};
+
+/** How much room controls and text get. Unset means `"standard"` — today's sizing. */
+export type Density = "compact" | "standard" | "spacious";
+
+/**
+ * Whether animation runs. `"system"` (default) follows the OS reduce-motion setting, the
+ * behaviour every screen already has. `"reduced"`/`"full"` let the user override the OS
+ * either direction — someone who wants the motion off without changing a system-wide
+ * accessibility setting, or who wants it on despite one, gets to say so directly.
+ */
+export type MotionPreference = "system" | "reduced" | "full";
+
 export function findPalette(id: string | undefined): Palette {
   return PALETTES.find(palette => palette.id === id) ?? PALETTES.find(p => p.id === DEFAULT_PALETTE_ID)!;
 }
@@ -242,6 +310,14 @@ export interface AppearanceSettings {
   sansFont?: FontChoice;
   /** Fonts the user has installed, kept so they can be re-loaded on next launch. */
   installedFonts?: FontChoice[];
+  /** Undefined means `"neutral"` — the palette's own surfaces, unaltered. */
+  surfaceTint?: SurfaceTint;
+  /** Undefined means `"standard"` — today's sizing, unchanged. */
+  density?: Density;
+  /** Undefined means `"system"` — follow the OS setting, today's behaviour. */
+  motion?: MotionPreference;
+  /** Undefined means `false` — today's contrast, unchanged. */
+  highContrast?: boolean;
 }
 
 export interface ResolvedAppearance {
@@ -250,13 +326,26 @@ export interface ResolvedAppearance {
   monoFont: FontChoice;
   sansFont: FontChoice;
   installedFonts: FontChoice[];
+  surfaceTint: SurfaceTint;
+  density: Density;
+  motion: MotionPreference;
+  highContrast: boolean;
 }
 
 /** A hex colour the accent override will accept — anything else is ignored, not guessed. */
 export const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
+/** Applies a surface tint to a palette, leaving every semantic colour untouched. */
+export function applySurfaceTint(palette: Palette, tint: SurfaceTint): Palette {
+  const override = SURFACE_TINTS[tint];
+  if (!override) return palette;
+  return { ...palette, ...override };
+}
+
 export function resolveAppearance(settings: AppearanceSettings | undefined): ResolvedAppearance {
-  const palette = findPalette(settings?.paletteId);
+  const rawPalette = findPalette(settings?.paletteId);
+  const surfaceTint = settings?.surfaceTint ?? "neutral";
+  const palette = applySurfaceTint(rawPalette, surfaceTint);
   const override = settings?.accentOverride;
   return {
     palette,
@@ -264,5 +353,9 @@ export function resolveAppearance(settings: AppearanceSettings | undefined): Res
     monoFont: settings?.monoFont ?? SYSTEM_MONO,
     sansFont: settings?.sansFont ?? SYSTEM_SANS,
     installedFonts: settings?.installedFonts ?? [],
+    surfaceTint,
+    density: settings?.density ?? "standard",
+    motion: settings?.motion ?? "system",
+    highContrast: settings?.highContrast ?? false,
   };
 }

@@ -95,6 +95,133 @@ export function AppearanceSettingsSection({
         );
       })}
 
+      <SectionHeading theme={theme}>SURFACE TINT</SectionHeading>
+      <Text style={[styles.help, { color: theme.textMuted }]}>
+        Recolours the palette's neutrals only — accent, warning, error, and web-evidence
+        colours are never affected.
+      </Text>
+      <View style={styles.tintRow}>
+        {(["neutral", "graphite", "deep-green", "blue-black", "warm-paper"] as const).map(
+          tint => {
+            const active = (appearance.surfaceTint ?? "neutral") === tint;
+            return (
+              <Pressable
+                key={tint}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => controller.setSurfaceTint(tint)}
+                style={({ pressed }) => [
+                  styles.tintChip,
+                  {
+                    borderColor: active ? theme.accent : theme.line,
+                    backgroundColor: active ? theme.accentSoft : theme.panelMuted,
+                  },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.tintChipText,
+                    { color: active ? theme.accent : theme.textMuted, fontFamily: theme.fontMono },
+                  ]}
+                >
+                  {tint.toUpperCase()}
+                </Text>
+              </Pressable>
+            );
+          }
+        )}
+      </View>
+
+      <SectionHeading theme={theme}>DENSITY</SectionHeading>
+      <View style={styles.tintRow}>
+        {(["compact", "standard", "spacious"] as const).map(density => {
+          const active = (appearance.density ?? "standard") === density;
+          return (
+            <Pressable
+              key={density}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => controller.setDensity(density)}
+              style={({ pressed }) => [
+                styles.tintChip,
+                {
+                  borderColor: active ? theme.accent : theme.line,
+                  backgroundColor: active ? theme.accentSoft : theme.panelMuted,
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tintChipText,
+                  { color: active ? theme.accent : theme.textMuted, fontFamily: theme.fontMono },
+                ]}
+              >
+                {density.toUpperCase()}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <SectionHeading theme={theme}>MOTION</SectionHeading>
+      <View style={styles.tintRow}>
+        {(["system", "reduced", "full"] as const).map(motion => {
+          const active = (appearance.motion ?? "system") === motion;
+          return (
+            <Pressable
+              key={motion}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => controller.setMotionPreference(motion)}
+              style={({ pressed }) => [
+                styles.tintChip,
+                {
+                  borderColor: active ? theme.accent : theme.line,
+                  backgroundColor: active ? theme.accentSoft : theme.panelMuted,
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tintChipText,
+                  { color: active ? theme.accent : theme.textMuted, fontFamily: theme.fontMono },
+                ]}
+              >
+                {motion.toUpperCase()}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected: appearance.highContrast ?? false }}
+        onPress={() => controller.setHighContrast(!(appearance.highContrast ?? false))}
+        style={[
+          styles.contrastRow,
+          { borderColor: theme.line, backgroundColor: theme.panelMuted },
+        ]}
+      >
+        <Text style={[styles.contrastLabel, { color: theme.text }]}>High contrast text</Text>
+        <View
+          style={[
+            styles.contrastSwitch,
+            {
+              borderColor: theme.accent,
+              backgroundColor: appearance.highContrast ? theme.accent : "transparent",
+            },
+          ]}
+        >
+          <Text style={{ color: appearance.highContrast ? theme.accentInk : theme.textFaint, fontFamily: theme.fontMono, fontSize: 11, fontWeight: "900" }}>
+            {appearance.highContrast ? "ON" : "OFF"}
+          </Text>
+        </View>
+      </Pressable>
+
       <SectionHeading theme={theme}>TYPEFACE</SectionHeading>
       <Text style={[styles.help, { color: theme.textMuted }]}>
         Search Google Fonts and tap a sample to install it. Every result is shown in its
@@ -409,6 +536,35 @@ function SectionHeading({ children, theme }: { children: React.ReactNode; theme:
 
 const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
+  tintRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tintChip: {
+    minHeight: Structure.tap,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+  },
+  tintChipText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.8 },
+  contrastRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: Structure.tap,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 14,
+    marginTop: 10,
+  },
+  contrastLabel: { fontSize: TypeScale.body, fontWeight: "600" },
+  contrastSwitch: {
+    minWidth: 48,
+    minHeight: 30,
+    borderWidth: 1,
+    borderRadius: Structure.radiusElbow,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
   heading: {
     fontSize: TypeScale.label,
     fontWeight: "800",
