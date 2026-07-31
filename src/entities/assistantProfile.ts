@@ -1,7 +1,67 @@
+import { AgentScopeKind, DEFAULT_SCOPE_BUDGET } from "./agentScope";
+import { SemanticRole } from "./card";
+
 /**
  * Valid capabilities supported by AI assistance profiles.
  */
 export type AssistantCapability = "generate-cards" | "chunk-document" | "chat" | "cloze";
+
+/**
+ * Who a profile belongs to and how long it lives.
+ *
+ * `session` profiles are never persisted — they live only in the running app's UI state
+ * and vanish on restart by construction, not by a separate cleanup step. `workspace`
+ * profiles are visible only inside the workspace they were created in. Absent on a
+ * profile means `"global"`, which is every profile's behavior before this field existed.
+ */
+export type ProfileScope = "builtin" | "global" | "workspace" | "session";
+
+/**
+ * What an operation using this profile is allowed to read.
+ *
+ * Mirrors `AgentScopeKind`/`ScopeBudget` (see `entities/agentScope.ts`) rather than
+ * reinventing them, because "what will this read" is exactly the same question a
+ * preflight already answers for a one-off operation — a profile is just that answer,
+ * saved.
+ */
+export interface ContextPolicy {
+  defaultScope: AgentScopeKind;
+  maxCards: number;
+  maxCharacters: number;
+  allowSources: boolean;
+  allowMission: boolean;
+  allowPriorOutputs: boolean;
+}
+
+/** The conservative default: same budget every ad hoc preflight already uses. */
+export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
+  defaultScope: "selected-only",
+  maxCards: DEFAULT_SCOPE_BUDGET.maxCards,
+  maxCharacters: DEFAULT_SCOPE_BUDGET.maxCharacters,
+  allowSources: true,
+  allowMission: false,
+  allowPriorOutputs: false,
+};
+
+/** What a profile's run is allowed to do with its own output. */
+export interface OutputPolicy {
+  allowCardCreation: boolean;
+  /** Empty means unrestricted — every role is allowed, today's behavior. */
+  allowedRoles: SemanticRole[];
+  requireReviewBeforeSave: boolean;
+  createGroupForOutputs: boolean;
+}
+
+/** Matches today's actual behavior: a run creates cards, no forced review, no grouping. */
+export const DEFAULT_OUTPUT_POLICY: OutputPolicy = {
+  allowCardCreation: true,
+  allowedRoles: [],
+  requireReviewBeforeSave: false,
+  createGroupForOutputs: false,
+};
+
+/** Whether a profile may ever trigger a real web search. Never inferred, always declared. */
+export type WebPolicy = "never" | "preflight-required";
 
 /**
  * Application-owned, non-editable output contract identifier.
@@ -30,6 +90,20 @@ export interface AssistantProfile {
   createdAt: number;
   updatedAt: number;
   builtin?: boolean;
+  /** Undefined means `"global"` — every profile's behavior before this field existed. */
+  scope?: ProfileScope;
+  /** Required when `scope === "workspace"`; ignored otherwise. */
+  workspaceId?: string;
+  /** Undefined means {@link DEFAULT_CONTEXT_POLICY}. */
+  contextPolicy?: ContextPolicy;
+  /** Undefined means `"never"` — no profile could trigger a search before this existed. */
+  webPolicy?: WebPolicy;
+  /** Undefined means {@link DEFAULT_OUTPUT_POLICY}. */
+  outputPolicy?: OutputPolicy;
+  /** Undefined means `!builtin` — every non-builtin profile was already editable. */
+  isEditable?: boolean;
+  /** Set when this profile was duplicated from a builtin, for "customized from" display. */
+  sourceProfileId?: string;
 }
 
 export interface CreateAssistantProfileParams {
@@ -41,6 +115,13 @@ export interface CreateAssistantProfileParams {
   systemPrompt: string;
   outputContract?: OutputContractKind;
   builtin?: boolean;
+  scope?: ProfileScope;
+  workspaceId?: string;
+  contextPolicy?: ContextPolicy;
+  webPolicy?: WebPolicy;
+  outputPolicy?: OutputPolicy;
+  isEditable?: boolean;
+  sourceProfileId?: string;
 }
 
 /**
@@ -216,7 +297,68 @@ export function createAssistantProfile(params: CreateAssistantProfileParams): As
     createdAt: now,
     updatedAt: now,
     builtin: params.builtin ?? false,
+    scope: params.scope,
+    workspaceId: params.workspaceId,
+    contextPolicy: params.contextPolicy,
+    webPolicy: params.webPolicy,
+    outputPolicy: params.outputPolicy,
+    isEditable: params.isEditable,
+    sourceProfileId: params.sourceProfileId,
   };
+}
+
+/** A profile's context policy, defaulted for anything predating this field. */
+export function resolveContextPolicy(profile: AssistantProfile): ContextPolicy {
+  return profile.contextPolicy ?? DEFAULT_CONTEXT_POLICY;
+}
+
+/** A profile's output policy, defaulted for anything predating this field. */
+export function resolveOutputPolicy(profile: AssistantProfile): OutputPolicy {
+  return profile.outputPolicy ?? DEFAULT_OUTPUT_POLICY;
+}
+
+/** A profile's web policy, defaulted to `"never"` — no profile could search before this existed. */
+export function resolveWebPolicy(profile: AssistantProfile): WebPolicy {
+  return profile.webPolicy ?? "never";
+}
+
+/** A profile's scope, defaulted to `"global"` — every profile's behavior before this field existed. */
+export function resolveProfileScope(profile: AssistantProfile): ProfileScope {
+  return profile.scope ?? "global";
+}
+
+/** Whether a profile can be edited: explicit `isEditable`, else "not a builtin". */
+export function isProfileEditable(profile: AssistantProfile): boolean {
+  return profile.isEditable ?? !profile.builtin;
+}
+
+/**
+ * Duplicates a profile into a new, user-owned, editable copy.
+ *
+ * The only legal way to get a customizable version of a builtin: the source is never
+ * mutated, and the copy always carries `sourceProfileId` so the UI can say what it was
+ * customized from. Also the mechanism for "save as" on any profile, builtin or not.
+ */
+export function duplicateAssistantProfile(
+  source: AssistantProfile,
+  overrides: Partial<CreateAssistantProfileParams> = {}
+): AssistantProfile {
+  return createAssistantProfile({
+    name: overrides.name ?? `${source.name} (Custom)`,
+    description: overrides.description ?? source.description,
+    goal: overrides.goal ?? source.goal,
+    capability: overrides.capability ?? source.capability,
+    systemPrompt: overrides.systemPrompt ?? source.systemPrompt,
+    outputContract: overrides.outputContract ?? source.outputContract,
+    scope: overrides.scope ?? "global",
+    workspaceId: overrides.workspaceId,
+    contextPolicy: overrides.contextPolicy ?? source.contextPolicy,
+    webPolicy: overrides.webPolicy ?? source.webPolicy,
+    outputPolicy: overrides.outputPolicy ?? source.outputPolicy,
+    builtin: false,
+    isEditable: true,
+    sourceProfileId: source.id,
+  });
 }
 
 /**
@@ -231,9 +373,21 @@ export function resolveAssistantProfile(
   activeProfileIds: Partial<Record<AssistantCapability, string>> = {},
   customProfiles: AssistantProfile[] = [],
   builtinProfiles: AssistantProfile[] = BUILTIN_ASSISTANT_PROFILES,
-  targetProfileIdOrName?: string
+  targetProfileIdOrName?: string,
+  /**
+   * The active workspace, for excluding workspace-scoped profiles that belong to a
+   * different one. Optional and trailing so every existing call site — none of which
+   * had workspace-scoped profiles to worry about — keeps working unchanged.
+   */
+  activeWorkspaceId?: string
 ): AssistantProfile {
-  const allProfiles = [...customProfiles, ...builtinProfiles];
+  // A workspace-scoped profile is invisible outside its own workspace — the isolation
+  // work.txt requires — filtered once here rather than at every call site.
+  const visibleCustom = customProfiles.filter(
+    (p) => resolveProfileScope(p) !== "workspace" || p.workspaceId === activeWorkspaceId
+  );
+  const allProfiles = [...visibleCustom, ...builtinProfiles];
+  const customProfilesInScope = visibleCustom;
 
   // 1. Explicit override by profile ID or Name
   if (targetProfileIdOrName) {
@@ -252,7 +406,7 @@ export function resolveAssistantProfile(
   }
 
   // 3. Fallback to first matching profile for capability
-  const matchingCustom = customProfiles.find((p) => p.capability === capability);
+  const matchingCustom = customProfilesInScope.find((p) => p.capability === capability);
   if (matchingCustom) return matchingCustom;
 
   const matchingBuiltin = builtinProfiles.find((p) => p.capability === capability);

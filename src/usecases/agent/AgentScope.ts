@@ -1,26 +1,18 @@
 import { Card } from "../../entities/card";
+import { AgentScopeKind, DEFAULT_SCOPE_BUDGET, ScopeBudget } from "../../entities/agentScope";
 
 /**
  * # Agent Scope
  *
  * ## Business Value & Purpose
- * Every AI operation must state, before it runs, exactly what it will read. `AgentScopeKind`
- * is the closed set of legal answers, and {@link resolveScopedContext} is the single,
- * deterministic, pure function that turns a scope + selection + workspace into the bounded
- * card list a command will actually see — so "what will the AI read?" always has one honest
- * answer instead of ad hoc per-command context assembly.
+ * `AgentScopeKind`/`ScopeBudget` (see `entities/agentScope.ts`) are the closed vocabulary;
+ * {@link resolveScopedContext} is the single, deterministic, pure function that turns a
+ * scope + selection + workspace into the bounded card list a command will actually see —
+ * so "what will the AI read?" always has one honest answer instead of ad hoc per-command
+ * context assembly.
  */
-export type AgentScopeKind = "selected-only" | "workspace" | "web" | "selected-plus-web";
-
-export interface ScopeBudget {
-  /** Hard cap on the number of cards included, regardless of character budget. */
-  maxCards: number;
-  /** Hard cap on total title+body characters included across all cards. */
-  maxCharacters: number;
-}
-
-/** Conservative defaults: enough context to be useful, small enough to stay legible in a preflight preview. */
-export const DEFAULT_SCOPE_BUDGET: ScopeBudget = { maxCards: 12, maxCharacters: 6000 };
+export type { AgentScopeKind, ScopeBudget };
+export { DEFAULT_SCOPE_BUDGET };
 
 export interface ScopedContext {
   /** The bounded, ordered (selection first) list of cards that will actually be sent. */

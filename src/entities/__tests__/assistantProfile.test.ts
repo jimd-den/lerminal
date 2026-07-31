@@ -1,7 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import {
   createAssistantProfile,
+  duplicateAssistantProfile,
   resolveAssistantProfile,
+  resolveContextPolicy,
+  resolveOutputPolicy,
+  resolveWebPolicy,
+  resolveProfileScope,
+  isProfileEditable,
+  DEFAULT_CONTEXT_POLICY,
+  DEFAULT_OUTPUT_POLICY,
   BUILTIN_ASSISTANT_PROFILES,
   AssistantProfile,
 } from "../assistantProfile";
@@ -83,5 +91,69 @@ describe("Assistant Profile Domain Entity", () => {
     );
 
     expect(byName.id).toBe("p-exam");
+  });
+
+  it("defaults policies for a profile that predates them", () => {
+    const legacy = BUILTIN_ASSISTANT_PROFILES[0];
+
+    expect(resolveContextPolicy(legacy)).toEqual(DEFAULT_CONTEXT_POLICY);
+    expect(resolveOutputPolicy(legacy)).toEqual(DEFAULT_OUTPUT_POLICY);
+    expect(resolveWebPolicy(legacy)).toBe("never");
+    expect(resolveProfileScope(legacy)).toBe("global");
+  });
+
+  it("treats a builtin as not editable, and everything else as editable, by default", () => {
+    expect(isProfileEditable(BUILTIN_ASSISTANT_PROFILES[0])).toBe(false);
+
+    const custom = createAssistantProfile({
+      name: "x",
+      capability: "generate-cards",
+      systemPrompt: "x",
+    });
+    expect(isProfileEditable(custom)).toBe(true);
+  });
+
+  it("duplicating a builtin never mutates it, and marks the copy editable", () => {
+    const source = BUILTIN_ASSISTANT_PROFILES[0];
+    const original = { ...source };
+
+    const copy = duplicateAssistantProfile(source);
+
+    expect(source).toEqual(original);
+    expect(copy.id).not.toBe(source.id);
+    expect(copy.builtin).toBe(false);
+    expect(copy.isEditable).toBe(true);
+    expect(copy.sourceProfileId).toBe(source.id);
+    expect(copy.systemPrompt).toBe(source.systemPrompt);
+  });
+
+  it("excludes a workspace-scoped profile from a different workspace", () => {
+    const ws1Profile = createAssistantProfile({
+      name: "WS1 only",
+      capability: "chat",
+      systemPrompt: "x",
+      scope: "workspace",
+      workspaceId: "ws-1",
+    });
+
+    const forWs2 = resolveAssistantProfile(
+      "chat",
+      {},
+      [ws1Profile],
+      BUILTIN_ASSISTANT_PROFILES,
+      undefined,
+      "ws-2"
+    );
+    const forWs1 = resolveAssistantProfile(
+      "chat",
+      {},
+      [ws1Profile],
+      BUILTIN_ASSISTANT_PROFILES,
+      undefined,
+      "ws-1"
+    );
+
+    expect(forWs2.id).not.toBe(ws1Profile.id);
+    expect(forWs1.id).toBe(ws1Profile.id);
   });
 });
