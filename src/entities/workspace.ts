@@ -128,7 +128,6 @@ export interface CreateWorkspaceParams {
  * @returns A fully initialized Workspace entity with FSRS settings.
  */
 export function createWorkspace(params: CreateWorkspaceParams): Workspace {
-  const logTimestamp = new Date().toISOString();
 
   const generatedId = params.id || Math.random().toString(36).substring(2, 10);
   const createdTime = params.createdAt || Date.now();
@@ -148,6 +147,5 @@ export function createWorkspace(params: CreateWorkspaceParams): Workspace {
     mission: params.mission,
   };
 
-  console.log(`[${logTimestamp}] [createWorkspace] INPUTS: params=${JSON.stringify(params)} | OUTPUT: ${JSON.stringify(workspace)}`);
   return workspace;
 }

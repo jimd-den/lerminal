@@ -1,7 +1,7 @@
 import { Card } from "../../entities/card";
 import { isSchedulable } from "../../entities/cardTypeDefinition";
 import { createInitialSchedule } from "../../entities/schedule";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { EmptySelectionError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
@@ -24,7 +24,6 @@ export class SpaceCommand implements PipelineCommand {
   constructor(private readonly cardRepo: CardRepository) {}
 
   async execute(_arg: string, ctx: CommandContext): Promise<CommandResult> {
-    const logTimestamp = new Date().toISOString();
 
     const schedulableCards = ctx.inputCards.filter(card => isSchedulable(card, ctx.cardTypes));
     if (schedulableCards.length === 0) {
@@ -41,9 +40,6 @@ export class SpaceCommand implements PipelineCommand {
       await this.cardRepo.saveCard(card);
     }
 
-    console.log(
-      `[${logTimestamp}] [SpaceCommand.execute] Enrolled ${cards.length} cards into FSRS schedule`
-    );
 
     return { kind: "cards", cards };
   }

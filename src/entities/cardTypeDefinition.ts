@@ -111,7 +111,6 @@ export interface CreateCardTypeParams {
  * Factory for a valid user-authored {@link CardTypeDefinition}.
  */
 export function createCardTypeDefinition(params: CreateCardTypeParams): CardTypeDefinition {
-  const logTimestamp = new Date().toISOString();
   const definition: CardTypeDefinition = {
     id: normalizeCardTypeId(params.id || params.name),
     name: params.name.trim(),
@@ -122,7 +121,6 @@ export function createCardTypeDefinition(params: CreateCardTypeParams): CardType
     fields: params.fields || [],
   };
 
-  console.log(`[${logTimestamp}] [createCardTypeDefinition] OUTPUT: ${JSON.stringify(definition)}`);
   return definition;
 }
 

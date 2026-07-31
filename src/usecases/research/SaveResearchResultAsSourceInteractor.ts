@@ -1,7 +1,7 @@
 import { Card, createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
 import { ResearchResult } from "../../entities/research";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 
 export interface SaveResearchResultAsSourceRequest {
   result: ResearchResult;

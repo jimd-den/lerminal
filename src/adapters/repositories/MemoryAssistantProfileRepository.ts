@@ -1,5 +1,5 @@
 import { AssistantProfile, BUILTIN_ASSISTANT_PROFILES } from "../../entities/assistantProfile";
-import { AssistantProfileRepository } from "./AssistantProfileRepository";
+import { AssistantProfileRepository } from "../../usecases/ports/repositories/AssistantProfileRepository";
 
 /**
  * # In-Memory Assistant Profile Repository

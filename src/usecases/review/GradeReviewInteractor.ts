@@ -1,7 +1,7 @@
 import { Card } from "../../entities/card";
 import { gradeSchedule, ReviewGrade, ReviewLog } from "../../entities/schedule";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { ReviewLogRepository } from "../../adapters/repositories/ReviewLogRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { ReviewLogRepository } from "../ports/repositories/ReviewLogRepository";
 import { FsrsScheduler } from "./FsrsScheduler";
 import { FsrsConfig, DEFAULT_FSRS_CONFIG } from "../../entities/workspace";
 
@@ -43,7 +43,6 @@ export class GradeReviewInteractor {
     now: number = Date.now(),
     config: FsrsConfig = DEFAULT_FSRS_CONFIG
   ): Promise<Card | null> {
-    const logTimestamp = new Date().toISOString();
 
     if (!card.schedule) {
       return null;
@@ -72,9 +71,6 @@ export class GradeReviewInteractor {
       await this.logRepo.saveLog(reviewLog);
     }
 
-    console.log(
-      `[${logTimestamp}] [GradeReviewInteractor.execute] Graded card ${card.id} with '${reviewGrade}'`
-    );
 
     return updatedCard;
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { AskCommand } from "../AskCommand";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../../adapters/gateways/AgentGateway";
+import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../ports/gateways/AgentGateway";
 import { Card } from "../../../entities/card";
 import { CommandContext } from "../Command";
 import { BUILTIN_ASSISTANT_PROFILES } from "../../../entities/assistantProfile";

@@ -3,7 +3,7 @@ import { Card } from "../../../entities/card";
 import { AgentCommandDefinition } from "../../../entities/commandDefinition";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
 import { MemoryCommandDefinitionRepository } from "../../../adapters/repositories/MemoryCommandDefinitionRepository";
-import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../ports/gateways/AgentGateway";
 import {
   DuplicateCommandNameError,
   InvalidCommandNameError,

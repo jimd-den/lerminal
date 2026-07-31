@@ -6,7 +6,7 @@ import {
   canEnrollInStudy,
   selectionActions,
 } from "../../usecases/selection/selectionActions";
-import { expandForPipe } from "../../usecases/tree";
+import { expandForPipe } from "../../entities/tree";
 
 /**
  * # Capture Receipt & Selection Tray Presenter

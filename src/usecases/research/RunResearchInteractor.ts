@@ -1,4 +1,4 @@
-import { SearchGateway } from "../../adapters/gateways/SearchGateway";
+import { SearchGateway } from "../ports/gateways/SearchGateway";
 import { normalizeSearchResults, ResearchResult } from "../../entities/research";
 import { ResearchNoResultsError } from "../errors";
 

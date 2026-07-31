@@ -1,38 +1,32 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { AppSettings, SettingsRepository } from "../../adapters/repositories/SettingsRepository";
+import {
+  AppSettings,
+  SettingsRepository,
+} from "../../usecases/ports/repositories/SettingsRepository";
+import { KeyValueStore } from "./KeyValueStore";
+import { JsonDocumentStore, JsonStoreOptions } from "./JsonStore";
 
 const SETTINGS_KEY = "learnimal_settings_v1";
 
 /**
  * # AsyncStorage Settings Repository
- * 
+ *
  * ## Business Value & Purpose
- * Persists the user's localized preferences (theme, color accent, OpenRouter API keys, model, 
- * and custom system prompts) to AsyncStorage, fulfilling the requirement that all user settings 
- * are stored local-first.
+ * Persists the user's local-first preferences — theme, accent, OpenRouter key, model,
+ * custom prompts. `null` now means only one thing: nothing has ever been saved. A failed
+ * read throws, so the app never silently resets someone's configured key to defaults.
  */
 export class AsyncStorageSettingsRepository implements SettingsRepository {
+  private readonly settings: JsonDocumentStore<AppSettings>;
+
+  constructor(store: KeyValueStore, options?: JsonStoreOptions) {
+    this.settings = new JsonDocumentStore(SETTINGS_KEY, store, "settings", options);
+  }
+
   async getSettings(): Promise<AppSettings | null> {
-    const logTimestamp = new Date().toISOString();
-    try {
-      const data = await AsyncStorage.getItem(SETTINGS_KEY);
-      if (!data) return null;
-      const settings = JSON.parse(data) as AppSettings;
-      console.log(`[${logTimestamp}] [AsyncStorageSettingsRepository.getSettings] -> loaded`);
-      return settings;
-    } catch (err: any) {
-      console.error("[AsyncStorageSettingsRepository] Failed to read settings from disk:", err.message);
-      return null;
-    }
+    return this.settings.read();
   }
 
   async saveSettings(settings: AppSettings): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    try {
-      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-      console.log(`[${logTimestamp}] [AsyncStorageSettingsRepository.saveSettings] saved settings`);
-    } catch (err: any) {
-      console.error("[AsyncStorageSettingsRepository] Failed to save settings to disk:", err.message);
-    }
+    await this.settings.write(settings);
   }
 }

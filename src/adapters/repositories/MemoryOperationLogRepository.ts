@@ -1,5 +1,5 @@
 import { OperationRecord } from "../../entities/operationLog";
-import { OperationLogRepository } from "./OperationLogRepository";
+import { OperationLogRepository } from "../../usecases/ports/repositories/OperationLogRepository";
 
 /**
  * # Memory Operation Log Repository

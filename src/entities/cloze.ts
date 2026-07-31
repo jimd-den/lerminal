@@ -160,3 +160,92 @@ export function readClozeCard(card: Card): ClozeCardData {
     isLegacy: true,
   };
 }
+
+/**
+ * # Cloze Generation
+ *
+ * Blanks the most salient terms in a passage so the reader has to retrieve them. Salience
+ * is deliberately conservative — proper nouns, numbers, and long content words — because
+ * blanking a filler word produces a card that tests nothing.
+ */
+
+/** Common words never worth blanking. */
+const CLOZE_STOPWORDS = new Set([
+  "the", "and", "for", "that", "this", "with", "from", "their", "there", "which",
+  "while", "where", "these", "those", "into", "about", "would", "could", "should",
+  "because", "between", "through", "however", "therefore",
+]);
+
+/** Passages shorter than this can't lose a word and still make sense. */
+const MIN_SOURCE_LENGTH = 12;
+
+/** A cloze longer than this stops being one retrieval and becomes a reading exercise. */
+const MAX_SNIPPET_LENGTH = 220;
+
+/** More blanks than this in one passage leaves too little context to retrieve from. */
+const MAX_BLANKS = 3;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Collapses whitespace and trims to a single reviewable passage. */
+function toSnippet(source: string): string {
+  const text = source.trim().replace(/\s+/g, " ");
+  return text.length > MAX_SNIPPET_LENGTH
+    ? text.slice(0, MAX_SNIPPET_LENGTH).trimEnd() + "…"
+    : text;
+}
+
+/** A term is worth blanking if it's a proper noun, carries a number, or is long. */
+function isSalient(word: string): boolean {
+  return /^[A-Z]/.test(word) || /\d/.test(word) || word.length >= 7;
+}
+
+/** The distinct, non-stopword, salient terms of a passage, in order of appearance. */
+function salientTerms(words: string[]): string[] {
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const word of words) {
+    const key = word.toLowerCase();
+    if (seen.has(key) || CLOZE_STOPWORDS.has(key)) continue;
+    if (!isSalient(word)) continue;
+    terms.push(word);
+    seen.add(key);
+  }
+  return terms;
+}
+
+/**
+ * Builds a fill-in-the-blank prompt from a passage.
+ *
+ * @returns The template with `{{c1}}`-style blanks and the answers, or `null` when the
+ *   text is too short to make a card that tests anything.
+ */
+export function makeCloze(source: string): ClozeResult | null {
+  const text = source.trim().replace(/\s+/g, " ");
+  if (text.length < MIN_SOURCE_LENGTH) return null;
+
+  const snippet = toSnippet(source);
+  const words = snippet.match(/[A-Za-z0-9][A-Za-z0-9'’\-]*/g) || [];
+
+  // With nothing salient, fall back to the longest word rather than giving up: one
+  // imperfect blank still beats a card that can't be reviewed.
+  const candidates = salientTerms(words);
+  const chosenTerms =
+    candidates.length > 0
+      ? candidates.slice(0, MAX_BLANKS)
+      : [[...words].sort((a, b) => b.length - a.length)[0]].filter(Boolean);
+
+  if (chosenTerms.length === 0) return null;
+
+  const blanks: ClozeBlank[] = [];
+  let template = snippet;
+  chosenTerms.forEach((term, index) => {
+    const id = `c${index + 1}`;
+    blanks.push({ id, answer: term });
+    template = template.replace(new RegExp(`\\b${escapeRegExp(term)}\\b`), `{{${id}}}`);
+  });
+
+  return { template, blanks, fullAnswer: snippet };
+}

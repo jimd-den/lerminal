@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, mock } from "bun:test";
 import { SourceCommand } from "../SourceCommand";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { ExtractionGateway } from "../../../adapters/gateways/ExtractionGateway";
+import { ExtractionGateway } from "../../ports/gateways/ExtractionGateway";
 import { CommandContext } from "../Command";
 
 /**

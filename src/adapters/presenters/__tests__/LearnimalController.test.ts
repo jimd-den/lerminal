@@ -6,9 +6,10 @@ import { MemorySettingsRepository } from "../../repositories/MemorySettingsRepos
 import { MemoryCommandDefinitionRepository } from "../../repositories/MemoryCommandDefinitionRepository";
 import { MemoryCardTypeRepository } from "../../repositories/MemoryCardTypeRepository";
 import { MemoryPromptPresetRepository } from "../../repositories/MemoryPromptPresetRepository";
-import { AgentGateway, AgentModel, AgentAskResult, AgentCardResponse } from "../../gateways/AgentGateway";
-import { SearchGateway, SearchResult } from "../../gateways/SearchGateway";
-import { ExtractionGateway } from "../../gateways/ExtractionGateway";
+import { MemoryAssistantProfileRepository } from "../../repositories/MemoryAssistantProfileRepository";
+import { AgentGateway, AgentModel, AgentAskResult, AgentCardResponse } from "../../../usecases/ports/gateways/AgentGateway";
+import { SearchGateway, SearchResult } from "../../../usecases/ports/gateways/SearchGateway";
+import { ExtractionGateway } from "../../../usecases/ports/gateways/ExtractionGateway";
 import { Card } from "../../../entities/card";
 
 // Simple mock agent gateway that returns predefined cards
@@ -63,6 +64,7 @@ describe("Learnimal App Controller", () => {
   let commandDefinitionRepo: MemoryCommandDefinitionRepository;
   let cardTypeRepo: MemoryCardTypeRepository;
   let promptPresetRepo: MemoryPromptPresetRepository;
+  let assistantProfileRepo: MemoryAssistantProfileRepository;
   let searchGateway: MockSearchGateway;
   let extractionGateway: MockExtractionGateway;
 
@@ -74,6 +76,7 @@ describe("Learnimal App Controller", () => {
     commandDefinitionRepo = new MemoryCommandDefinitionRepository();
     cardTypeRepo = new MemoryCardTypeRepository();
     promptPresetRepo = new MemoryPromptPresetRepository();
+    assistantProfileRepo = new MemoryAssistantProfileRepository();
     searchGateway = new MockSearchGateway();
     extractionGateway = new MockExtractionGateway();
   });
@@ -87,6 +90,7 @@ describe("Learnimal App Controller", () => {
       commandDefinitionRepo,
       cardTypeRepo,
       promptPresetRepo,
+      assistantProfileRepo,
       searchGateway,
       extractionGateway
     });
@@ -108,6 +112,7 @@ describe("Learnimal App Controller", () => {
       commandDefinitionRepo,
       cardTypeRepo,
       promptPresetRepo,
+      assistantProfileRepo,
       searchGateway,
       extractionGateway
     });
@@ -130,7 +135,7 @@ describe("Learnimal App Controller", () => {
   it("should open input sheet in 'note' mode for quick note capture", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -156,6 +161,7 @@ describe("Learnimal App Controller", () => {
       commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
       cardTypeRepo: new MemoryCardTypeRepository(),
       promptPresetRepo: new MemoryPromptPresetRepository(),
+      assistantProfileRepo: new MemoryAssistantProfileRepository(),
       searchGateway: new MockSearchGateway(),
       extractionGateway: new MockExtractionGateway()
     });
@@ -175,7 +181,7 @@ describe("Learnimal App Controller", () => {
   it("routes completed operations to an explicit result destination", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -195,7 +201,7 @@ describe("Learnimal App Controller", () => {
   it("deletes a multi-card selection through one controller boundary", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -214,7 +220,7 @@ describe("Learnimal App Controller", () => {
   it("computes a deterministic gap report with no mission set, requiring no API key", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -228,7 +234,7 @@ describe("Learnimal App Controller", () => {
   it("saves a mission through the mission editor draft and reflects it in the gap report", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -252,7 +258,7 @@ describe("Learnimal App Controller", () => {
   it("refuses to save a mission with an empty goal title", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -267,7 +273,7 @@ describe("Learnimal App Controller", () => {
   it("persists a kept research result as a real source card, with no API key required", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -296,7 +302,7 @@ describe("Learnimal App Controller", () => {
   it("does not create a duplicate card when saving the same research result twice", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -315,7 +321,7 @@ describe("Learnimal App Controller", () => {
   it("blocks AI query suggestions with a toast when no API key is configured", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -329,7 +335,7 @@ describe("Learnimal App Controller", () => {
   it("populates AI query suggestions from the agent gateway when a key is configured", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -345,7 +351,7 @@ describe("Learnimal App Controller", () => {
   it("switches mission phases freely in both directions and persists each change", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -366,7 +372,7 @@ describe("Learnimal App Controller", () => {
   it("generates a persisted syllabus group from the mission and selects its items", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -390,7 +396,7 @@ describe("Learnimal App Controller", () => {
   it("refuses to generate a syllabus without a mission or without a key", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -409,7 +415,7 @@ describe("Learnimal App Controller", () => {
   it("produces a capture receipt after a note, so capture leads somewhere", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -425,7 +431,7 @@ describe("Learnimal App Controller", () => {
   it("dispatching a suggested AI action only opens the preflight — never runs it", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -443,7 +449,7 @@ describe("Learnimal App Controller", () => {
   it("dispatching 'More' opens the command palette", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -456,7 +462,7 @@ describe("Learnimal App Controller", () => {
   it("resolves a bare /alias to its action sheet instead of running it as a command", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -471,7 +477,7 @@ describe("Learnimal App Controller", () => {
   it("routes /status to the gap report", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -484,7 +490,7 @@ describe("Learnimal App Controller", () => {
   it("leaves an alias with an argument to the pipeline parser", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -499,7 +505,7 @@ describe("Learnimal App Controller", () => {
   it("records a capture intent for the shell to navigate on", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -526,7 +532,7 @@ describe("Learnimal App Controller", () => {
 
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway: flaky,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -564,7 +570,7 @@ describe("Learnimal App Controller", () => {
 
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway: alwaysFails,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -585,7 +591,7 @@ describe("Learnimal App Controller", () => {
   it("undoes the last run, removing what it created", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -608,7 +614,7 @@ describe("Learnimal App Controller", () => {
   it("refuses to undo — leaving everything intact — once a created card has been edited", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -630,7 +636,7 @@ describe("Learnimal App Controller", () => {
   it("moves the user into the group a run creates", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -650,7 +656,7 @@ describe("Learnimal App Controller", () => {
   it("closes the preflight sheet the moment a run is committed, not when it finishes", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -671,7 +677,7 @@ describe("Learnimal App Controller", () => {
     };
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway: failing,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();
@@ -689,7 +695,7 @@ describe("Learnimal App Controller", () => {
   it("dispatching a mission action opens the mission editor", async () => {
     const controller = new LearnimalController({
       cardRepo, workspaceRepo, settingsRepo, agentGateway,
-      commandDefinitionRepo, cardTypeRepo, promptPresetRepo,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
       searchGateway, extractionGateway
     });
     await controller.init();

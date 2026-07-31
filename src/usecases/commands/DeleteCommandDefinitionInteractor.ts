@@ -1,4 +1,4 @@
-import { CommandDefinitionRepository } from "../../adapters/repositories/CommandDefinitionRepository";
+import { CommandDefinitionRepository } from "../ports/repositories/CommandDefinitionRepository";
 
 /**
  * # Delete Command Definition Interactor

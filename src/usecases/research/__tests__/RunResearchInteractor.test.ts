@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { RunResearchInteractor } from "../RunResearchInteractor";
-import { SearchGateway, SearchResult } from "../../../adapters/gateways/SearchGateway";
+import { SearchGateway, SearchResult } from "../../ports/gateways/SearchGateway";
 import { ResearchNoResultsError } from "../../errors";
 
 class FakeSearchGateway implements SearchGateway {

@@ -1,32 +1,36 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ReviewLog } from "../../entities/schedule";
-import { ReviewLogRepository } from "../../adapters/repositories/ReviewLogRepository";
+import { ReviewLogRepository } from "../../usecases/ports/repositories/ReviewLogRepository";
+import { KeyValueStore } from "./KeyValueStore";
+import { JsonCollectionStore, JsonStoreOptions } from "./JsonStore";
 
 const STORAGE_KEY = "@chunk_buddy_review_logs";
 
+/**
+ * # AsyncStorage Review Log Repository
+ *
+ * ## Business Value & Purpose
+ * The append-only record of every grade the user has given. It is the raw material for
+ * scheduling accuracy, so losing entries silently would degrade recall predictions with
+ * no visible symptom — appends go through the store's lock and failures surface.
+ */
 export class AsyncStorageReviewLogRepository implements ReviewLogRepository {
-  private async loadAll(): Promise<ReviewLog[]> {
-    try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+  private readonly logs: JsonCollectionStore<ReviewLog>;
+
+  constructor(store: KeyValueStore, options?: JsonStoreOptions) {
+    this.logs = new JsonCollectionStore(STORAGE_KEY, store, "reviewLogs", options);
   }
 
   async saveLog(log: ReviewLog): Promise<void> {
-    const logs = await this.loadAll();
-    logs.push(log);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+    await this.logs.mutate((all) => [...all, log]);
   }
 
   async getLogsByWorkspace(workspaceId: string): Promise<ReviewLog[]> {
-    const logs = await this.loadAll();
-    return logs.filter(l => l.workspaceId === workspaceId);
+    const all = await this.logs.readAll();
+    return all.filter((log) => log.workspaceId === workspaceId);
   }
 
   async getLogsByCard(cardId: string): Promise<ReviewLog[]> {
-    const logs = await this.loadAll();
-    return logs.filter(l => l.cardId === cardId);
+    const all = await this.logs.readAll();
+    return all.filter((log) => log.cardId === cardId);
   }
 }

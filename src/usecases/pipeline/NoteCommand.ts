@@ -18,7 +18,6 @@ export class NoteCommand implements PipelineCommand {
   constructor(private readonly createNoteUseCase: CreateNote) {}
 
   async execute(arg: string, ctx: CommandContext): Promise<CommandResult> {
-    const logTimestamp = new Date().toISOString();
 
     if (!arg || !arg.trim()) {
       return { kind: "needsInput", mode: "source" };
@@ -30,9 +29,6 @@ export class NoteCommand implements PipelineCommand {
       content: arg,
     });
 
-    console.log(
-      `[${logTimestamp}] [NoteCommand.execute] Note created | workspaceId=${ctx.workspaceId} | noteId=${noteCard.id}`
-    );
 
     return { kind: "cards", cards: [noteCard] };
   }

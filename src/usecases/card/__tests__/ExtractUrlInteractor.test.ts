@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { ExtractUrlInteractor } from "../ExtractUrlInteractor";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { ExtractionGateway } from "../../../adapters/gateways/ExtractionGateway";
+import { ExtractionGateway } from "../../ports/gateways/ExtractionGateway";
 
 class MockExtractionGateway implements ExtractionGateway {
   async extractText(url: string): Promise<string> {

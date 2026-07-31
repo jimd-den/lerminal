@@ -1,4 +1,4 @@
-import { SearchResult } from "../adapters/gateways/SearchGateway";
+import { SearchResult } from "./searchResult";
 
 /**
  * # Research Result Entity

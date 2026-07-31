@@ -1,6 +1,6 @@
 import { Card } from "../../entities/card";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { directChildren } from "../tree";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { directChildren } from "../../entities/tree";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
 /**

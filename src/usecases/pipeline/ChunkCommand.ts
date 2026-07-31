@@ -1,9 +1,10 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
+import { Logger, silentLogger } from "../ports/Logger";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { Card, createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
 import { resolveAssistantProfile } from "../../entities/assistantProfile";
-import { chunkCard } from "../commands";
+import { chunkCard } from "../../entities/chunking";
 import { MarkdownChunkerService, MarkdownNode } from "../card/MarkdownChunkerService";
 import { EmptySelectionError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
@@ -44,7 +45,8 @@ export class ChunkCommand implements PipelineCommand {
 
   constructor(
     private readonly agentGateway: AgentGateway,
-    private readonly cardRepo: CardRepository
+    private readonly cardRepo: CardRepository,
+    private readonly logger: Logger = silentLogger
   ) {}
 
   async execute(arg: string, ctx: CommandContext): Promise<CommandResult> {
@@ -82,10 +84,6 @@ export class ChunkCommand implements PipelineCommand {
       .filter(Boolean)
       .join("\n\n");
 
-    console.log(
-      `[${logTimestamp}] [ChunkCommand.execute] Running AI semantic chunking | goal="${goal}" | sourceCount=${chunkable.length}`
-    );
-
     const created: Card[] = [];
 
     for (const source of chunkable) {
@@ -103,7 +101,12 @@ export class ChunkCommand implements PipelineCommand {
         responseCards = result.cards;
         usedLocalFallback = result.isLocalFallback;
       } catch (err: any) {
-        console.warn(`[${logTimestamp}] [ChunkCommand.execute] AI chunking failed for source "${source.title}", falling back to structural split: ${err?.message}`);
+        // The user still gets chunks, but from a structural split rather than the model —
+        // worth recording, because silently degraded output is easy to misread as normal.
+        this.logger.warn("chunk.aiFailed.fallbackToSplit", {
+          source: source.title,
+          reason: err?.message,
+        });
         const fallbackResult = await this.executeFaithfulSplit([source], ctx);
         if (fallbackResult.kind === "cards") {
           created.push(...fallbackResult.cards);
@@ -160,7 +163,10 @@ export class ChunkCommand implements PipelineCommand {
     }
 
     await this.cardRepo.saveCards(created);
-    console.log(`[${logTimestamp}] [ChunkCommand.execute] Created ${created.length} AI semantic chunks across ${chunkable.length} document containers`);
+    this.logger.debug("chunk.completed", {
+      created: created.length,
+      sources: chunkable.length,
+    });
 
     return { kind: "cards", cards: created };
   }

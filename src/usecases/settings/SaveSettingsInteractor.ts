@@ -1,4 +1,4 @@
-import { AppSettings, SettingsRepository } from "../../adapters/repositories/SettingsRepository";
+import { AppSettings, SettingsRepository } from "../ports/repositories/SettingsRepository";
 
 /**
  * # Save Settings Interactor

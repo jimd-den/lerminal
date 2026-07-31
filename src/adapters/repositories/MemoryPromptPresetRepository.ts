@@ -1,5 +1,5 @@
 import { PromptPreset } from "../../entities/promptPreset";
-import { PromptPresetRepository } from "./PromptPresetRepository";
+import { PromptPresetRepository } from "../../usecases/ports/repositories/PromptPresetRepository";
 
 /** In-memory prompt preset store for tests and zero-latency fallbacks. */
 export class MemoryPromptPresetRepository implements PromptPresetRepository {

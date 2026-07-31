@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { ExtractResearchResultInteractor } from "../ExtractResearchResultInteractor";
-import { ExtractionGateway } from "../../../adapters/gateways/ExtractionGateway";
+import { ExtractionGateway } from "../../ports/gateways/ExtractionGateway";
 import { normalizeSearchResults } from "../../../entities/research";
 import { ResearchExtractionFailedError } from "../../errors";
 

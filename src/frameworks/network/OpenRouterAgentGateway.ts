@@ -6,7 +6,7 @@ import {
   AgentModel,
   ChatMessage,
   PromptDesignResponse,
-} from "../../adapters/gateways/AgentGateway";
+} from "../../usecases/ports/gateways/AgentGateway";
 import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
 import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
 

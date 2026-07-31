@@ -1,4 +1,4 @@
-import { SearchGateway, SearchResult } from "../../adapters/gateways/SearchGateway";
+import { SearchGateway, SearchResult } from "../../usecases/ports/gateways/SearchGateway";
 
 export class DuckDuckGoSearchGateway implements SearchGateway {
   async search(query: string): Promise<SearchResult[]> {

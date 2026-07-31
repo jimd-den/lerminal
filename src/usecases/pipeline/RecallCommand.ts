@@ -1,5 +1,5 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { recallCard } from "../commands";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { recallCard } from "../../entities/recall";
 import { EmptySelectionError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 

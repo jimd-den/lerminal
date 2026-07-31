@@ -5,6 +5,7 @@ import {
   AssistantCapability,
 } from "../../entities/assistantProfile";
 import { CardTypeDefinition } from "../../entities/cardTypeDefinition";
+import { Logger, silentLogger } from "../ports/Logger";
 import { UnknownCommandError } from "../errors";
 import { CommandContext, PipelineCommand } from "./Command";
 
@@ -67,9 +68,11 @@ export type PipelineOutcome =
  */
 export class PipelineRunner {
   private readonly commands: Map<string, PipelineCommand>;
+  private readonly logger: Logger;
 
-  constructor(commands: PipelineCommand[]) {
+  constructor(commands: PipelineCommand[], logger: Logger = silentLogger) {
     this.commands = new Map(commands.map((c) => [c.name, c]));
+    this.logger = logger;
   }
 
   /**
@@ -82,7 +85,6 @@ export class PipelineRunner {
     pipelineText: string,
     env: PipelineEnvironment,
   ): Promise<PipelineOutcome> {
-    const logTimestamp = new Date().toISOString();
     const stages = this.parse(pipelineText);
 
     let cards = env.initialInputCards;
@@ -112,9 +114,7 @@ export class PipelineRunner {
       const result = await command.execute(arg, ctx);
 
       if (result.kind === "needsInput") {
-        console.log(
-          `[${logTimestamp}] [PipelineRunner.run] Pipeline halted for user input | stage=${cmd}`,
-        );
+        this.logger.debug("pipeline.halted", { reason: "needsInput", stage: cmd });
         const outerRemainder = stages
           .slice(index + 1)
           .map(formatPipelineStage)
@@ -140,17 +140,13 @@ export class PipelineRunner {
         };
       }
       if (result.kind === "review") {
-        console.log(
-          `[${logTimestamp}] [PipelineRunner.run] Pipeline halted for review session`,
-        );
+        this.logger.debug("pipeline.halted", { reason: "review" });
         return { kind: "review" };
       }
       cards = result.kind === "cards" ? result.cards : [];
     }
 
-    console.log(
-      `[${logTimestamp}] [PipelineRunner.run] Pipeline completed | outputCardCount=${cards.length}`,
-    );
+    this.logger.debug("pipeline.completed", { outputCards: cards.length });
 
     return { kind: "completed", cards };
   }

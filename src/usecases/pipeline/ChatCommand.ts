@@ -1,4 +1,4 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { createCard } from "../../entities/card";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 

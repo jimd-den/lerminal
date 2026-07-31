@@ -1,7 +1,7 @@
 import { Card } from "../../entities/card";
 import { OperationRecord, canUndoCreate } from "../../entities/operationLog";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { OperationLogRepository } from "../../adapters/repositories/OperationLogRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { OperationLogRepository } from "../ports/repositories/OperationLogRepository";
 import { UseCaseError } from "../errors";
 
 /** Raised when an undo cannot be applied safely, always carrying the reason. */

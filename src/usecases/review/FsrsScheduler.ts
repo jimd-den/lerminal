@@ -39,7 +39,6 @@ export class FsrsScheduler {
    * Initializes a fresh FSRS schedule for a newly enrolled card.
    */
   initialize(now: number, config: FsrsConfig = DEFAULT_FSRS_CONFIG): ScheduleState {
-    const logTimestamp = new Date().toISOString();
 
     const initialStability = Math.max(0.1, this.w[2]);
     const initialDifficulty = Math.min(10, Math.max(1, this.w[3]));
@@ -58,7 +57,6 @@ export class FsrsScheduler {
       lapses: 0,
     };
 
-    console.log(`[${logTimestamp}] [FsrsScheduler.initialize] INPUTS: now=${now} | OUTPUT: ${JSON.stringify(state)}`);
     return state;
   }
 
@@ -139,12 +137,8 @@ export class FsrsScheduler {
     now: number = Date.now(),
     config: FsrsConfig = DEFAULT_FSRS_CONFIG
   ): { schedule: ScheduleState; log: ReviewLog } {
-    const logTimestamp = new Date().toISOString();
     const outcome = this.calculateReviewOutcome(card, grade, now, config);
 
-    console.log(
-      `[${logTimestamp}] [FsrsScheduler.review] Card=${card.id} | Grade=${grade} | NextState=${outcome.schedule.state} | NextInterval=${outcome.schedule.interval}d`
-    );
 
     return outcome;
   }

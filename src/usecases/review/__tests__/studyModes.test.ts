@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { createInitialSchedule, gradeSchedule } from "../../../entities/schedule";
 import { StartReviewInteractor } from "../StartReviewInteractor";
 import { ClozeCommand } from "../../pipeline/ClozeCommand";
-import { makeCloze } from "../../commands";
+import { makeCloze } from "../../../entities/cloze";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
 import { createCard } from "../../../entities/card";
 import { CommandContext } from "../../pipeline/Command";

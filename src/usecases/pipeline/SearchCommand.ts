@@ -1,7 +1,7 @@
 import { createCard } from "../../entities/card";
-import { SearchGateway } from "../../adapters/gateways/SearchGateway";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { SettingsRepository } from "../../adapters/repositories/SettingsRepository";
+import { SearchGateway } from "../ports/gateways/SearchGateway";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { SettingsRepository } from "../ports/repositories/SettingsRepository";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
 /**

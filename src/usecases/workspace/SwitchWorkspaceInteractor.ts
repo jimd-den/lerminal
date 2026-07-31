@@ -1,5 +1,5 @@
 import { Card } from "../../entities/card";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 
 /**
  * # Switch Workspace Interactor

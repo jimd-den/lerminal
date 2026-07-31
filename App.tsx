@@ -2,76 +2,33 @@ import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { LearnimalController } from "./src/adapters/presenters/LearnimalController";
-import { AsyncStorageCardRepository } from "./src/frameworks/storage/AsyncStorageCardRepository";
-import { AsyncStorageWorkspaceRepository } from "./src/frameworks/storage/AsyncStorageWorkspaceRepository";
-import { AsyncStorageSettingsRepository } from "./src/frameworks/storage/AsyncStorageSettingsRepository";
-import { AsyncStorageCommandDefinitionRepository } from "./src/frameworks/storage/AsyncStorageCommandDefinitionRepository";
-import { AsyncStorageCardTypeRepository } from "./src/frameworks/storage/AsyncStorageCardTypeRepository";
-import { AsyncStoragePromptPresetRepository } from "./src/frameworks/storage/AsyncStoragePromptPresetRepository";
-import { AsyncStorageAssistantProfileRepository } from "./src/frameworks/storage/AsyncStorageAssistantProfileRepository";
-import { AsyncStorageReviewLogRepository } from "./src/frameworks/storage/AsyncStorageReviewLogRepository";
-import { AsyncStorageOperationLogRepository } from "./src/frameworks/storage/AsyncStorageOperationLogRepository";
-import { OpenRouterAgentGateway } from "./src/frameworks/network/OpenRouterAgentGateway";
-import { DuckDuckGoSearchGateway } from "./src/frameworks/network/DuckDuckGoSearchGateway";
-import { WebExtractionGateway } from "./src/frameworks/network/WebExtractionGateway";
-import { GoogleFontsGateway } from "./src/frameworks/network/GoogleFontsGateway";
-import { ExpoFontLoader } from "./src/frameworks/fonts/ExpoFontLoader";
+import { composeController } from "./src/frameworks/composition/composeController";
 import { MainLayout } from "./src/frameworks/ui/MainLayout";
 
 /**
  * # Learnimal Application Bootstrapper
- * 
+ *
  * ## Business Value & Purpose
- * This is the Composition Root of the application (Frameworks & Drivers layer).
- * It instantiates database connections (AsyncStorage repositories), the network client
- * (OpenRouter Agent Gateway), and registers them into the core Learnimal state controller.
- * Dependencies are injected downwards to preserve Clean Architecture decoupling.
+ * The app's entry point. It asks `composeController` for a fully wired controller —
+ * all knowledge of *which* storage and network implementations back the ports lives
+ * there — then renders once startup has settled. Startup never hangs: an initialization
+ * failure still hands the user a running app that can report what went wrong.
  */
 export default function App() {
   const [controller, setController] = useState<LearnimalController | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const logTimestamp = new Date().toISOString();
-    console.log(`[${logTimestamp}] [App] Instantiating application composition root...`);
+    const appController = composeController();
 
-    const cardRepo = new AsyncStorageCardRepository();
-    const workspaceRepo = new AsyncStorageWorkspaceRepository();
-    const settingsRepo = new AsyncStorageSettingsRepository();
-    const commandDefinitionRepo = new AsyncStorageCommandDefinitionRepository();
-    const cardTypeRepo = new AsyncStorageCardTypeRepository();
-    const promptPresetRepo = new AsyncStoragePromptPresetRepository();
-    const assistantProfileRepo = new AsyncStorageAssistantProfileRepository();
-    const reviewLogRepo = new AsyncStorageReviewLogRepository();
-    const operationLogRepo = new AsyncStorageOperationLogRepository();
-    const agentGateway = new OpenRouterAgentGateway();
-    const searchGateway = new DuckDuckGoSearchGateway();
-    const extractionGateway = new WebExtractionGateway();
-    const fontGateway = new GoogleFontsGateway();
-    const fontLoader = new ExpoFontLoader();
-
-    const appController = new LearnimalController({
-      cardRepo,
-      workspaceRepo,
-      settingsRepo,
-      agentGateway,
-      commandDefinitionRepo,
-      cardTypeRepo,
-      promptPresetRepo,
-      assistantProfileRepo,
-      searchGateway,
-      extractionGateway,
-      reviewLogRepo,
-      operationLogRepo,
-      fontGateway,
-      fontLoader,
-    });
-
-    appController.init().then(() => {
-      setController(appController);
-      setLoading(false);
-      console.log(`[${new Date().toISOString()}] [App] Application successfully loaded.`);
-    });
+    // `init` contains its own failure handling and surfaces problems through app state;
+    // the `finally` is the guarantee that we leave the splash screen either way.
+    appController
+      .init()
+      .finally(() => {
+        setController(appController);
+        setLoading(false);
+      });
   }, []);
 
   if (loading || !controller) {

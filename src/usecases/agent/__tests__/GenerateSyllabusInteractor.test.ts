@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { GenerateSyllabusInteractor } from "../GenerateSyllabusInteractor";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../../adapters/gateways/AgentGateway";
+import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../ports/gateways/AgentGateway";
 import { Card } from "../../../entities/card";
 import { createWorkspaceMission } from "../../../entities/workspace";
 import { MissingApiKeyError, AgentRequestError } from "../../errors";

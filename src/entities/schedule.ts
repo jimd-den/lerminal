@@ -56,7 +56,6 @@ export interface ReviewLog {
  * Creates initial schedule state for a newly enrolled card.
  */
 export function createInitialSchedule(now: number): ScheduleState {
-  const logTimestamp = new Date().toISOString();
   const result: ScheduleState = {
     algorithm: "fsrs",
     version: 5,
@@ -70,7 +69,6 @@ export function createInitialSchedule(now: number): ScheduleState {
     lapses: 0,
   };
 
-  console.log(`[${logTimestamp}] [createInitialSchedule] INPUTS: now=${now} | OUTPUT: ${JSON.stringify(result)}`);
   return result;
 }
 
@@ -78,7 +76,6 @@ export function createInitialSchedule(now: number): ScheduleState {
  * Legacy grade schedule fallback helper for backward compatibility.
  */
 export function gradeSchedule(current: ScheduleState, grade: ReviewGrade, now: number): ScheduleState {
-  const logTimestamp = new Date().toISOString();
   const lapses = current.lapses ?? 0;
   let result: ScheduleState;
 
@@ -109,7 +106,6 @@ export function gradeSchedule(current: ScheduleState, grade: ReviewGrade, now: n
     };
   }
 
-  console.log(`[${logTimestamp}] [gradeSchedule] INPUTS: current=${JSON.stringify(current)}, grade=${grade}, now=${now} | OUTPUT: ${JSON.stringify(result)}`);
   return result;
 }
 

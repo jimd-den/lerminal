@@ -6,7 +6,7 @@ import {
   LearningBehavior,
   normalizeCardTypeId,
 } from "../../entities/cardTypeDefinition";
-import { CardTypeRepository } from "../../adapters/repositories/CardTypeRepository";
+import { CardTypeRepository } from "../ports/repositories/CardTypeRepository";
 import { DuplicateCardTypeError, InvalidCardTypeNameError } from "../errors";
 
 /** Inputs for defining a custom card type. */

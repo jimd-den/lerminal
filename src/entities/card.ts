@@ -149,7 +149,6 @@ export interface CreateCardParams {
  * @returns A fully initialized Card entity.
  */
 export function createCard(params: CreateCardParams): Card {
-  const logTimestamp = new Date().toISOString();
   
   // Simple unique ID generator conforming to dependency minimalism
   const generatedId = params.id || Math.random().toString(36).substring(2, 10);
@@ -175,6 +174,5 @@ export function createCard(params: CreateCardParams): Card {
     provenance: params.provenance,
   };
 
-  console.log(`[${logTimestamp}] [createCard] INPUTS: params=${JSON.stringify(params)} | OUTPUT: ${JSON.stringify(card)}`);
   return card;
 }

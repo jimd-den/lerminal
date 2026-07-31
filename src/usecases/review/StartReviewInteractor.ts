@@ -61,7 +61,6 @@ export class StartReviewInteractor {
     cram: boolean = false,
     cardTypes?: CardTypeDefinition[]
   ): Card[] {
-    const logTimestamp = new Date().toISOString();
 
     const schedulableCards = cards.filter(c => Boolean(c.schedule) && isSchedulable(c, cardTypes));
 
@@ -78,9 +77,6 @@ export class StartReviewInteractor {
 
     const finalQueue = interleave ? interleaveByTopic(queue) : queue;
 
-    console.log(
-      `[${logTimestamp}] [StartReviewInteractor.execute] Queue built | count=${finalQueue.length} | cram=${cram}`
-    );
 
     return finalQueue;
   }

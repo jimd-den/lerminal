@@ -8,7 +8,7 @@ import {
   COMMAND_DOCS,
   commandAvailability,
 } from "../../usecases/commands/commandCatalog";
-import { expandForPipe } from "../../usecases/tree";
+import { expandForPipe } from "../../entities/tree";
 
 /**
  * # Command Palette Presenter

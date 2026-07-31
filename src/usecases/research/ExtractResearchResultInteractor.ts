@@ -1,4 +1,4 @@
-import { ExtractionGateway } from "../../adapters/gateways/ExtractionGateway";
+import { ExtractionGateway } from "../ports/gateways/ExtractionGateway";
 import { ResearchResult } from "../../entities/research";
 import { ResearchExtractionFailedError } from "../errors";
 

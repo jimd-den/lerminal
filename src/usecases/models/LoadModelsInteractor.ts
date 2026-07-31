@@ -1,4 +1,4 @@
-import { AgentGateway, AgentModel } from "../../adapters/gateways/AgentGateway";
+import { AgentGateway, AgentModel } from "../ports/gateways/AgentGateway";
 
 /**
  * # Load Models Interactor

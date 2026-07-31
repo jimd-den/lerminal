@@ -4,7 +4,7 @@ import { createInitialSchedule } from "../../entities/schedule";
 import { MemoryCardRepository } from "../../adapters/repositories/MemoryCardRepository";
 import { MemoryWorkspaceRepository } from "../../adapters/repositories/MemoryWorkspaceRepository";
 import { MemorySettingsRepository } from "../../adapters/repositories/MemorySettingsRepository";
-import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../ports/gateways/AgentGateway";
 import { Card } from "../../entities/card";
 import { NothingDueError } from "../errors";
 import { StartReviewInteractor } from "../review/StartReviewInteractor";

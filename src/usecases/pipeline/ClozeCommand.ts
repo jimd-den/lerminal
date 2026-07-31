@@ -1,6 +1,6 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { Card, createCard } from "../../entities/card";
-import { makeCloze } from "../commands";
+import { makeCloze } from "../../entities/cloze";
 import { EmptySelectionError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 

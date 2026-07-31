@@ -4,7 +4,7 @@ import { ChunkCommand } from "../ChunkCommand";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
 import { createCard } from "../../../entities/card";
 import { CommandContext } from "../Command";
-import { AgentGateway, AgentAskResult, AgentCardResponse, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import { AgentGateway, AgentAskResult, AgentCardResponse, AgentModel } from "../../ports/gateways/AgentGateway";
 
 class MockAgentGateway implements AgentGateway {
   async ask(query: string, contextCards: any[]): Promise<AgentAskResult> {

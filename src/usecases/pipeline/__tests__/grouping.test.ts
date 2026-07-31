@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createCard } from "../../../entities/card";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../ports/gateways/AgentGateway";
 import { GroupCardsInteractor } from "../../grouping/GroupCardsInteractor";
 import { PipelineEnvironment, PipelineRunner } from "../PipelineRunner";
 import { AskCommand } from "../AskCommand";

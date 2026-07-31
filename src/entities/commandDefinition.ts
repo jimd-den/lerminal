@@ -98,7 +98,6 @@ export interface CreateCommandDefinitionParams {
  * reserved words / required fields (see the create interactor).
  */
 export function createCommandDefinition(params: CreateCommandDefinitionParams): CommandDefinition {
-  const logTimestamp = new Date().toISOString();
   const base = {
     id: params.id || Math.random().toString(36).substring(2, 10),
     name: normalizeCommandName(params.name),
@@ -120,6 +119,5 @@ export function createCommandDefinition(params: CreateCommandDefinitionParams): 
           systemPrompt: params.systemPrompt || "",
         };
 
-  console.log(`[${logTimestamp}] [createCommandDefinition] OUTPUT: ${JSON.stringify({ ...definition, kind: definition.kind })}`);
   return definition;
 }

@@ -16,6 +16,8 @@
  * not remap what the A button means.)
  */
 
+import { FontFormat } from "./fontCatalog";
+
 /** A font the app can render with, and where it came from. */
 export interface FontChoice {
   /** The family name passed to `fontFamily`. */
@@ -27,6 +29,11 @@ export interface FontChoice {
   source: "system" | "google";
   /** The remote file the family was loaded from, for `google` fonts only. */
   uri?: string;
+  /**
+   * The container format that was actually downloaded. Optional so that fonts installed
+   * before this was recorded still load — an unknown format is simply not re-checked.
+   */
+  format?: FontFormat;
 }
 
 /** The platform default monospace — the console's native voice. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { CreateResearchBriefInteractor } from "../CreateResearchBriefInteractor";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../../adapters/gateways/AgentGateway";
+import { AgentGateway, AgentAskResult, AgentCardResponse } from "../../ports/gateways/AgentGateway";
 import { Card } from "../../../entities/card";
 import { normalizeSearchResults, ResearchResult } from "../../../entities/research";
 import { EmptySelectionError, MissingApiKeyError, UngroundedBriefError } from "../../errors";

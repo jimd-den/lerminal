@@ -6,7 +6,7 @@ import {
   AgentAskResult, AgentCardResponse,
   AgentGateway,
   AgentModel,
-} from "../../../adapters/gateways/AgentGateway";
+} from "../../ports/gateways/AgentGateway";
 import {
   EmptySelectionError,
   MissingArgumentError,

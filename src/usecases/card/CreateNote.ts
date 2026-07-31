@@ -1,5 +1,5 @@
 import { Card, createCard } from "../../entities/card";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 
 /**
  * Request payload for creating a note.
@@ -36,7 +36,6 @@ export class CreateNote {
    * @returns The newly created and persisted Card entity of type 'note'.
    */
   async execute(request: CreateNoteRequest): Promise<Card> {
-    const logTimestamp = new Date().toISOString();
     const trimmedContent = request.content.trim();
 
     // Determine the title: use explicit title if provided; otherwise derive from the first line of content
@@ -54,9 +53,6 @@ export class CreateNote {
 
     await this.cardRepo.saveCard(note);
 
-    console.log(
-      `[${logTimestamp}] [CreateNote.execute] INPUTS: request=${JSON.stringify(request)} | OUTPUT: ${JSON.stringify(note)}`
-    );
 
     return note;
   }

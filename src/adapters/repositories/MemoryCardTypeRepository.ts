@@ -1,5 +1,5 @@
 import { CardTypeDefinition } from "../../entities/cardTypeDefinition";
-import { CardTypeRepository } from "./CardTypeRepository";
+import { CardTypeRepository } from "../../usecases/ports/repositories/CardTypeRepository";
 
 /**
  * # Memory Card Type Repository

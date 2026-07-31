@@ -1,5 +1,5 @@
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { BUILTIN_ASSISTANT_PROFILES } from "../../entities/assistantProfile";
 import { Card, createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";

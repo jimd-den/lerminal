@@ -2,8 +2,8 @@ import { Card, createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
 import { ResearchResult } from "../../entities/research";
 import { BUILTIN_ASSISTANT_PROFILES } from "../../entities/assistantProfile";
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { AgentRequestError, EmptySelectionError, MissingApiKeyError, UngroundedBriefError } from "../errors";
 
 const RESEARCH_BRIEF_PROFILE = BUILTIN_ASSISTANT_PROFILES.find(p => p.id === "builtin-research-brief")!;

@@ -1,47 +1,34 @@
 import { Card } from "../../entities/card";
 import { Workspace } from "../../entities/workspace";
-import { CardRepository } from "../repositories/CardRepository";
-import { WorkspaceRepository } from "../repositories/WorkspaceRepository";
+import { CardRepository } from "../../usecases/ports/repositories/CardRepository";
+import { WorkspaceRepository } from "../../usecases/ports/repositories/WorkspaceRepository";
 import {
   AppSettings,
   SettingsRepository,
-} from "../repositories/SettingsRepository";
-import { AgentGateway, AgentModel } from "../gateways/AgentGateway";
+} from "../../usecases/ports/repositories/SettingsRepository";
+import { AgentGateway, AgentModel } from "../../usecases/ports/gateways/AgentGateway";
 import { UseCaseError } from "../../usecases/errors";
-import { PipelineRunner } from "../../usecases/pipeline/PipelineRunner";
-import { AskCommand } from "../../usecases/pipeline/AskCommand";
-import { SourceCommand } from "../../usecases/pipeline/SourceCommand";
-import { NoteCommand } from "../../usecases/pipeline/NoteCommand";
-import { CreateNote } from "../../usecases/card/CreateNote";
-import { ChunkCommand } from "../../usecases/pipeline/ChunkCommand";
-import { RecallCommand } from "../../usecases/pipeline/RecallCommand";
-import { SpaceCommand } from "../../usecases/pipeline/SpaceCommand";
-import { MoveCommand } from "../../usecases/pipeline/MoveCommand";
-import { ReviewCommand } from "../../usecases/pipeline/ReviewCommand";
-import { GroupCommand } from "../../usecases/pipeline/GroupCommand";
-import { UngroupCommand } from "../../usecases/pipeline/UngroupCommand";
-import { DeleteCommand } from "../../usecases/pipeline/DeleteCommand";
-import { SearchCommand } from "../../usecases/pipeline/SearchCommand";
-import { ClozeCommand } from "../../usecases/pipeline/ClozeCommand";
-import { ElaborateCommand } from "../../usecases/pipeline/ElaborateCommand";
-import { ChatCommand } from "../../usecases/pipeline/ChatCommand";
-import { SplitCommand } from "../../usecases/pipeline/SplitCommand";
-import { ChatMessage } from "../gateways/AgentGateway";
-import { SearchGateway } from "../gateways/SearchGateway";
-import { ExtractionGateway } from "../gateways/ExtractionGateway";
-import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
+import { PipelineOutcome, PipelineRunner } from "../../usecases/pipeline/PipelineRunner";
 import {
-  breadcrumbPath,
-  directChildren,
-  expandForPipe,
-} from "../../usecases/tree";
+  commandNameOf,
+  commonParentId,
+  describeRunOutput,
+  shouldAutoGroup,
+} from "../../usecases/pipeline/runOutcome";
+import { CommandRegistry } from "../../usecases/pipeline/CommandRegistry";
+import { CreateNote } from "../../usecases/card/CreateNote";
+import { ChatMessage } from "../../usecases/ports/gateways/AgentGateway";
+import { SearchGateway } from "../../usecases/ports/gateways/SearchGateway";
+import { ExtractionGateway } from "../../usecases/ports/gateways/ExtractionGateway";
+import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
+import { expandForPipe } from "../../entities/tree";
 import { CommandDefinition } from "../../entities/commandDefinition";
-import { CommandDefinitionRepository } from "../repositories/CommandDefinitionRepository";
+import { CommandDefinitionRepository } from "../../usecases/ports/repositories/CommandDefinitionRepository";
 import {
   BUILTIN_CARD_TYPES,
   CardTypeDefinition,
 } from "../../entities/cardTypeDefinition";
-import { CardTypeRepository } from "../repositories/CardTypeRepository";
+import { CardTypeRepository } from "../../usecases/ports/repositories/CardTypeRepository";
 import {
   BUILTIN_PROMPT_PRESETS,
   createPromptPreset,
@@ -55,17 +42,29 @@ import {
   BUILTIN_ASSISTANT_PROFILES,
   resolveAssistantProfile,
 } from "../../entities/assistantProfile";
-import { PromptPresetRepository } from "../repositories/PromptPresetRepository";
-import { AssistantProfileRepository } from "../repositories/AssistantProfileRepository";
-import { AsyncStorageAssistantProfileRepository } from "../../frameworks/storage/AsyncStorageAssistantProfileRepository";
-import { PromptDesignResponse } from "../gateways/AgentGateway";
+import { PromptPresetRepository } from "../../usecases/ports/repositories/PromptPresetRepository";
+import { AssistantProfileRepository } from "../../usecases/ports/repositories/AssistantProfileRepository";
+import { Logger, silentLogger } from "../../usecases/ports/Logger";
+import {
+  AppSessionStore,
+  DEFAULT_CHUNK_SYSTEM_PROMPT,
+  DEFAULT_SYSTEM_PROMPT,
+} from "./AppSessionStore";
+import {
+  OperationResult,
+  OperationsWorkflow,
+  PendingOperation,
+} from "../../usecases/operations/OperationsWorkflow";
+import { presentAppState } from "./presentAppState";
+import { planDeletion } from "../../usecases/selection/deletionPlan";
+import { ReviewSession } from "../../usecases/review/ReviewSession";
+import { isPersistenceError } from "../../usecases/ports/PersistenceError";
+import { PromptDesignResponse } from "../../usecases/ports/gateways/AgentGateway";
 import {
   CreateCardTypeInteractor,
   CreateCardTypeRequest,
 } from "../../usecases/cardTypes/CreateCardTypeInteractor";
 import { DeleteCardTypeInteractor } from "../../usecases/cardTypes/DeleteCardTypeInteractor";
-import { PipelineCommand } from "../../usecases/pipeline/Command";
-import { createPipelineCommand } from "../../usecases/pipeline/CommandFactory";
 import {
   CreateCommandDefinitionInteractor,
   CreateCommandDefinitionRequest,
@@ -86,7 +85,7 @@ import {
   FsrsScheduler,
   ReviewPreview,
 } from "../../usecases/review/FsrsScheduler";
-import { ReviewLogRepository } from "../repositories/ReviewLogRepository";
+import { ReviewLogRepository } from "../../usecases/ports/repositories/ReviewLogRepository";
 import { DEFAULT_FSRS_CONFIG } from "../../entities/workspace";
 import {
   buildAgentRunRequest,
@@ -94,6 +93,11 @@ import {
   findOperationPreset,
 } from "../../usecases/agent/operationPresets";
 import { ResearchResult } from "../../entities/research";
+import { ResearchWorkflow } from "../../usecases/research/ResearchWorkflow";
+import {
+  MissionDraft,
+  MissionWorkflow,
+} from "../../usecases/mission/MissionWorkflow";
 import { RunResearchInteractor } from "../../usecases/research/RunResearchInteractor";
 import { ExtractResearchResultInteractor } from "../../usecases/research/ExtractResearchResultInteractor";
 import { CreateResearchBriefInteractor } from "../../usecases/research/CreateResearchBriefInteractor";
@@ -103,15 +107,18 @@ import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabu
 import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction";
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
 import { AppearanceSettings, FontChoice } from "../../entities/appearance";
-import { createFailedRunCard, readFailedRunCard } from "../../entities/failedRun";
-import { createOperationRecord } from "../../entities/operationLog";
-import { OperationLogRepository } from "../repositories/OperationLogRepository";
-import { MemoryOperationLogRepository } from "../repositories/MemoryOperationLogRepository";
 import {
-  UndoOperationInteractor,
-  UndoUnavailableError,
-} from "../../usecases/undo/UndoOperationInteractor";
-import { FontGateway } from "../gateways/FontGateway";
+  FontCategory,
+  FontFormat,
+  RankedFontFamily,
+} from "../../entities/fontCatalog";
+import { PreviewFontInteractor } from "../../usecases/appearance/PreviewFontInteractor";
+import { SearchFontsInteractor } from "../../usecases/appearance/SearchFontsInteractor";
+import { createFailedRunCard, readFailedRunCard } from "../../entities/failedRun";
+import { OperationLogRepository } from "../../usecases/ports/repositories/OperationLogRepository";
+import { MemoryOperationLogRepository } from "../repositories/MemoryOperationLogRepository";
+import { UndoOperationInteractor } from "../../usecases/undo/UndoOperationInteractor";
+import { FontGateway } from "../../usecases/ports/gateways/FontGateway";
 import {
   FontLoader,
   InstallFontInteractor,
@@ -122,8 +129,8 @@ import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission, Works
 
 // Default prompts are now *instructions* (the strict JSON format contract is appended
 // by the gateway via composeCardPrompt), so users can edit them freely.
-export const DEFAULT_SYSTEM_PROMPT = DEFAULT_CARD_INSTRUCTION;
-export const DEFAULT_CHUNK_SYSTEM_PROMPT = DEFAULT_CHUNK_INSTRUCTION;
+export { DEFAULT_SYSTEM_PROMPT, DEFAULT_CHUNK_SYSTEM_PROMPT };
+export type { PendingOperation, OperationResult };
 
 /**
  * # Learnimal Application State Model
@@ -132,32 +139,6 @@ export const DEFAULT_CHUNK_SYSTEM_PROMPT = DEFAULT_CHUNK_INSTRUCTION;
  * internal {@link DomainState} (business data) and {@link UiState} (ephemeral
  * presentation flags) — see {@link LearnimalController.getState}.
  */
-export interface PendingOperation {
-  id: string;
-  commandName: string;
-  status: "loading" | "error";
-  errorMessage?: string;
-  /** The pipeline text to re-run on retry (defaults to commandName). */
-  pipelineText?: string;
-  /** Selection that seeded the run, so a retry restores the same input context. */
-  inputCardIds?: string[];
-  /** The group the run targeted, restored on retry. */
-  parentId?: string | null;
-  /** Workspace where the operation originated. */
-  workspaceId?: string;
-}
-
-export interface OperationResult {
-  summary: string;
-  createdCardIds: string[];
-  destination: {
-    spaceId: string;
-    groupId?: string;
-    cardId?: string;
-  };
-  primaryActionLabel: string;
-}
-
 /**
  * Re-exported so the UI layer keeps importing its types from the controller rather than
  * reaching into `usecases/` — see `actions/SuggestedAction.ts` for the definition.
@@ -165,19 +146,7 @@ export interface OperationResult {
 export type { SuggestedActionDispatch };
 
 /** Editable draft used while creating/editing a workspace's mission. */
-export interface MissionDraft {
-  goalTitle: string;
-  goalDescription: string;
-  successCriteria: string[];
-  targetDeliverable: string;
-}
-
-const EMPTY_MISSION_DRAFT: MissionDraft = {
-  goalTitle: "",
-  goalDescription: "",
-  successCriteria: [],
-  targetDeliverable: "",
-};
+export type { MissionDraft };
 
 export interface AppState {
   theme: "dark" | "light";
@@ -238,8 +207,26 @@ export interface AppState {
   pendingGroupNavigation: string | null;
   /** True while a Google font download is in flight. */
   isInstallingFont: boolean;
+  /** The current font-browser query, owned here so results and query never disagree. */
+  fontQuery: string;
+  /** Category filter for the font browser, or null for all categories. */
+  fontCategory: FontCategory | null;
+  /** Ranked font-browser results for {@link UiState.fontQuery}. */
+  fontResults: RankedFontFamily[];
+  /** True while the font catalog or a search is loading. */
+  isSearchingFonts: boolean;
+  /**
+   * Set when the catalog itself couldn't be fetched. The browser is then unavailable and
+   * the UI should say so and fall back to install-by-name — an empty list would read as
+   * "nothing matched", which is a different and untrue claim.
+   */
+  fontCatalogError: string | null;
+  /** Families whose real typeface has loaded and can safely be rendered in previews. */
+  previewedFontFamilies: string[];
   /** The id of the most recent undoable operation, or null when there's nothing to undo. */
   undoableOperationId: string | null;
+  /** Set when storage could not be read; the library is unknown, not empty. */
+  storageError: string | null;
   toastMessage: string;
   openRouterKey: string;
   selectedModel: string;
@@ -274,69 +261,11 @@ export interface AppState {
   missionDraft: MissionDraft;
 }
 
-/** Business/domain state: persisted or derivable data, free of UI concerns. */
-interface DomainState {
-  theme: "dark" | "light";
-  accent: "teal" | "lilac" | "amber" | "rose" | "arctic";
-  /** Palette and typeface customisation (see `entities/appearance.ts`). */
-  appearance: AppearanceSettings;
-  openRouterKey: string;
-  selectedModel: string;
-  customSystemPrompt: string;
-  customChunkSystemPrompt: string;
-  availableModels: AgentModel[];
-  workspaces: Workspace[];
-  activeWorkspaceId: string | null;
-  cards: Card[];
-  currentGroupId: string | null;
-  selection: Set<string>;
-  pinnedCommands: string[];
-  autoGroupByCommand: boolean;
-  interleaveReviews: boolean;
-  commandDefinitions: CommandDefinition[];
-  cardTypes: CardTypeDefinition[];
-  promptPresets: PromptPreset[];
-  assistantProfiles: AssistantProfile[];
-  activeProfileIds: Partial<Record<AssistantCapability, string>>;
-  reviewQueue: Card[];
-  reviewIndex: number;
-  searchSiteFlags: Record<string, string>;
-}
-
-/** Ephemeral presentation state: open sheets, toasts, and transient toggles. */
-interface UiState {
-  openCardId: string | null;
-  isReviewOpen: boolean;
-  reviewRevealAnswer: boolean;
-  pinEditMode: boolean;
-  isModalOpen: boolean;
-  isWorkspaceSheetOpen: boolean;
-  isSettingsSheetOpen: boolean;
-  isInputSheetOpen: boolean;
-  inputSheetMode: "source" | "ask" | "note";
-  activePreflightPresetId: string | null;
-  preflightQuery: string;
-  aiQuerySuggestions: string[];
-  isSuggestingQueries: boolean;
-  captureIntent: "note" | "paste" | "link" | "ask" | null;
-  pendingGroupNavigation: string | null;
-  isInstallingFont: boolean;
-  undoableOperationId: string | null;
-  pendingCommandName: string;
-  toastMessage: string;
-  isLoadingModels: boolean;
-  pendingOperations: PendingOperation[];
-  operationResult: OperationResult | null;
-  chatStreamingCardId: string | null;
-  researchQuery: string;
-  researchResults: ResearchResult[];
-  isResearchOpen: boolean;
-  researchLoading: boolean;
-  researchError: string | null;
-  isCreatingBrief: boolean;
-  isGapReportOpen: boolean;
-  isMissionEditorOpen: boolean;
-  missionDraft: MissionDraft;
+/** What a completed run hands to the undo log once its cards have settled. */
+interface PendingRunRecord {
+  createdCardIds: string[];
+  summary: string;
+  destinationGroupId?: string;
 }
 
 export interface LearnimalControllerDeps {
@@ -347,7 +276,9 @@ export interface LearnimalControllerDeps {
   commandDefinitionRepo: CommandDefinitionRepository;
   cardTypeRepo: CardTypeRepository;
   promptPresetRepo: PromptPresetRepository;
-  assistantProfileRepo?: AssistantProfileRepository;
+  assistantProfileRepo: AssistantProfileRepository;
+  /** Where the controller reports failures; defaults to saying nothing. */
+  logger?: Logger;
   searchGateway: SearchGateway;
   extractionGateway: ExtractionGateway;
   reviewLogRepo?: ReviewLogRepository;
@@ -357,6 +288,11 @@ export interface LearnimalControllerDeps {
   fontGateway?: FontGateway;
   /** Registers a downloaded font with the platform. Optional so tests can omit it. */
   fontLoader?: FontLoader;
+  /**
+   * Font formats this platform can render, best first. Supplied by the composition root
+   * because it is a property of the host, not of the app. Defaults to native TTF/OTF.
+   */
+  fontFormats?: FontFormat[];
 }
 
 /**
@@ -378,6 +314,7 @@ export class LearnimalController {
   private cardTypeRepo: CardTypeRepository;
   private promptPresetRepo: PromptPresetRepository;
   private assistantProfileRepo: AssistantProfileRepository;
+  private logger: Logger;
 
   private pipeline: PipelineRunner;
   private startReviewInteractor: StartReviewInteractor;
@@ -397,6 +334,8 @@ export class LearnimalController {
   private groupCardsInteractor: GroupCardsInteractor;
   private fsrsScheduler: FsrsScheduler;
   private reviewLogRepo?: ReviewLogRepository;
+  private research: ResearchWorkflow;
+  private mission: MissionWorkflow;
   private runResearchInteractor: RunResearchInteractor;
   private extractResearchResultInteractor: ExtractResearchResultInteractor;
   private createResearchBriefInteractor: CreateResearchBriefInteractor;
@@ -405,16 +344,30 @@ export class LearnimalController {
   private generateSyllabusInteractor: GenerateSyllabusInteractor;
   private gapReportInteractor: GapReportInteractor;
   private installFontInteractor: InstallFontInteractor;
+  private searchFontsInteractor: SearchFontsInteractor;
+  private previewFontInteractor: PreviewFontInteractor;
+  /** Guards against a slow search result overwriting a newer one — see {@link searchFonts}. */
+  private fontSearchToken = 0;
   private operationLogRepo: OperationLogRepository;
   private undoOperationInteractor: UndoOperationInteractor;
   private fontLoader: FontLoader;
 
   /** Built-in pipeline commands; combined with custom commands by rebuildPipeline. */
-  private builtinCommands: PipelineCommand[] = [];
+  private commandRegistry: CommandRegistry;
 
-  private domain: DomainState;
-  private ui: UiState;
-  private listeners: Set<(state: AppState) => void> = new Set();
+  private readonly session: AppSessionStore<AppState> = new AppSessionStore(() =>
+    this.getState(),
+  );
+  private operations: OperationsWorkflow;
+  private review: ReviewSession;
+
+  /** The session's two state halves, addressed directly for readability at call sites. */
+  private get domain() {
+    return this.session.domain;
+  }
+  private get ui() {
+    return this.session.ui;
+  }
   private workspaceLoadToken = 0;
   private pendingPipelineResume: {
     command: string;
@@ -431,32 +384,24 @@ export class LearnimalController {
     this.commandDefinitionRepo = deps.commandDefinitionRepo;
     this.cardTypeRepo = deps.cardTypeRepo;
     this.promptPresetRepo = deps.promptPresetRepo;
-    this.assistantProfileRepo =
-      deps.assistantProfileRepo || new AsyncStorageAssistantProfileRepository();
+    this.assistantProfileRepo = deps.assistantProfileRepo;
+    this.logger = deps.logger ?? silentLogger;
 
-    // Compose built-in pipeline commands from the injected ports. Custom commands
-    // are layered on top by rebuildPipeline() once their definitions are loaded.
+    // Which commands exist, and how a runner is built from them, belongs to the
+    // registry; the controller only asks it to rebuild when definitions change.
     this.createNoteUseCase = new CreateNote(deps.cardRepo);
     this.groupCardsInteractor = new GroupCardsInteractor(deps.cardRepo);
-    this.builtinCommands = [
-      new NoteCommand(this.createNoteUseCase),
-      new AskCommand(deps.agentGateway, deps.cardRepo),
-      new SourceCommand(deps.cardRepo, deps.extractionGateway),
-      new ChunkCommand(deps.agentGateway, deps.cardRepo),
-      new SplitCommand(deps.cardRepo),
-      new RecallCommand(deps.cardRepo),
-      new SpaceCommand(deps.cardRepo),
-      new MoveCommand(deps.cardRepo),
-      new ReviewCommand(),
-      new GroupCommand(this.groupCardsInteractor),
-      new UngroupCommand(deps.cardRepo),
-      new DeleteCommand(deps.cardRepo),
-      new SearchCommand(deps.searchGateway, deps.cardRepo, deps.settingsRepo),
-      new ClozeCommand(deps.cardRepo),
-      new ElaborateCommand(deps.cardRepo),
-      new ChatCommand(deps.cardRepo),
-    ];
-    this.pipeline = new PipelineRunner(this.builtinCommands);
+    this.commandRegistry = new CommandRegistry({
+      cardRepo: deps.cardRepo,
+      settingsRepo: deps.settingsRepo,
+      agentGateway: deps.agentGateway,
+      searchGateway: deps.searchGateway,
+      extractionGateway: deps.extractionGateway,
+      createNote: this.createNoteUseCase,
+      groupCards: this.groupCardsInteractor,
+      logger: this.logger,
+    });
+    this.pipeline = this.commandRegistry.getRunner();
 
     this.createCommandDefinitionInteractor =
       new CreateCommandDefinitionInteractor(deps.commandDefinitionRepo);
@@ -512,112 +457,203 @@ export class LearnimalController {
       deps.cardRepo,
     );
     this.gapReportInteractor = new GapReportInteractor();
+
     this.operationLogRepo = deps.operationLogRepo ?? new MemoryOperationLogRepository();
     this.undoOperationInteractor = new UndoOperationInteractor(
       deps.cardRepo,
       this.operationLogRepo,
     );
-    // A no-op loader keeps the controller constructible in tests and on any platform
-    // where font installation isn't wired up; installFont then simply fails honestly.
     this.fontLoader = deps.fontLoader ?? {
       async load() {
         throw new Error("Font loading isn't available here");
       },
     };
+    // A gateway that fails honestly, for tests and any host where fonts aren't wired up.
+    const fontGateway: FontGateway = deps.fontGateway ?? {
+      async resolveFont() {
+        throw new Error("Font downloading isn't available here");
+      },
+      async listFamilies() {
+        throw new Error("Font browsing isn't available here");
+      },
+    };
     this.installFontInteractor = new InstallFontInteractor(
-      deps.fontGateway ?? {
-        async resolveFont() {
-          throw new Error("Font downloading isn't available here");
-        },
-      },
+      fontGateway,
       this.fontLoader,
+      deps.fontFormats,
     );
+    this.searchFontsInteractor = new SearchFontsInteractor(fontGateway);
+    // Previews reuse the install path but are never persisted — see the interactor.
+    this.previewFontInteractor = new PreviewFontInteractor(this.installFontInteractor);
 
-    this.domain = {
-      theme: "dark",
-      accent: "teal",
-      appearance: {},
-      openRouterKey: "",
-      selectedModel: "",
-      customSystemPrompt: DEFAULT_SYSTEM_PROMPT,
-      customChunkSystemPrompt: DEFAULT_CHUNK_SYSTEM_PROMPT,
-      availableModels: [],
-      workspaces: [],
-      activeWorkspaceId: null,
-      cards: [],
-      currentGroupId: null,
-      selection: new Set(),
-      pinnedCommands: [
-        "ask",
-        "search",
-        "chunk",
-        "split",
-        "recall",
-        "space",
-        "review",
-      ],
-      autoGroupByCommand: true,
-      interleaveReviews: true,
-      commandDefinitions: [],
-      cardTypes: [...BUILTIN_CARD_TYPES],
-      promptPresets: [...BUILTIN_PROMPT_PRESETS],
-      assistantProfiles: [...BUILTIN_ASSISTANT_PROFILES],
-      activeProfileIds: {
-        "generate-cards": "builtin-generate-cards",
-        "chunk-document": "builtin-chunk-document",
-        chat: "builtin-chat",
-        cloze: "builtin-cloze",
-      },
-      reviewQueue: [],
-      reviewIndex: 0,
-      searchSiteFlags: {
-        wiki: "wikipedia.org",
-        nature: "nature.com",
-      },
-    };
+    // Each cohesive slice of the app owns its own state and orchestration; the controller
+    // supplies context and effects, then delegates to it.
+    this.research = this.buildResearchWorkflow(deps);
+    this.mission = this.buildMissionWorkflow(deps);
+    this.operations = this.buildOperationsWorkflow(deps);
+    this.review = this.buildReviewSession(deps);
 
-    this.ui = {
-      openCardId: null,
-      isReviewOpen: false,
-      reviewRevealAnswer: false,
-      pinEditMode: false,
-      isModalOpen: false,
-      isWorkspaceSheetOpen: false,
-      isSettingsSheetOpen: false,
-      isInputSheetOpen: false,
-      inputSheetMode: "source",
-      activePreflightPresetId: null,
-      preflightQuery: "",
-      aiQuerySuggestions: [],
-      isSuggestingQueries: false,
-      captureIntent: null,
-      pendingGroupNavigation: null,
-      isInstallingFont: false,
-      undoableOperationId: null,
-      pendingCommandName: "",
-      toastMessage: "",
-      isLoadingModels: false,
-      pendingOperations: [],
-      operationResult: null,
-      chatStreamingCardId: null,
-      researchQuery: "",
-      researchResults: [],
-      isResearchOpen: false,
-      researchLoading: false,
-      researchError: null,
-      isCreatingBrief: false,
-      isGapReportOpen: false,
-      isMissionEditorOpen: false,
-      missionDraft: { ...EMPTY_MISSION_DRAFT },
-    };
   }
+
+  /**
+   * Wires the web-research loop: search, keep, extract, cite.
+   *
+   * The host object is the seam: it hands the workflow the surrounding context it needs
+   * to read and the effects it needs to cause, without handing over the controller itself.
+   */
+  private buildResearchWorkflow(deps: LearnimalControllerDeps): ResearchWorkflow {
+      return new ResearchWorkflow({
+        runResearch: this.runResearchInteractor,
+        extractResult: this.extractResearchResultInteractor,
+        saveAsSource: this.saveResearchResultAsSourceInteractor,
+        createBrief: this.createResearchBriefInteractor,
+        host: {
+          context: () => ({
+            workspaceId: this.domain.activeWorkspaceId,
+            parentId: this.domain.currentGroupId,
+            apiKey: this.domain.openRouterKey,
+            model: this.domain.selectedModel,
+          }),
+          onChange: () => this.emit(),
+          notify: (message) => this.showToast(message),
+          onSourceSaved: async (workspaceId) => {
+            if (this.domain.activeWorkspaceId === workspaceId) {
+              await this.loadCardsForActiveWorkspace();
+            }
+            this.emit();
+          },
+          onBriefCreated: async ({ created, keptCount, workspaceId, parentId }) => {
+            this.operations.present({
+              summary: `${created.length} cited claim${created.length === 1 ? "" : "s"} created from ${keptCount} kept source(s)`,
+              createdCardIds: created.map((card) => card.id),
+              destination: { spaceId: workspaceId, groupId: parentId ?? undefined },
+              primaryActionLabel: "Open result",
+            });
+            if (this.domain.activeWorkspaceId === workspaceId) {
+              this.domain.selection = new Set(created.map((card) => card.id));
+              await this.loadCardsForActiveWorkspace();
+            }
+            this.emit();
+          },
+        },
+      });
+  }
+
+  /**
+   * Wires Mission Control: the goal, the deterministic gap report, the syllabus.
+   *
+   * The host object is the seam: it hands the workflow the surrounding context it needs
+   * to read and the effects it needs to cause, without handing over the controller itself.
+   */
+  private buildMissionWorkflow(deps: LearnimalControllerDeps): MissionWorkflow {
+      return new MissionWorkflow({
+        workspaceRepo: deps.workspaceRepo,
+        gapReport: this.gapReportInteractor,
+        generateSyllabus: this.generateSyllabusInteractor,
+        host: {
+          activeWorkspace: () => this.activeWorkspace(),
+          cards: () => this.domain.cards,
+          apiKey: () => this.domain.openRouterKey ?? "",
+          model: () => this.domain.selectedModel,
+          onChange: () => this.emit(),
+          notify: (message) => this.showToast(message),
+          onWorkspaceSaved: (workspace) => {
+            this.domain.workspaces = this.domain.workspaces.map((w) =>
+              w.id === workspace.id ? workspace : w,
+            );
+          },
+          openStatusReportPreflight: (prompt) => {
+            this.ui.activePreflightPresetId = "status-report";
+            this.ui.preflightQuery = prompt;
+            this.emit();
+          },
+          onSyllabusCreated: async ({ group, items, workspaceId }) => {
+            if (this.domain.activeWorkspaceId === workspaceId) {
+              await this.loadCardsForActiveWorkspace();
+              this.domain.selection = new Set(items.map((card) => card.id));
+            }
+            this.operations.present({
+              summary: `Syllabus created: ${items.length} prerequisite topic${items.length === 1 ? "" : "s"}`,
+              createdCardIds: [group.id, ...items.map((card) => card.id)],
+              destination: { spaceId: workspaceId, groupId: group.id },
+              primaryActionLabel: "Open syllabus",
+            });
+            this.emit();
+          },
+          beginOperation: (label) => this.addPendingOperation(label),
+          endOperation: (id) => this.removePendingOperation(id),
+          failOperation: (id, message) => this.setPendingOperationError(id, message),
+        },
+      });
+  }
+
+  /**
+   * Wires the run lifecycle: in-flight activity, receipts, and undo.
+   *
+   * The host object is the seam: it hands the workflow the surrounding context it needs
+   * to read and the effects it needs to cause, without handing over the controller itself.
+   */
+  private buildOperationsWorkflow(deps: LearnimalControllerDeps): OperationsWorkflow {
+      return new OperationsWorkflow({
+        operationLog: this.operationLogRepo,
+        undoOperation: this.undoOperationInteractor,
+        host: {
+          cards: () => this.domain.cards,
+          activeWorkspaceId: () => this.domain.activeWorkspaceId,
+          onChange: () => this.emit(),
+          notify: (message) => this.showToast(message),
+          forgetCards: (removedCardIds) => this.session.forgetCards(removedCardIds),
+          refreshCards: () => this.loadCardsForActiveWorkspace(),
+          navigateToResult: async (result) => {
+            if (result.destination.spaceId !== this.domain.activeWorkspaceId) {
+              await this.switchWorkspace(result.destination.spaceId);
+            }
+            if (this.domain.activeWorkspaceId !== result.destination.spaceId) return;
+            this.domain.currentGroupId = result.destination.groupId ?? null;
+            this.session.select(result.createdCardIds);
+          },
+        },
+      });
+      // A no-op loader keeps the controller constructible in tests and on any platform
+      // where font installation isn't wired up; installFont then simply fails honestly.
+  }
+
+  /**
+   * Wires the study session over the FSRS scheduler.
+   *
+   * The host object is the seam: it hands the workflow the surrounding context it needs
+   * to read and the effects it needs to cause, without handing over the controller itself.
+   */
+  private buildReviewSession(deps: LearnimalControllerDeps): ReviewSession {
+      return new ReviewSession({
+        startReview: this.startReviewInteractor,
+        gradeReview: this.gradeReviewInteractor,
+        scheduler: this.fsrsScheduler,
+        host: {
+          cards: () => this.domain.cards,
+          cardTypes: () => this.domain.cardTypes,
+          interleaveReviews: () => this.domain.interleaveReviews,
+          schedulerConfig: () =>
+            this.activeWorkspace()?.fsrsConfig ?? DEFAULT_FSRS_CONFIG,
+          onChange: () => this.emit(),
+          notify: (message) => this.showToast(message),
+          onCardGraded: (card) => {
+            this.domain.cards = this.domain.cards.map((existing) =>
+              existing.id === card.id ? card : existing,
+            );
+          },
+          refreshCards: () => this.loadCardsForActiveWorkspace(),
+        },
+      });
+  }
+
 
   /**
    * Initializes the application by fetching workspaces and initial settings.
    */
   async init(): Promise<void> {
-    const logTimestamp = new Date().toISOString();
     try {
+      this.ui.storageError = null;
       this.domain.workspaces = await this.workspaceRepo.getWorkspaces();
 
       const settings = await this.settingsRepo.getSettings();
@@ -667,13 +703,28 @@ export class LearnimalController {
       // Not awaited: a slow or failed font fetch must never delay first paint.
       void this.restoreInstalledFonts();
       this.emit();
-      console.log(`[${logTimestamp}] [LearnimalController.init] SUCCESS`);
-    } catch (err: any) {
-      console.error(
-        `[${logTimestamp}] [LearnimalController.init] ERROR: ${err.message}`,
+      this.logger.debug("controller.init.success");
+    } catch (error) {
+      this.logger.error("controller.init.failed", error);
+      // A storage failure is reported as itself, never as an empty library: the UI must
+      // be able to offer a retry rather than invite the user to start over on top of
+      // data that is still there.
+      this.ui.storageError = isPersistenceError(error)
+        ? "Your saved work could not be opened. Nothing has been changed."
+        : null;
+      this.showToast(
+        this.ui.storageError ? "Could not open your library" : "Initialization failed",
       );
-      this.showToast("Initialization failed");
+      this.emit();
     }
+  }
+
+  /**
+   * Retries a failed startup. Safe to call repeatedly: `init` reloads from storage and
+   * clears the failure only once a read actually succeeds.
+   */
+  async retryInit(): Promise<void> {
+    await this.init();
   }
 
   /**
@@ -683,81 +734,26 @@ export class LearnimalController {
    * @returns An unsubscribe function.
    */
   subscribe(listener: (state: AppState) => void): () => void {
-    this.listeners.add(listener);
-    listener(this.getState());
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return this.session.subscribe(listener);
   }
 
   /**
    * Retrieves the current immutable ViewModel, composed from domain + UI state.
    */
+  /**
+   * The current view model. Composition is delegated to {@link presentAppState}, so this
+   * stays a one-line boundary between "what the app knows" and "what the UI renders".
+   */
   getState(): AppState {
-    return {
-      theme: this.domain.theme,
-      accent: this.domain.accent,
-      appearance: this.domain.appearance,
-      workspaces: [...this.domain.workspaces],
-      activeWorkspaceId: this.domain.activeWorkspaceId,
-      cards: [...this.domain.cards],
-      visibleCards: directChildren(
-        this.domain.cards,
-        this.domain.currentGroupId,
-      ),
-      currentGroupId: this.domain.currentGroupId,
-      breadcrumb: breadcrumbPath(this.domain.cards, this.domain.currentGroupId),
-      selection: new Set(this.domain.selection),
-      pinnedCommands: [...this.domain.pinnedCommands],
-      autoGroupByCommand: this.domain.autoGroupByCommand,
-      interleaveReviews: this.domain.interleaveReviews,
-      commandDefinitions: [...this.domain.commandDefinitions],
-      cardTypes: [...this.domain.cardTypes],
-      promptPresets: [...this.domain.promptPresets],
-      assistantProfiles: [...this.domain.assistantProfiles],
-      activeProfileIds: { ...this.domain.activeProfileIds },
-      pendingCommandName: this.ui.pendingCommandName,
-      reviewQueue: [...this.domain.reviewQueue],
-      reviewIndex: this.domain.reviewIndex,
-      openRouterKey: this.domain.openRouterKey,
-      selectedModel: this.domain.selectedModel,
-      customSystemPrompt: this.domain.customSystemPrompt,
-      customChunkSystemPrompt: this.domain.customChunkSystemPrompt,
-      availableModels: [...this.domain.availableModels],
-      openCardId: this.ui.openCardId,
-      isReviewOpen: this.ui.isReviewOpen,
-      reviewRevealAnswer: this.ui.reviewRevealAnswer,
-      pinEditMode: this.ui.pinEditMode,
-      isModalOpen: this.ui.isModalOpen,
-      isWorkspaceSheetOpen: this.ui.isWorkspaceSheetOpen,
-      isSettingsSheetOpen: this.ui.isSettingsSheetOpen,
-      isInputSheetOpen: this.ui.isInputSheetOpen,
-      inputSheetMode: this.ui.inputSheetMode,
-      activePreflightPresetId: this.ui.activePreflightPresetId,
-      preflightQuery: this.ui.preflightQuery,
-      aiQuerySuggestions: [...this.ui.aiQuerySuggestions],
-      isSuggestingQueries: this.ui.isSuggestingQueries,
-      captureIntent: this.ui.captureIntent,
-      pendingGroupNavigation: this.ui.pendingGroupNavigation,
-      isInstallingFont: this.ui.isInstallingFont,
-      undoableOperationId: this.ui.undoableOperationId,
-      toastMessage: this.ui.toastMessage,
-      isLoadingModels: this.ui.isLoadingModels,
-      pendingOperations: this.ui.pendingOperations,
-      operationResult: this.ui.operationResult,
-      searchSiteFlags: this.domain.searchSiteFlags,
-      chatStreamingCardId: this.ui.chatStreamingCardId,
-      researchQuery: this.ui.researchQuery,
-      researchResults: [...this.ui.researchResults],
-      isResearchOpen: this.ui.isResearchOpen,
-      researchLoading: this.ui.researchLoading,
-      researchError: this.ui.researchError,
-      isCreatingBrief: this.ui.isCreatingBrief,
-      gapReport: this.computeGapReport(),
-      isGapReportOpen: this.ui.isGapReportOpen,
-      isMissionEditorOpen: this.ui.isMissionEditorOpen,
-      missionDraft: { ...this.ui.missionDraft, successCriteria: [...this.ui.missionDraft.successCriteria] },
-    };
+    return presentAppState({
+      domain: this.domain,
+      ui: this.ui,
+      research: this.research.state,
+      mission: this.mission.state,
+      operations: this.operations.state,
+      review: this.review.state,
+      gapReport: this.mission.computeGapReport(),
+    });
   }
 
   // --- Selection Methods ---
@@ -771,7 +767,6 @@ export class LearnimalController {
     title?: string;
     parentId?: string;
   }): Promise<Card> {
-    const logTimestamp = new Date().toISOString();
     const workspaceId = this.domain.activeWorkspaceId;
     if (!workspaceId) {
       throw new Error("No active workspace to create note");
@@ -790,7 +785,7 @@ export class LearnimalController {
         this.domain.selection = new Set([note.id]);
         // Capture must lead somewhere: a note now produces the same receipt a pipeline
         // run does, so the confirmation carries next actions instead of a bare toast.
-        this.ui.operationResult = {
+        this.operations.present({
           summary: "Note captured",
           createdCardIds: [note.id],
           destination: {
@@ -799,13 +794,11 @@ export class LearnimalController {
             cardId: note.id,
           },
           primaryActionLabel: "Open note",
-        };
+        });
         this.emit();
       }
     }
-    console.log(
-      `[${logTimestamp}] [LearnimalController.createNote] SUCCESS | noteId=${note.id}`,
-    );
+    this.logger.debug("note.created", { cardId: note.id });
     return note;
   }
 
@@ -829,80 +822,32 @@ export class LearnimalController {
   }
 
   /** Deletes the current selection as one user operation. */
+  /**
+   * Deletes the selection. What that means — which cards, in what order, and where the
+   * user ends up — is decided by {@link planDeletion} before anything is touched.
+   */
   async deleteSelection(recursiveGroups: boolean): Promise<void> {
-    const selectedIds = new Set(this.domain.selection);
-    const selectedCards = this.domain.cards.filter((card) =>
-      selectedIds.has(card.id),
-    );
-    const depthOf = (card: Card): number => {
-      let depth = 0;
-      let parentId = card.parentId;
-      while (parentId) {
-        depth += 1;
-        parentId = this.domain.cards.find(
-          (candidate) => candidate.id === parentId,
-        )?.parentId;
-      }
-      return depth;
-    };
+    const plan = planDeletion({
+      cards: this.domain.cards,
+      selectedIds: new Set(this.domain.selection),
+      currentGroupId: this.domain.currentGroupId,
+      recursiveGroups,
+    });
 
-    // Recursive group deletion already removes selected descendants. For promotion,
-    // remove descendants first so selected children are not promoted unexpectedly.
-    const cardsToDelete = selectedCards
-      .filter((card) => {
-        if (!recursiveGroups) return true;
-        let parentId = card.parentId;
-        while (parentId) {
-          if (selectedIds.has(parentId)) return false;
-          parentId = this.domain.cards.find(
-            (candidate) => candidate.id === parentId,
-          )?.parentId;
-        }
-        return true;
-      })
-      .sort((left, right) => depthOf(right) - depthOf(left));
-
-    let nextGroupId = this.domain.currentGroupId;
-    if (nextGroupId) {
-      const currentGroup = this.domain.cards.find(
-        (card) => card.id === nextGroupId,
-      );
-      const selectedAncestor = selectedCards
-        .filter((selected) => {
-          if (selected.type !== "group") return false;
-          let candidateId: string | undefined = nextGroupId ?? undefined;
-          while (candidateId) {
-            if (candidateId === selected.id) return true;
-            candidateId = this.domain.cards.find(
-              (card) => card.id === candidateId,
-            )?.parentId;
-          }
-          return false;
-        })
-        .sort((left, right) => depthOf(left) - depthOf(right))[0];
-      if (
-        selectedAncestor &&
-        (recursiveGroups || selectedAncestor.id === nextGroupId)
-      ) {
-        nextGroupId =
-          selectedAncestor.parentId ?? currentGroup?.parentId ?? null;
-      }
-    }
-
-    for (const card of cardsToDelete) {
+    for (const card of plan.toDelete) {
       await this.deleteCardInteractor.execute(
         card,
         recursiveGroups && card.type === "group",
       );
     }
 
-    this.domain.currentGroupId = nextGroupId;
-    this.domain.selection.clear();
+    this.domain.currentGroupId = plan.nextGroupId;
+    this.session.select([]);
     this.ui.openCardId = null;
     await this.loadCardsForActiveWorkspace();
     this.emit();
     this.showToast(
-      `${selectedCards.length} item${selectedCards.length === 1 ? "" : "s"} deleted`,
+      `${plan.selected.length} item${plan.selected.length === 1 ? "" : "s"} deleted`,
     );
   }
 
@@ -1027,6 +972,66 @@ export class LearnimalController {
   }
 
   /**
+   * Runs the font browser's search.
+   *
+   * Results are ranked locally against a catalog fetched once, so typing is instant after
+   * the first query. A stale response is dropped rather than rendered: without the token
+   * check, a slow first search could land after a later one and show results for a query
+   * the user has already moved on from.
+   */
+  async searchFonts(
+    text: string,
+    category: FontCategory | null = this.ui.fontCategory
+  ): Promise<void> {
+    this.ui.fontQuery = text;
+    this.ui.fontCategory = category;
+    this.ui.isSearchingFonts = true;
+    this.ui.fontCatalogError = null;
+    this.emit();
+
+    const token = ++this.fontSearchToken;
+    try {
+      const results = await this.searchFontsInteractor.execute({ text, category });
+      if (token !== this.fontSearchToken) return;
+      this.ui.fontResults = results;
+    } catch (err: any) {
+      if (token !== this.fontSearchToken) return;
+      // The browser is unavailable, which is not the same as "nothing matched".
+      this.ui.fontResults = [];
+      this.ui.fontCatalogError =
+        err instanceof UseCaseError ? err.userMessage : "Couldn't load the font catalog";
+    } finally {
+      if (token === this.fontSearchToken) {
+        this.ui.isSearchingFonts = false;
+        this.emit();
+      }
+    }
+  }
+
+  /** Narrows the font browser to one category, re-running the current query. */
+  async setFontCategory(category: FontCategory | null): Promise<void> {
+    await this.searchFonts(this.ui.fontQuery, category);
+  }
+
+  /**
+   * Loads a family's real typeface so a search result can render in its own face.
+   *
+   * Deliberately does *not* touch settings: browsing thirty fonts must not install thirty
+   * fonts. A family that fails to load is simply never announced as previewable, and the
+   * row keeps the system face.
+   */
+  async previewFont(family: string): Promise<void> {
+    if (this.ui.previewedFontFamilies.includes(family)) return;
+
+    const loaded = await this.previewFontInteractor.execute(family);
+    if (!loaded) return;
+    if (this.ui.previewedFontFamilies.includes(loaded.family)) return;
+
+    this.ui.previewedFontFamilies = [...this.ui.previewedFontFamilies, loaded.family];
+    this.emit();
+  }
+
+  /**
    * Downloads a Google font and registers it for use. Only recorded in settings once it
    * has actually loaded — see {@link InstallFontInteractor} — so the font list can never
    * advertise a typeface that won't render.
@@ -1146,75 +1151,18 @@ export class LearnimalController {
     this.emit();
   }
 
+  /** Takes the user to what the last run produced. */
   async openOperationResult(): Promise<void> {
-    const result = this.ui.operationResult;
-    if (!result) return;
-    if (result.destination.spaceId !== this.domain.activeWorkspaceId) {
-      await this.switchWorkspace(result.destination.spaceId);
-    }
-    if (this.domain.activeWorkspaceId !== result.destination.spaceId) return;
-    this.domain.currentGroupId = result.destination.groupId ?? null;
-    this.domain.selection = new Set(result.createdCardIds);
-    this.ui.operationResult = null;
-    this.emit();
+    await this.operations.openResult();
   }
 
   dismissOperationResult(): void {
-    this.ui.operationResult = null;
-    this.emit();
+    this.operations.dismissResult();
   }
 
-  /**
-   * Reverses the most recent run, or explains why it can't.
-   *
-   * Refusal is a success case here: {@link UndoOperationInteractor} checks everything
-   * before touching anything, so a "can't undo" message means the workspace is untouched
-   * — which is the point. Silently half-reversing would be far worse than declining.
-   */
+  /** Reverses the most recent run, or explains why it can't. */
   async undoLastOperation(): Promise<boolean> {
-    const operationId = this.ui.undoableOperationId;
-    if (!operationId) return false;
-
-    const record = await this.operationLogRepo.getRecord(operationId);
-    if (!record) {
-      this.ui.undoableOperationId = null;
-      this.emit();
-      return false;
-    }
-
-    try {
-      const result = await this.undoOperationInteractor.execute(record, this.domain.cards);
-
-      // Anything the undo removed can't stay selected or open.
-      const removed = new Set(result.removedCardIds);
-      this.domain.selection = new Set(
-        [...this.domain.selection].filter((id) => !removed.has(id)),
-      );
-      if (this.ui.openCardId && removed.has(this.ui.openCardId)) {
-        this.ui.openCardId = null;
-      }
-      // The group the run dropped us into may have just been deleted with it.
-      if (this.domain.currentGroupId && removed.has(this.domain.currentGroupId)) {
-        this.domain.currentGroupId = null;
-      }
-
-      this.ui.undoableOperationId = null;
-      this.ui.operationResult = null;
-      await this.loadCardsForActiveWorkspace();
-      this.emit();
-      this.showToast(result.summary);
-      return true;
-    } catch (err: any) {
-      // The reason matters more than the failure: it tells the user what to do instead.
-      this.showToast(
-        err instanceof UseCaseError ? err.userMessage : "Couldn't undo that",
-      );
-      if (err instanceof UndoUnavailableError) {
-        this.ui.undoableOperationId = null;
-        this.emit();
-      }
-      return false;
-    }
+    return this.operations.undoLast();
   }
 
   /**
@@ -1228,31 +1176,31 @@ export class LearnimalController {
   async dispatchSuggestedAction(dispatch: SuggestedActionDispatch): Promise<void> {
     switch (dispatch.kind) {
       case "preflight":
-        this.ui.operationResult = null;
+        this.operations.dismissResult();
         this.openPreflight(dispatch.presetId);
         return;
       case "pipeline":
-        this.ui.operationResult = null;
+        this.operations.dismissResult();
         this.emit();
         await this.runPipeline(dispatch.text);
         return;
       case "mission":
-        this.ui.operationResult = null;
+        this.operations.dismissResult();
         this.openMissionEditor();
         return;
       case "palette":
-        this.ui.operationResult = null;
+        this.operations.dismissResult();
         this.setModalOpen(true);
         return;
       case "status":
-        this.ui.operationResult = null;
+        this.operations.dismissResult();
         this.ui.isModalOpen = false;
         this.openGapReport();
         return;
       case "capture":
         // Capture is a screen, not a sheet, so the controller only clears what's in the
         // way; MainLayout observes `captureIntent` and does the navigation.
-        this.ui.operationResult = null;
+        this.operations.dismissResult();
         this.ui.isModalOpen = false;
         this.ui.captureIntent = dispatch.intent;
         this.emit();
@@ -1287,26 +1235,13 @@ export class LearnimalController {
    * command definitions. Called whenever definitions are loaded or change.
    */
   private rebuildPipeline(): void {
-    const customCommands = this.domain.commandDefinitions.map((def) =>
-      createPipelineCommand(def, {
-        agentGateway: this.agentGateway,
-        cardRepo: this.cardRepo,
-        // Lazy thunk: pipeline-macro commands expand into whatever the current runner
-        // is, so a macro can call other custom commands defined alongside it.
-        getRunner: () => this.pipeline,
-      }),
-    );
-    this.pipeline = new PipelineRunner([
-      ...this.builtinCommands,
-      ...customCommands,
-    ]);
+    this.pipeline = this.commandRegistry.rebuild(this.domain.commandDefinitions);
   }
 
   /** Defines and registers a new custom command, then makes it usable immediately. */
   async createCustomCommand(
     request: CreateCommandDefinitionRequest,
   ): Promise<void> {
-    const logTimestamp = new Date().toISOString();
     try {
       const definition =
         await this.createCommandDefinitionInteractor.execute(request);
@@ -1314,13 +1249,9 @@ export class LearnimalController {
       this.rebuildPipeline();
       this.ui.isInputSheetOpen = false;
       this.showToast(`Created command: ${definition.name}`);
-      console.log(
-        `[${logTimestamp}] [LearnimalController.createCustomCommand] SUCCESS | name=${definition.name}`,
-      );
+      this.logger.debug("customCommand.created", { name: definition.name });
     } catch (err: any) {
-      console.error(
-        `[${logTimestamp}] [LearnimalController.createCustomCommand] ERROR: ${err.message}`,
-      );
+      this.logger.error("customCommand.createFailed", err);
       this.showToast(
         err instanceof UseCaseError
           ? err.userMessage
@@ -1488,7 +1419,6 @@ export class LearnimalController {
    * children up a level; pass `recursive` to delete a group and its entire contents.
    */
   async deleteCard(cardId: string, recursive: boolean = false): Promise<void> {
-    const logTimestamp = new Date().toISOString();
     const card = this.domain.cards.find((c) => c.id === cardId);
     if (!card) return;
 
@@ -1503,9 +1433,7 @@ export class LearnimalController {
     await this.loadCardsForActiveWorkspace();
     this.emit();
     this.showToast("Card deleted");
-    console.log(
-      `[${logTimestamp}] [LearnimalController.deleteCard] SUCCESS | cardId=${cardId}`,
-    );
+    this.logger.debug("card.deleted", { cardId });
   }
 
   /**
@@ -1528,9 +1456,7 @@ export class LearnimalController {
     this.domain.cards = this.domain.cards.map((c) =>
       c.id === cardId ? updated : c,
     );
-    this.domain.reviewQueue = this.domain.reviewQueue.map((c) =>
-      c.id === cardId ? updated : c,
-    );
+    this.review.applyCardUpdate(updated);
     this.emit();
   }
 
@@ -1699,7 +1625,6 @@ export class LearnimalController {
     parentId?: string,
     sourceCardIdForGrouping?: string,
   ): Promise<void> {
-    const logTimestamp = new Date().toISOString();
     const workspaceId = this.domain.activeWorkspaceId;
     if (!workspaceId) return;
 
@@ -1737,13 +1662,9 @@ export class LearnimalController {
       this.showToast(
         finalParentId ? "Extracted to related group" : "Extracted to new card",
       );
-      console.log(
-        `[${logTimestamp}] [LearnimalController.extractUrlToCard] SUCCESS | cardId=${card.id}`,
-      );
+      this.logger.debug("url.extracted", { cardId: card.id });
     } catch (err: any) {
-      console.error(
-        `[${logTimestamp}] [LearnimalController.extractUrlToCard] ERROR: ${err.message}`,
-      );
+      this.logger.error("url.extractFailed", err);
       this.setPendingOperationError(opId, `Failed to extract: ${err.message}`);
       this.showToast(`Extraction failed: ${err.message}`);
     }
@@ -1766,16 +1687,14 @@ export class LearnimalController {
   }
 
   private async saveCurrentSettings(): Promise<void> {
-    const logTimestamp = new Date().toISOString();
     try {
       await this.saveSettingsInteractor.execute(this.currentSettings());
-      console.log(
-        `[${logTimestamp}] [LearnimalController.saveCurrentSettings] SUCCESS`,
-      );
+      this.logger.debug("settings.saved");
     } catch (err: any) {
-      console.error(
-        `[${logTimestamp}] [LearnimalController.saveCurrentSettings] ERROR: ${err.message}`,
-      );
+      // Settings that look saved but aren't are how a user loses an API key without
+      // noticing, so this failure is reported rather than only logged.
+      this.logger.error("settings.saveFailed", err);
+      this.showToast("Could not save your settings");
     }
   }
 
@@ -1846,11 +1765,8 @@ export class LearnimalController {
     pipelineText: string,
     retry?: { inputCardIds: string[]; parentId: string | null },
   ): Promise<boolean> {
-    const logTimestamp = new Date().toISOString();
     const startedAt = Date.now();
-    console.log(
-      `[${logTimestamp}] [LearnimalController.runPipeline] Running: "${pipelineText}"`,
-    );
+    this.logger.debug("pipeline.run", { pipelineText });
 
     const workspaceId = this.domain.activeWorkspaceId;
     if (!workspaceId) {
@@ -1871,12 +1787,7 @@ export class LearnimalController {
     this.pendingPipelineResume = null;
     this.emit();
 
-    // Resolve the input context: a retry restores the original selection/group;
-    // otherwise expand the current selection so piping a group feeds its descendants.
-    const targetParentId = retry ? retry.parentId : this.domain.currentGroupId;
-    const initialInputCards = retry
-      ? this.domain.cards.filter((c) => retry.inputCardIds.includes(c.id))
-      : expandForPipe(this.domain.cards, this.domain.selection);
+    const { targetParentId, initialInputCards } = this.resolvePipelineInputs(retry);
 
     const opId = this.addPendingOperation(pipelineText, {
       pipelineText,
@@ -1903,18 +1814,7 @@ export class LearnimalController {
       this.removePendingOperation(opId);
 
       if (outcome.kind === "needsInput") {
-        this.ui.pendingCommandName = outcome.command;
-        if (outcome.resume) {
-          if (this.domain.activeWorkspaceId === workspaceId)
-            await this.loadCardsForActiveWorkspace();
-          this.pendingPipelineResume = {
-            command: outcome.resume.command,
-            remainingPipeline: outcome.resume.remainingPipeline,
-            inputCardIds: outcome.resume.inputCards.map((card) => card.id),
-            parentId: targetParentId,
-          };
-        }
-        this.setInputSheetOpen(true, outcome.mode);
+        await this.pausePipelineForInput(outcome, workspaceId, targetParentId);
         return false;
       }
       if (outcome.kind === "review") {
@@ -1922,73 +1822,16 @@ export class LearnimalController {
         return true;
       }
 
-      let pendingRecord:
-        | { createdCardIds: string[]; summary: string; destinationGroupId?: string }
-        | null = null;
+      const pendingRecord =
+        outcome.cards.length > 0
+          ? await this.settleRunOutput(outcome.cards, {
+              pipelineText,
+              workspaceId,
+              targetParentId,
+              startedAt,
+            })
+          : null;
 
-      if (outcome.cards.length > 0) {
-        let createdGroupId: string | undefined;
-        let destinationGroupId =
-          commonParentId(outcome.cards) ?? targetParentId ?? undefined;
-        const parentIds = new Set(
-          outcome.cards.map((card) => card.parentId ?? null),
-        );
-        const generatedTogether = outcome.cards.every(
-          (card) => card.createdAt >= startedAt,
-        );
-        // Every run's output gets its own group, not just multi-card ones. A run is a
-        // unit of work, so its result should be a unit on the canvas — and a single
-        // card dropped loose among fifty others is exactly the "where did it go?"
-        // problem grouping exists to solve. `generatedTogether` still guards against
-        // wrapping cards a command merely passed through (e.g. `space`, which returns
-        // the same cards it was given).
-        if (
-          this.domain.autoGroupByCommand &&
-          outcome.cards.length > 0 &&
-          generatedTogether &&
-          parentIds.size === 1
-        ) {
-          const commandName = pipelineText.match(/^\s*([\w-]+)/)?.[1] ?? "command";
-          const group = await this.groupCardsInteractor.execute({
-            workspaceId,
-            parentId: outcome.cards[0].parentId ?? targetParentId,
-            name: `${commandName} output`,
-            cards: outcome.cards,
-          });
-          destinationGroupId = group.id;
-          createdGroupId = group.id;
-          // Move the user into the group the work just produced, so the result is what
-          // they're looking at rather than something they have to go find.
-          this.domain.currentGroupId = group.id;
-          this.ui.pendingGroupNavigation = group.id;
-        }
-        const outputLabel = outcome.cards.every((card) => card.type === "chunk")
-          ? "study chunk"
-          : "item";
-        this.ui.operationResult = {
-          summary: `${outcome.cards.length} ${outputLabel}${outcome.cards.length === 1 ? "" : "s"} created`,
-          createdCardIds: outcome.cards.map((card) => card.id),
-          destination: {
-            spaceId: workspaceId,
-            groupId: destinationGroupId,
-            cardId:
-              outcome.cards.length === 1 ? outcome.cards[0].id : undefined,
-          },
-          primaryActionLabel: destinationGroupId
-            ? "Open document"
-            : "Open result",
-        };
-
-        pendingRecord = {
-          // The group a run creates is part of what it created, so undoing removes it too.
-          createdCardIds: [
-            ...outcome.cards.map((card) => card.id),
-            ...(createdGroupId ? [createdGroupId] : []),
-          ],
-          summary: this.ui.operationResult.summary,
-          destinationGroupId,
-        };
-      }
       if (this.domain.activeWorkspaceId === workspaceId) {
         this.domain.selection = new Set(outcome.cards.map((c) => c.id));
         await this.loadCardsForActiveWorkspace();
@@ -2001,48 +1844,172 @@ export class LearnimalController {
         const settled = this.domain.cards.filter((card) =>
           pendingRecord!.createdCardIds.includes(card.id),
         );
-        const record = createOperationRecord({
+        await this.operations.recordCompletedRun({
           commandName: pipelineText,
           workspaceId,
           parentId: pendingRecord.destinationGroupId,
           inputCardIds: initialInputCards.map((card) => card.id),
-          createdCardIds: settled.map((card) => card.id),
-          createdCardSnapshots: settled.map((card) => ({ ...card })),
+          createdCards: settled,
           startedAt,
           summary: pendingRecord.summary,
         });
-        await this.operationLogRepo.saveRecord(record);
-        this.ui.undoableOperationId = record.id;
       }
       this.emit();
       return true;
-    } catch (err: any) {
-      console.error(
-        `[${logTimestamp}] [LearnimalController.runPipeline] ERROR: ${err.message}`,
-      );
-      const errorMessage =
-        err instanceof UseCaseError ? err.userMessage : "Pipeline failed";
-
-      // A failure becomes a card, not a banner: it lands where the output would have
-      // gone, survives navigation and restart, and carries everything needed to retry.
-      // The transient operation is cleared so the same failure isn't reported twice.
-      this.removePendingOperation(opId);
-      const failureCard = createFailedRunCard({
-        workspaceId,
+    } catch (error) {
+      await this.recordPipelineFailure(error, {
+        operationId: opId,
         pipelineText,
+        workspaceId,
+        targetParentId,
         inputCardIds: initialInputCards.map((card) => card.id),
-        parentId: targetParentId,
-        errorMessage,
-        failedAt: Date.now(),
       });
-      await this.cardRepo.saveCard(failureCard);
+      return false;
+    }
+  }
+
+  /**
+   * Resolves what a run reads and where it writes. A retry restores the *original*
+   * selection and group rather than whatever is selected now; a fresh run expands the
+   * current selection, so piping a group feeds its descendants.
+   */
+  private resolvePipelineInputs(retry?: {
+    inputCardIds: string[];
+    parentId: string | null;
+  }): { targetParentId: string | null; initialInputCards: Card[] } {
+    if (retry) {
+      return {
+        targetParentId: retry.parentId,
+        initialInputCards: this.domain.cards.filter((card) =>
+          retry.inputCardIds.includes(card.id),
+        ),
+      };
+    }
+    return {
+      targetParentId: this.domain.currentGroupId,
+      initialInputCards: expandForPipe(this.domain.cards, this.domain.selection),
+    };
+  }
+
+  /**
+   * A stage asked the user for something. The rest of the pipeline is parked verbatim so
+   * `submitPendingPipelineInput` can resume exactly where it stopped.
+   */
+  private async pausePipelineForInput(
+    outcome: Extract<PipelineOutcome, { kind: "needsInput" }>,
+    workspaceId: string,
+    targetParentId: string | null,
+  ): Promise<void> {
+    this.ui.pendingCommandName = outcome.command;
+    if (outcome.resume) {
       if (this.domain.activeWorkspaceId === workspaceId) {
         await this.loadCardsForActiveWorkspace();
       }
-      this.showToast(errorMessage);
-      this.emit();
-      return false;
+      this.pendingPipelineResume = {
+        command: outcome.resume.command,
+        remainingPipeline: outcome.resume.remainingPipeline,
+        inputCardIds: outcome.resume.inputCards.map((card) => card.id),
+        parentId: targetParentId,
+      };
     }
+    this.setInputSheetOpen(true, outcome.mode);
+  }
+
+  /**
+   * Gives a run's output a home and a receipt: groups it when the rules say so (see
+   * `runOutcome.ts`), moves the user to it, and returns what an undo record will need.
+   */
+  private async settleRunOutput(
+    cards: Card[],
+    run: {
+      pipelineText: string;
+      workspaceId: string;
+      targetParentId: string | null;
+      startedAt: number;
+    },
+  ): Promise<PendingRunRecord> {
+    let destinationGroupId = commonParentId(cards) ?? run.targetParentId ?? undefined;
+    let createdGroupId: string | undefined;
+
+    if (
+      shouldAutoGroup({
+        cards,
+        startedAt: run.startedAt,
+        autoGroupEnabled: this.domain.autoGroupByCommand,
+      })
+    ) {
+      const group = await this.groupCardsInteractor.execute({
+        workspaceId: run.workspaceId,
+        parentId: cards[0].parentId ?? run.targetParentId,
+        name: `${commandNameOf(run.pipelineText)} output`,
+        cards,
+      });
+      destinationGroupId = group.id;
+      createdGroupId = group.id;
+      // Move the user into the group the work just produced, so the result is what
+      // they're looking at rather than something they have to go find.
+      this.domain.currentGroupId = group.id;
+      this.ui.pendingGroupNavigation = group.id;
+    }
+
+    const summary = describeRunOutput(cards);
+    this.operations.present({
+      summary,
+      createdCardIds: cards.map((card) => card.id),
+      destination: {
+        spaceId: run.workspaceId,
+        groupId: destinationGroupId,
+        cardId: cards.length === 1 ? cards[0].id : undefined,
+      },
+      primaryActionLabel: destinationGroupId ? "Open document" : "Open result",
+    });
+
+    return {
+      // The group a run creates is part of what it created, so undoing removes it too.
+      createdCardIds: [
+        ...cards.map((card) => card.id),
+        ...(createdGroupId ? [createdGroupId] : []),
+      ],
+      summary,
+      destinationGroupId,
+    };
+  }
+
+  /**
+   * Turns a failed run into a card rather than a banner: it lands where the output would
+   * have gone, survives navigation and restart, and carries everything needed to retry.
+   */
+  private async recordPipelineFailure(
+    error: unknown,
+    run: {
+      operationId: string;
+      pipelineText: string;
+      workspaceId: string;
+      targetParentId: string | null;
+      inputCardIds: string[];
+    },
+  ): Promise<void> {
+    this.logger.error("pipeline.failed", error);
+    const errorMessage =
+      error instanceof UseCaseError ? error.userMessage : "Pipeline failed";
+
+    // Clear the transient operation first, so the same failure isn't reported twice.
+    this.removePendingOperation(run.operationId);
+    await this.cardRepo.saveCard(
+      createFailedRunCard({
+        workspaceId: run.workspaceId,
+        pipelineText: run.pipelineText,
+        inputCardIds: run.inputCardIds,
+        parentId: run.targetParentId,
+        errorMessage,
+        failedAt: Date.now(),
+      }),
+    );
+    if (this.domain.activeWorkspaceId === run.workspaceId) {
+      await this.loadCardsForActiveWorkspace();
+    }
+    this.showToast(errorMessage);
+    this.emit();
   }
 
   /**
@@ -2094,7 +2061,7 @@ export class LearnimalController {
     this.ui.activePreflightPresetId = null;
     this.ui.preflightQuery = "";
     this.ui.aiQuerySuggestions = [];
-    this.ui.isGapReportOpen = false;
+    this.mission.closeGapReport();
   }
 
   public addPendingOperation(
@@ -2105,19 +2072,7 @@ export class LearnimalController {
       parentId: string | null;
     },
   ): string {
-    const id = Math.random().toString(36).substring(2, 9);
-    this.ui.pendingOperations = [
-      ...this.ui.pendingOperations,
-      {
-        id,
-        commandName,
-        status: "loading",
-        workspaceId: this.domain.activeWorkspaceId ?? undefined,
-        ...retry,
-      },
-    ];
-    this.emit();
-    return id;
+    return this.operations.begin(commandName, retry);
   }
 
   /**
@@ -2126,7 +2081,7 @@ export class LearnimalController {
    * selected now).
    */
   async retryPipeline(opId: string): Promise<void> {
-    const op = this.ui.pendingOperations.find((o) => o.id === opId);
+    const op = this.operations.find(opId);
     if (!op) return;
     if (!op.pipelineText) {
       this.showToast("This operation must be started again from its source");
@@ -2146,17 +2101,11 @@ export class LearnimalController {
   }
 
   public setPendingOperationError(id: string, errorMessage: string): void {
-    this.ui.pendingOperations = this.ui.pendingOperations.map((op) =>
-      op.id === id ? { ...op, status: "error", errorMessage } : op,
-    );
-    this.emit();
+    this.operations.fail(id, errorMessage);
   }
 
   public removePendingOperation(id: string): void {
-    this.ui.pendingOperations = this.ui.pendingOperations.filter(
-      (op) => op.id !== id,
-    );
-    this.emit();
+    this.operations.end(id);
   }
 
   // --- AI Preflight (explicit scope before every AI/web operation) ---
@@ -2268,266 +2217,88 @@ export class LearnimalController {
     });
   }
 
-  // --- Web Research Flow (Phase 3: real search, inspectable candidates, cited briefs) ---
+  // --- Web Research Flow (delegated to ResearchWorkflow) ---
+  //
+  // These stay on the controller because the UI talks to one object, but they are now
+  // pure delegation: the search/keep/cite state machine lives in the use-case layer.
 
-  /**
-   * Runs an actual web search via `SearchGateway` (never asks the model to pretend it
-   * searched) and opens the research sheet with normalized, inspectable candidates.
-   * On failure, `researchError` is set and shown instead of fabricated results.
-   */
+  /** Runs a real web search and opens the sheet with inspectable candidates. */
   async startResearch(query: string): Promise<void> {
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    this.ui.researchQuery = trimmed;
-    this.ui.researchLoading = true;
-    this.ui.researchError = null;
-    this.ui.researchResults = [];
-    this.ui.isResearchOpen = true;
-    this.emit();
-
-    try {
-      const results = await this.runResearchInteractor.execute(trimmed);
-      this.ui.researchResults = results;
-    } catch (err: any) {
-      this.ui.researchError =
-        err instanceof UseCaseError ? err.userMessage : "Search failed";
-    } finally {
-      this.ui.researchLoading = false;
-      this.emit();
-    }
+    await this.research.start(query);
   }
 
   /** Marks a research candidate kept or rejected (or resets it to undecided). */
   setResearchKeepState(url: string, keepState: ResearchResult["keepState"]): void {
-    this.ui.researchResults = this.ui.researchResults.map((r) =>
-      r.url === url ? { ...r, keepState } : r,
-    );
-    this.emit();
+    this.research.setKeepState(url, keepState);
   }
 
-  /** Fetches a candidate's full text via `ExtractionGateway`. Failure is surfaced as a toast, not fabricated content. */
+  /** Fetches a candidate's full text; failure is surfaced, never fabricated. */
   async extractResearchResult(url: string): Promise<void> {
-    const target = this.ui.researchResults.find((r) => r.url === url);
-    if (!target) return;
-    this.ui.researchLoading = true;
-    this.emit();
-    try {
-      const extracted = await this.extractResearchResultInteractor.execute(target);
-      this.ui.researchResults = this.ui.researchResults.map((r) =>
-        r.url === url ? extracted : r,
-      );
-    } catch (err: any) {
-      this.showToast(
-        err instanceof UseCaseError ? err.userMessage : "Extraction failed",
-      );
-    } finally {
-      this.ui.researchLoading = false;
-      this.emit();
-    }
+    await this.research.extract(url);
   }
 
-  /**
-   * Persists a research candidate as a real `source` card immediately — deterministic,
-   * no model call, no API key required. This is the direct "add this" action; unlike
-   * `createResearchBrief` (which needs a key and only saves cited claim cards), a
-   * learner must be able to save evidence they found even with no AI configured.
-   */
+  /** Saves a candidate as a real source card — deterministic, no API key required. */
   async saveResearchResultAsSource(url: string): Promise<void> {
-    const workspaceId = this.domain.activeWorkspaceId;
-    const target = this.ui.researchResults.find((r) => r.url === url);
-    if (!workspaceId || !target) return;
-    if (target.savedCardId) return;
-
-    try {
-      const card = await this.saveResearchResultAsSourceInteractor.execute({
-        result: target,
-        workspaceId,
-        parentId: this.domain.currentGroupId,
-      });
-      this.ui.researchResults = this.ui.researchResults.map((r) =>
-        r.url === url ? { ...r, savedCardId: card.id } : r,
-      );
-      if (this.domain.activeWorkspaceId === workspaceId) {
-        await this.loadCardsForActiveWorkspace();
-      }
-      this.showToast(`Source added: ${card.title}`);
-    } catch (err: any) {
-      this.showToast(
-        err instanceof UseCaseError ? err.userMessage : "Could not save source",
-      );
-    } finally {
-      this.emit();
-    }
+    await this.research.saveAsSource(url);
   }
 
-  /**
-   * Synthesizes a cited brief from exactly the kept candidates. Requires a configured
-   * API key and at least one kept result — see `CreateResearchBriefInteractor` for the
-   * honesty guards (no key -> refuses up front; an uncited response -> rejected, nothing
-   * saved) that keep this from silently fabricating a "successful" result.
-   */
+  /** Synthesizes a cited brief from exactly the kept candidates. */
   async createResearchBrief(): Promise<boolean> {
-    const workspaceId = this.domain.activeWorkspaceId;
-    if (!workspaceId) return false;
-
-    this.ui.isCreatingBrief = true;
-    this.emit();
-    try {
-      const created = await this.createResearchBriefInteractor.execute({
-        query: this.ui.researchQuery,
-        results: this.ui.researchResults,
-        workspaceId,
-        parentId: this.domain.currentGroupId,
-        apiKey: this.domain.openRouterKey,
-        model: this.domain.selectedModel,
-      });
-
-      this.ui.isResearchOpen = false;
-      this.ui.operationResult = {
-        summary: `${created.length} cited claim${created.length === 1 ? "" : "s"} created from ${this.ui.researchResults.filter((r) => r.keepState === "kept").length} kept source(s)`,
-        createdCardIds: created.map((c) => c.id),
-        destination: { spaceId: workspaceId, groupId: this.domain.currentGroupId ?? undefined },
-        primaryActionLabel: "Open result",
-      };
-      if (this.domain.activeWorkspaceId === workspaceId) {
-        this.domain.selection = new Set(created.map((c) => c.id));
-        await this.loadCardsForActiveWorkspace();
-      }
-      this.emit();
-      return true;
-    } catch (err: any) {
-      this.showToast(
-        err instanceof UseCaseError ? err.userMessage : "Could not create brief",
-      );
-      return false;
-    } finally {
-      this.ui.isCreatingBrief = false;
-      this.emit();
-    }
+    return this.research.createBrief();
   }
 
   closeResearch(): void {
-    this.ui.isResearchOpen = false;
-    this.ui.researchResults = [];
-    this.ui.researchQuery = "";
-    this.ui.researchError = null;
-    this.emit();
+    this.research.close();
   }
 
-  // --- Mission Control & Gap Report (Phase 4) ---
-
-  /** Deterministic, model-free; computed fresh on every getState() call, never stored. */
-  private computeGapReport(): GapReport | null {
-    const workspace = this.domain.workspaces.find(
-      (w) => w.id === this.domain.activeWorkspaceId,
-    );
-    if (!workspace) return null;
-    return this.gapReportInteractor.execute(workspace, this.domain.cards);
-  }
+  // --- Mission Control & Gap Report (delegated to MissionWorkflow) ---
 
   openGapReport(): void {
-    this.ui.isGapReportOpen = true;
-    this.emit();
+    this.mission.openGapReport();
   }
 
   closeGapReport(): void {
-    this.ui.isGapReportOpen = false;
-    this.emit();
+    this.mission.closeGapReport();
   }
 
-  /**
-   * Closes the gap report and opens the `status-report` preflight pre-filled with a
-   * serialization of the current deterministic report — the UI never has to know how
-   * that prompt is built (see `summarizeGapReportForPrompt`).
-   */
+  /** Closes the report and opens the status-report preflight pre-filled with it. */
   enrichGapReport(): void {
-    const report = this.computeGapReport();
-    if (!report) return;
-    this.ui.isGapReportOpen = false;
-    this.ui.activePreflightPresetId = "status-report";
-    this.ui.preflightQuery = summarizeGapReportForPrompt(report);
-    this.emit();
+    this.mission.enrichGapReport();
   }
 
   openMissionEditor(): void {
-    const workspace = this.domain.workspaces.find(
-      (w) => w.id === this.domain.activeWorkspaceId,
-    );
-    const mission = workspace?.mission;
-    this.ui.missionDraft = mission
-      ? {
-          goalTitle: mission.goalTitle,
-          goalDescription: mission.goalDescription,
-          successCriteria: [...mission.successCriteria],
-          targetDeliverable: mission.targetDeliverable,
-        }
-      : { ...EMPTY_MISSION_DRAFT };
-    this.ui.isMissionEditorOpen = true;
-    this.emit();
+    this.mission.openEditor();
   }
 
   closeMissionEditor(): void {
-    this.ui.isMissionEditorOpen = false;
-    this.emit();
+    this.mission.closeEditor();
   }
 
   updateMissionDraft(patch: Partial<MissionDraft>): void {
-    this.ui.missionDraft = { ...this.ui.missionDraft, ...patch };
-    this.emit();
+    this.mission.updateDraft(patch);
   }
 
   addMissionCriterion(text: string): void {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    this.ui.missionDraft = {
-      ...this.ui.missionDraft,
-      successCriteria: [...this.ui.missionDraft.successCriteria, trimmed],
-    };
-    this.emit();
+    this.mission.addCriterion(text);
   }
 
   removeMissionCriterion(index: number): void {
-    this.ui.missionDraft = {
-      ...this.ui.missionDraft,
-      successCriteria: this.ui.missionDraft.successCriteria.filter((_, i) => i !== index),
-    };
-    this.emit();
+    this.mission.removeCriterion(index);
   }
 
-  /** Persists the current mission draft onto the active workspace. Requires a non-empty goal title. */
+  /** Persists the current mission draft onto the active workspace. */
   async saveMission(): Promise<void> {
-    const workspace = this.domain.workspaces.find(
-      (w) => w.id === this.domain.activeWorkspaceId,
-    );
-    if (!workspace) return;
-    const draft = this.ui.missionDraft;
-    if (!draft.goalTitle.trim()) {
-      this.showToast("Give the mission a goal title first");
-      return;
-    }
+    await this.mission.saveDraft();
+  }
 
-    const mission = workspace.mission
-      ? updateWorkspaceMission(workspace.mission, {
-          goalTitle: draft.goalTitle,
-          goalDescription: draft.goalDescription,
-          successCriteria: draft.successCriteria,
-          targetDeliverable: draft.targetDeliverable,
-        })
-      : createWorkspaceMission({
-          goalTitle: draft.goalTitle,
-          goalDescription: draft.goalDescription,
-          successCriteria: draft.successCriteria,
-          targetDeliverable: draft.targetDeliverable,
-        });
+  /** Moves the mission to another phase and persists it. */
+  async setMissionPhase(phase: WorkspacePhase): Promise<void> {
+    await this.mission.setPhase(phase);
+  }
 
-    const updated: Workspace = { ...workspace, mission };
-    await this.workspaceRepo.saveWorkspace(updated);
-    this.domain.workspaces = this.domain.workspaces.map((w) =>
-      w.id === workspace.id ? updated : w,
-    );
-    this.ui.isMissionEditorOpen = false;
-    this.emit();
-    this.showToast(`Mission saved: ${mission.goalTitle}`);
+  /** One explicit model call turning the mission into a persisted mini-syllabus. */
+  async generateSyllabus(): Promise<void> {
+    await this.mission.generateSyllabus();
   }
 
   private activeWorkspace(): Workspace | undefined {
@@ -2536,189 +2307,43 @@ export class LearnimalController {
     );
   }
 
-  /**
-   * Moves the mission to another phase (define/explore/build/review/done) and persists
-   * it — phases are freely switchable in both directions from Mission Control, never a
-   * one-way gate on what the user can do.
-   */
-  async setMissionPhase(phase: WorkspacePhase): Promise<void> {
-    const workspace = this.activeWorkspace();
-    if (!workspace?.mission) return;
-    const updated: Workspace = {
-      ...workspace,
-      mission: updateWorkspaceMission(workspace.mission, { currentPhase: phase }),
-    };
-    await this.workspaceRepo.saveWorkspace(updated);
-    this.domain.workspaces = this.domain.workspaces.map((w) =>
-      w.id === workspace.id ? updated : w,
-    );
-    this.emit();
-  }
 
-  /**
-   * One explicit model call turning the full mission (goal, why, deliverable, criteria,
-   * phase) into a persisted mini-syllabus of ordered prerequisite cards under a
-   * "Syllabus" group. The created items land selected, so the research preflight's
-   * deterministic suggestions immediately offer them as search queries.
-   */
-  async generateSyllabus(): Promise<void> {
-    const workspace = this.activeWorkspace();
-    if (!workspace?.mission) {
-      this.showToast("Define a mission first");
-      return;
-    }
-    if (!this.domain.openRouterKey?.trim()) {
-      this.showToast("Add your OpenRouter key in Settings");
-      return;
-    }
+  // --- Spaced Repetition Review Flow (delegated to ReviewSession) ---
 
-    const opId = this.addPendingOperation("Generating syllabus…");
-    try {
-      const { group, items } = await this.generateSyllabusInteractor.execute({
-        mission: workspace.mission,
-        workspaceId: workspace.id,
-        apiKey: this.domain.openRouterKey,
-        model: this.domain.selectedModel,
-      });
-      this.removePendingOperation(opId);
-      if (this.domain.activeWorkspaceId === workspace.id) {
-        await this.loadCardsForActiveWorkspace();
-        this.domain.selection = new Set(items.map((c) => c.id));
-      }
-      this.ui.operationResult = {
-        summary: `Syllabus created: ${items.length} prerequisite topic${items.length === 1 ? "" : "s"}`,
-        createdCardIds: [group.id, ...items.map((c) => c.id)],
-        destination: { spaceId: workspace.id, groupId: group.id },
-        primaryActionLabel: "Open syllabus",
-      };
-      this.emit();
-    } catch (err: any) {
-      this.setPendingOperationError(
-        opId,
-        err instanceof UseCaseError ? err.userMessage : "Could not generate syllabus",
-      );
-      this.showToast(
-        err instanceof UseCaseError ? err.userMessage : "Could not generate syllabus",
-      );
-    }
-  }
-
-  // --- Spaced Repetition Review Flow ---
-
-  /**
-   * Calculates FSRS interval previews for all 4 grade buttons for a specific card.
-   */
+  /** FSRS interval previews for all four grade buttons on a card. */
   getReviewPreviews(cardId: string): Record<ReviewGrade, ReviewPreview> | null {
-    const card = this.domain.cards.find((c) => c.id === cardId);
-    if (!card) return null;
-    const ws = this.domain.workspaces.find(
-      (w) => w.id === this.domain.activeWorkspaceId,
-    );
-    const config = ws?.fsrsConfig || DEFAULT_FSRS_CONFIG;
-    return this.fsrsScheduler.preview(card, Date.now(), config);
+    return this.review.previews(cardId);
   }
 
+  /** Opens a study session; `cram` studies regardless of what is actually due. */
   startReview(cram: boolean = false): void {
-    const logTimestamp = new Date().toISOString();
-    try {
-      const queue = this.startReviewInteractor.execute(
-        this.domain.cards,
-        Date.now(),
-        this.domain.interleaveReviews,
-        cram,
-        this.domain.cardTypes,
-      );
-      this.domain.reviewQueue = queue;
-      this.domain.reviewIndex = 0;
-      this.ui.isReviewOpen = true;
-      this.ui.reviewRevealAnswer = false;
-      this.emit();
-      console.log(
-        `[${logTimestamp}] [LearnimalController.startReview] Started review with ${queue.length} cards (cram=${cram})`,
-      );
-    } catch (err: any) {
-      console.log(
-        `[${logTimestamp}] [LearnimalController.startReview] Halted: ${err.message}`,
-      );
-      this.showToast(
-        err instanceof UseCaseError
-          ? err.userMessage
-          : "Could not start review",
-      );
-    }
+    this.review.start(cram);
   }
 
   revealReviewAnswer(): void {
-    this.ui.reviewRevealAnswer = true;
-    this.emit();
+    this.review.reveal();
   }
 
   async gradeReview(grade: boolean | ReviewGrade): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    const currentCard = this.domain.reviewQueue[this.domain.reviewIndex];
-    if (!currentCard) return;
-
-    const ws = this.domain.workspaces.find(
-      (w) => w.id === this.domain.activeWorkspaceId,
-    );
-    const config = ws?.fsrsConfig || DEFAULT_FSRS_CONFIG;
-
-    const updated = await this.gradeReviewInteractor.execute(
-      currentCard,
-      grade,
-      Date.now(),
-      config,
-    );
-    if (!updated) return;
-
-    this.domain.cards = this.domain.cards.map((card) =>
-      card.id === updated.id ? updated : card,
-    );
-    this.domain.reviewQueue = this.domain.reviewQueue.map((card) =>
-      card.id === updated.id ? updated : card,
-    );
-
-    const nextIndex = this.domain.reviewIndex + 1;
-    if (nextIndex >= this.domain.reviewQueue.length) {
-      this.ui.isReviewOpen = false;
-      this.domain.reviewQueue = [];
-      this.domain.reviewIndex = 0;
-      this.ui.reviewRevealAnswer = false;
-      await this.loadCardsForActiveWorkspace();
-      this.showToast("Review complete!");
-      console.log(
-        `[${logTimestamp}] [LearnimalController.gradeReview] Finished review session`,
-      );
-    } else {
-      this.domain.reviewIndex = nextIndex;
-      this.ui.reviewRevealAnswer = false;
-      this.emit();
-    }
+    await this.review.grade(grade);
   }
 
   closeReview(): void {
-    this.ui.isReviewOpen = false;
-    this.domain.reviewQueue = [];
-    this.domain.reviewIndex = 0;
-    this.ui.reviewRevealAnswer = false;
-    this.emit();
+    this.review.close();
   }
 
   // --- Models ---
 
   async loadAvailableModels(): Promise<void> {
-    const logTimestamp = new Date().toISOString();
     this.ui.isLoadingModels = true;
     this.emit();
     try {
       this.domain.availableModels = await this.loadModelsInteractor.execute();
-      console.log(
-        `[${logTimestamp}] [LearnimalController.loadAvailableModels] SUCCESS | count=${this.domain.availableModels.length}`,
-      );
+      this.logger.debug("models.loaded", {
+        count: this.domain.availableModels.length,
+      });
     } catch (err: any) {
-      console.error(
-        `[${logTimestamp}] [LearnimalController.loadAvailableModels] ERROR: ${err.message}`,
-      );
+      this.logger.error("models.loadFailed", err);
     } finally {
       this.ui.isLoadingModels = false;
       this.emit();
@@ -2813,34 +2438,14 @@ export class LearnimalController {
   }
 
   private showToast(message: string): void {
-    this.ui.toastMessage = message;
-    this.emit();
-
-    // Clear toast message after 2.5s
-    setTimeout(() => {
-      if (this.ui.toastMessage === message) {
-        this.ui.toastMessage = "";
-        this.emit();
-      }
-    }, 2500);
+    this.session.showToast(message);
   }
 
   private emit(): void {
-    const freshState = this.getState();
-    for (const listener of this.listeners) {
-      listener(freshState);
-    }
+    this.session.emit();
   }
 }
 
 function encodePipelineArgument(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function commonParentId(cards: Card[]): string | undefined {
-  if (cards.length === 0) return undefined;
-  const parentId = cards[0].parentId;
-  return parentId && cards.every((card) => card.parentId === parentId)
-    ? parentId
-    : undefined;
 }

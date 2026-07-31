@@ -1,5 +1,6 @@
-import { FontGateway } from "../../adapters/gateways/FontGateway";
+import { FontGateway } from "../ports/gateways/FontGateway";
 import { FontChoice } from "../../entities/appearance";
+import { FontFormat, NATIVE_FONT_FORMATS } from "../../entities/fontCatalog";
 import { UseCaseError } from "../errors";
 
 /** Raised when a font can't be resolved or loaded — always with the provider's own reason. */
@@ -27,6 +28,10 @@ export interface FontLoader {
  * can render. Recording first and loading later is how you get a settings screen claiming
  * a typeface that shows up as blank rectangles on next launch.
  *
+ * The accepted formats are injected rather than assumed, because "which font files can
+ * this thing render" is a property of the platform the app is running on, not of the
+ * use case. Native gets TrueType/OpenType; web can also take WOFF2.
+ *
  * Failure is always explicit: every path throws {@link FontInstallError} carrying the
  * provider's own reason, because "couldn't add that font" without a cause leaves the user
  * guessing whether they typo'd the name or lost signal.
@@ -34,13 +39,16 @@ export interface FontLoader {
 export class InstallFontInteractor {
   constructor(
     private readonly fontGateway: FontGateway,
-    private readonly loader: FontLoader
+    private readonly loader: FontLoader,
+    private readonly acceptedFormats: FontFormat[] = NATIVE_FONT_FORMATS
   ) {}
 
   async execute(family: string): Promise<FontChoice> {
     let resolved;
     try {
-      resolved = await this.fontGateway.resolveFont(family);
+      resolved = await this.fontGateway.resolveFont(family, {
+        acceptedFormats: this.acceptedFormats,
+      });
     } catch (err: any) {
       throw new FontInstallError(err?.message ?? "Couldn't find that font");
     }
@@ -53,7 +61,12 @@ export class InstallFontInteractor {
       );
     }
 
-    return { family: resolved.family, source: "google", uri: resolved.uri };
+    return {
+      family: resolved.family,
+      source: "google",
+      uri: resolved.uri,
+      format: resolved.format,
+    };
   }
 }
 

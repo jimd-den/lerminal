@@ -1,4 +1,4 @@
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { BUILTIN_ASSISTANT_PROFILES } from "../../entities/assistantProfile";
 import { WorkspaceMission } from "../../entities/workspace";
 import { AgentRequestError, MissingApiKeyError } from "../errors";

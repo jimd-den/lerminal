@@ -1,7 +1,7 @@
 import { Card, createCard } from "../../entities/card";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { EmptySelectionError } from "../errors";
-import { selectionRoots } from "../tree";
+import { selectionRoots } from "../../entities/tree";
 
 /** Inputs for bundling cards under a new group. */
 export interface GroupCardsRequest {

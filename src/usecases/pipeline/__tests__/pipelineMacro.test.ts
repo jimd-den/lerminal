@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../ports/gateways/AgentGateway";
 import { createCommandDefinition, PipelineCommandDefinition } from "../../../entities/commandDefinition";
 import { PipelineCycleError } from "../../errors";
 import { PipelineEnvironment, PipelineRunner } from "../PipelineRunner";

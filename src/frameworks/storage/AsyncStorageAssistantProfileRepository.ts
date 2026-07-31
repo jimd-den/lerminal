@@ -1,45 +1,40 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AssistantProfile } from "../../entities/assistantProfile";
-import { AssistantProfileRepository } from "../../adapters/repositories/AssistantProfileRepository";
+import { AssistantProfileRepository } from "../../usecases/ports/repositories/AssistantProfileRepository";
+import { KeyValueStore } from "./KeyValueStore";
+import { JsonCollectionStore, JsonStoreOptions, removeById, upsert } from "./JsonStore";
 
 const ASSISTANT_PROFILES_KEY = "learnimal_assistant_profiles_v1";
+
+const profileId = (profile: AssistantProfile) => profile.id;
 
 /**
  * # AsyncStorage Assistant Profile Repository
  *
  * ## Business Value & Purpose
- * Persists AI assistance profiles locally using React Native's AsyncStorage.
+ * Persists the user's AI assistance profiles — which model and instructions stand behind
+ * each capability — so their tuned setup survives restarts.
  */
 export class AsyncStorageAssistantProfileRepository implements AssistantProfileRepository {
+  private readonly profiles: JsonCollectionStore<AssistantProfile>;
+
+  constructor(store: KeyValueStore, options?: JsonStoreOptions) {
+    this.profiles = new JsonCollectionStore(
+      ASSISTANT_PROFILES_KEY,
+      store,
+      "assistantProfiles",
+      options,
+    );
+  }
+
   async getProfiles(): Promise<AssistantProfile[]> {
-    try {
-      const data = await AsyncStorage.getItem(ASSISTANT_PROFILES_KEY);
-      if (!data) return [];
-      return JSON.parse(data) as AssistantProfile[];
-    } catch (err: any) {
-      console.error("[AsyncStorageAssistantProfileRepository] Failed to read profiles:", err.message);
-      return [];
-    }
+    return this.profiles.readAll();
   }
 
   async saveProfile(profile: AssistantProfile): Promise<void> {
-    try {
-      const list = await this.getProfiles();
-      const index = list.findIndex(p => p.id === profile.id);
-      if (index >= 0) list[index] = profile;
-      else list.push(profile);
-      await AsyncStorage.setItem(ASSISTANT_PROFILES_KEY, JSON.stringify(list));
-    } catch (err: any) {
-      console.error("[AsyncStorageAssistantProfileRepository] Failed to save profile:", err.message);
-    }
+    await this.profiles.mutate((all) => upsert(all, profile, profileId));
   }
 
   async deleteProfile(id: string): Promise<void> {
-    try {
-      const list = await this.getProfiles();
-      await AsyncStorage.setItem(ASSISTANT_PROFILES_KEY, JSON.stringify(list.filter(p => p.id !== id)));
-    } catch (err: any) {
-      console.error("[AsyncStorageAssistantProfileRepository] Failed to delete profile:", err.message);
-    }
+    await this.profiles.mutate((all) => removeById(all, id, profileId));
   }
 }

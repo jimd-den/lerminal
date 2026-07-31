@@ -25,7 +25,7 @@ import {
   LearningBehavior,
   normalizeCardTypeId,
 } from "../../../entities/cardTypeDefinition";
-import { ChatMessage } from "../../../adapters/gateways/AgentGateway";
+import { ChatMessage } from "../../../usecases/ports/gateways/AgentGateway";
 import {
   DEFAULT_CARD_INSTRUCTION,
   DEFAULT_CHUNK_INSTRUCTION,

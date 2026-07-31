@@ -1,8 +1,8 @@
 import { createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
 import { resolveAssistantProfile } from "../../entities/assistantProfile";
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { AgentRequestError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 

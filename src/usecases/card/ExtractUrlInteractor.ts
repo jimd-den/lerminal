@@ -1,6 +1,6 @@
 import { Card, createCard } from "../../entities/card";
-import { ExtractionGateway } from "../../adapters/gateways/ExtractionGateway";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { ExtractionGateway } from "../ports/gateways/ExtractionGateway";
+import { CardRepository } from "../ports/repositories/CardRepository";
 
 export interface ExtractUrlRequest {
   url: string;
@@ -28,7 +28,6 @@ export class ExtractUrlInteractor {
   ) {}
 
   async execute(request: ExtractUrlRequest): Promise<Card> {
-    const logTimestamp = new Date().toISOString();
 
     const text = await this.extractionGateway.extractText(request.url);
     const mainTitle = request.title || request.url;
@@ -44,9 +43,6 @@ export class ExtractUrlInteractor {
 
     await this.cardRepo.saveCard(sourceCard);
 
-    console.log(
-      `[${logTimestamp}] [ExtractUrlInteractor.execute] URL extracted to single source card | title="${mainTitle}" | cardId=${sourceCard.id}`
-    );
 
     return sourceCard;
   }

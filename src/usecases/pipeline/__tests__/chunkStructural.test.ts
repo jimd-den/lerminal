@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createCard } from "../../../entities/card";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentGateway } from "../../../adapters/gateways/AgentGateway";
+import { AgentGateway } from "../../ports/gateways/AgentGateway";
 import { ChunkCommand } from "../ChunkCommand";
 import { CommandContext } from "../Command";
 

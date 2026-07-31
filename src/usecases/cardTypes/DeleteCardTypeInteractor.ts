@@ -1,4 +1,4 @@
-import { CardTypeRepository } from "../../adapters/repositories/CardTypeRepository";
+import { CardTypeRepository } from "../ports/repositories/CardTypeRepository";
 import { BuiltinCardTypeError } from "../errors";
 
 /**

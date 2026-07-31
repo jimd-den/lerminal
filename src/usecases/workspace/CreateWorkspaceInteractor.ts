@@ -1,5 +1,5 @@
 import { createWorkspace, Workspace } from "../../entities/workspace";
-import { WorkspaceRepository } from "../../adapters/repositories/WorkspaceRepository";
+import { WorkspaceRepository } from "../ports/repositories/WorkspaceRepository";
 
 /**
  * # Create Workspace Interactor

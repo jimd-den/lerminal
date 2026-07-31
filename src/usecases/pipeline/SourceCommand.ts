@@ -1,6 +1,7 @@
 import { createCard } from "../../entities/card";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { ExtractionGateway } from "../../adapters/gateways/ExtractionGateway";
+import { Logger, silentLogger } from "../ports/Logger";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { ExtractionGateway } from "../ports/gateways/ExtractionGateway";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
 /**
@@ -24,11 +25,11 @@ export class SourceCommand implements PipelineCommand {
 
   constructor(
     private readonly cardRepo: CardRepository,
-    private readonly extractionGateway?: ExtractionGateway
+    private readonly extractionGateway?: ExtractionGateway,
+    private readonly logger: Logger = silentLogger
   ) {}
 
   async execute(arg: string, ctx: CommandContext): Promise<CommandResult> {
-    const logTimestamp = new Date().toISOString();
 
     if (!arg) {
       return { kind: "needsInput", mode: "source" };
@@ -49,7 +50,11 @@ export class SourceCommand implements PipelineCommand {
         try {
           extractedBody = await this.extractionGateway.extractText(url);
         } catch (err: any) {
-          console.warn(`[${logTimestamp}] [SourceCommand.execute] Failed URL extraction, falling back to raw URL: ${err.message}`);
+          // The card is still created, but holds the URL rather than its text — the user
+          // should be able to find out why what they saved looks thinner than expected.
+          this.logger.warn("source.extractionFailed.fallbackToUrl", {
+            reason: err.message,
+          });
           extractedBody = `Extraction failed for ${url}: ${err.message}`;
         }
       }
@@ -65,9 +70,6 @@ export class SourceCommand implements PipelineCommand {
 
       await this.cardRepo.saveCard(sourceCard);
 
-      console.log(
-        `[${logTimestamp}] [SourceCommand.execute] URL Ingested | url=${url} | cardId=${sourceCard.id}`
-      );
 
       return { kind: "cards", cards: [sourceCard] };
     }
@@ -87,9 +89,6 @@ export class SourceCommand implements PipelineCommand {
 
     await this.cardRepo.saveCard(sourceCard);
 
-    console.log(
-      `[${logTimestamp}] [SourceCommand.execute] Text Ingested | title="${title}" | cardId=${sourceCard.id}`
-    );
 
     return { kind: "cards", cards: [sourceCard] };
   }

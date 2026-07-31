@@ -85,14 +85,25 @@ outward:
 
 ```
 entities/    Cards, workspaces, missions, provenance, schedules, palettes — pure domain
-usecases/    Pipeline commands, agent scope, research, gap report, undo — pure application
-adapters/    Controller, presenters, repository + gateway ports
-frameworks/  React Native UI, AsyncStorage, OpenRouter, DuckDuckGo, Google Fonts
+usecases/    Interactors, pipeline commands, feature workflows, and the ports they need
+adapters/    Controller, session store, state presenter, in-memory repositories
+frameworks/  React Native UI, AsyncStorage, OpenRouter, DuckDuckGo, fonts, composition
 ```
 
-The UI never imports `usecases/` directly and never calls a gateway; it reads view-models
-from presenters and calls controller methods. Presenters derive on read rather than storing
-snapshots, so a panel can never describe a card that no longer exists.
+The UI never imports `usecases/` directly and never calls a gateway; it reads a view-model
+and calls controller methods. That view-model is derived on read rather than stored, so a
+panel can never describe a card that no longer exists.
+
+Each cohesive feature — research, mission, operations/undo, review — is a workflow in
+`usecases/` that owns its own state and receives a small `Host` interface for the context
+it reads and the effects it causes, so it can be tested with no application around it.
+
+Storage failure is never disguised as emptiness: a failed read throws rather than
+returning `[]`, so nothing can overwrite your cards with the result of a read that didn't
+work.
+
+**[docs/architecture.md](docs/architecture.md)** covers the layers, the rules the code
+keeps, and where to put new things.
 
 Local-first: everything persists to AsyncStorage on device. No backend, no accounts, no
 sync. Bring your own OpenRouter key.
@@ -111,6 +122,6 @@ report — works without one.
 ## Tests
 
 ```bash
-bun test           # 352 tests
+bun test           # 479 tests, including the dependency-rule check
 npx tsc --noEmit   # type check
 ```

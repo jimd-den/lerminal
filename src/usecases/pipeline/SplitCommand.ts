@@ -1,6 +1,6 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { Card, createCard } from "../../entities/card";
-import { chunkCard } from "../commands";
+import { chunkCard } from "../../entities/chunking";
 import { MarkdownChunkerService, MarkdownNode } from "../card/MarkdownChunkerService";
 import { EmptySelectionError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
@@ -24,7 +24,6 @@ export class SplitCommand implements PipelineCommand {
   constructor(private readonly cardRepo: CardRepository) {}
 
   async execute(_arg: string, ctx: CommandContext): Promise<CommandResult> {
-    const logTimestamp = new Date().toISOString();
 
     const chunkable = ctx.inputCards.filter(
       c => c.type === "source" || c.type === "note" || c.type === "chunk"
@@ -56,7 +55,6 @@ export class SplitCommand implements PipelineCommand {
 
     await this.cardRepo.saveCards(created);
 
-    console.log(`[${logTimestamp}] [SplitCommand.execute] Split into ${created.length} structural cards`);
     return { kind: "cards", cards: created };
   }
 
