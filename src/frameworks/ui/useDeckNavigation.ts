@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { BackHandler } from "react-native";
 import {
   AppState,
-  LearnimalController,
-} from "../../adapters/presenters/LearnimalController";
-import { CorePlace } from "./learningDeck/components";
-import { CaptureIntent } from "./learningDeck/screens";
+  GriotController,
+} from "../../adapters/presenters/GriotController";
+import { CorePlace } from "./griot/components";
+import { CaptureIntent } from "./griot/screens";
 
 /**
  * # Deck Navigation
@@ -19,7 +19,7 @@ import { CaptureIntent } from "./learningDeck/screens";
  *
  * ## Why a hook rather than a component or a controller field
  * It is genuinely *view* state: which screen the user is looking at has no meaning to the
- * domain and must not survive a reload. Putting it in `LearnimalController` would mix
+ * domain and must not survive a reload. Putting it in `GriotController` would mix
  * presentation with the card graph; leaving it inline in `MainLayout` is what made that
  * file a God class. A hook keeps it colocated with the shell that owns it while making
  * each transition a named function instead of a pair of `setState` calls at the call site.
@@ -52,7 +52,7 @@ export interface DeckNavigation {
 }
 
 export interface DeckNavigationOptions {
-  controller: LearnimalController;
+  controller: GriotController;
   state: AppState;
   /** True while the capture screen is submitting — navigation is blocked so work isn't lost. */
   captureWorking: boolean;

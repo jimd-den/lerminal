@@ -3,6 +3,11 @@ import { PromptPresetRepository } from "../../usecases/ports/repositories/Prompt
 import { KeyValueStore } from "./KeyValueStore";
 import { JsonCollectionStore, JsonStoreOptions, removeById, upsert } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const PROMPT_PRESETS_KEY = "learnimal_prompt_presets_v1";
 
 const presetId = (preset: PromptPreset) => preset.id;

@@ -10,7 +10,7 @@ import { CardTypeDefinition } from "../../entities/cardTypeDefinition";
  * # Pipeline Command Port & Output Boundary
  *
  * ## Business Value & Purpose
- * Learnimal pipelines (`ask "X" | chunk | recall | space`) are sequences of
+ * GRIOT pipelines (`ask "X" | chunk | recall | space`) are sequences of
  * single-responsibility commands. This module defines the contract every command
  * implements and the typed result it returns.
  */

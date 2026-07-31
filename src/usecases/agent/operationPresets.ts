@@ -16,7 +16,7 @@ import { AgentScopeKind, ScopeBudget, resolveScopedContext } from "./AgentScope"
 
 /**
  * Which existing pipeline command (or, for `research`, the dedicated research flow —
- * see `RunResearchInteractor`/`LearnimalController.startResearch`) a preset dispatches to.
+ * see `RunResearchInteractor`/`GriotController.startResearch`) a preset dispatches to.
  */
 export type PresetCommand = "ask" | "search" | "recall" | "research";
 
@@ -203,6 +203,6 @@ export function buildPipelineText(preset: OperationPreset, query?: string): stri
     case "recall":
       return "recall";
     case "research":
-      throw new Error("research-flow presets dispatch via LearnimalController.startResearch, not a pipeline string");
+      throw new Error("research-flow presets dispatch via GriotController.startResearch, not a pipeline string");
   }
 }

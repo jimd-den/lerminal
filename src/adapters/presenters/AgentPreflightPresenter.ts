@@ -1,4 +1,4 @@
-import { AppState } from "./LearnimalController";
+import { AppState } from "./GriotController";
 import { AgentRunRequest, OperationPreset, buildAgentRunRequest, findOperationPreset } from "../../usecases/agent/operationPresets";
 import { expandForPipe } from "../../entities/tree";
 
@@ -10,7 +10,7 @@ import { expandForPipe } from "../../entities/tree";
  * runs, the UI must state what it will read, whether it will use the web, what it will
  * create, and where. `presentAgentPreflight` computes all of that (plus whether the run
  * is currently blocked, and why) from the same {@link AppState} + {@link OperationPreset}
- * that `LearnimalController.confirmPreflight` uses to actually dispatch — so the preview
+ * that `GriotController.confirmPreflight` uses to actually dispatch — so the preview
  * the user sees and the request that runs are guaranteed to agree.
  */
 export interface AgentPreflightModel {

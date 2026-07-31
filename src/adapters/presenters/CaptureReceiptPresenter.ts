@@ -1,4 +1,4 @@
-import { AppState } from "./LearnimalController";
+import { AppState } from "./GriotController";
 import { Card } from "../../entities/card";
 import { NextAction, nextActionsForCard } from "../../usecases/capture/nextActions";
 import {

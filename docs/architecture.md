@@ -1,6 +1,6 @@
 # Architecture
 
-Learnimal is built as four layers with a single rule: **dependencies only ever point
+GRIOT is built as four layers with a single rule: **dependencies only ever point
 inward.** `src/__tests__/dependencyRule.test.ts` enforces it on every run, so the rule is
 part of the build rather than a convention people remember.
 
@@ -60,7 +60,7 @@ inward.
 
 ### `adapters/` — translating between the app and its delivery
 
-- **`LearnimalController`** — the single object the UI talks to. Its methods are thin;
+- **`GriotController`** — the single object the UI talks to. Its methods are thin;
   the work belongs to workflows and interactors.
 - **`AppSessionStore`** — holds `domain` (persisted or derived) and `ui` (on-screen)
   state, owns subscription and the toast timer, and provides the shared edits

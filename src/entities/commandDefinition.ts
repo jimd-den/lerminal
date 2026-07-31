@@ -2,7 +2,7 @@
  * # Command Definition Entity
  *
  * ## Business Value & Purpose
- * Learnimal's power comes from composable, Unix-style commands. This entity lets a
+ * GRIOT's power comes from composable, Unix-style commands. This entity lets a
  * user define their *own* commands that slot into pipelines alongside the built-ins
  * — for example a command that asks the agent with a specialized prompt.
  *

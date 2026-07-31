@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
-import { LearnimalController } from "./src/adapters/presenters/LearnimalController";
+import { GriotController } from "./src/adapters/presenters/GriotController";
 import { composeController } from "./src/frameworks/composition/composeController";
 import { MainLayout } from "./src/frameworks/ui/MainLayout";
 
 /**
- * # Learnimal Application Bootstrapper
+ * # GRIOT Application Bootstrapper
  *
  * ## Business Value & Purpose
  * The app's entry point. It asks `composeController` for a fully wired controller —
@@ -15,7 +15,7 @@ import { MainLayout } from "./src/frameworks/ui/MainLayout";
  * failure still hands the user a running app that can report what went wrong.
  */
 export default function App() {
-  const [controller, setController] = useState<LearnimalController | null>(null);
+  const [controller, setController] = useState<GriotController | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

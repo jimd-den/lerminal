@@ -127,7 +127,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${cleanKey}`,
           "HTTP-Referer": "https://github.com/dbslim/lerminal",
-          "X-Title": "Learnimal",
+          "X-Title": "GRIOT",
         },
         body: JSON.stringify({
           model: modelToUse,
@@ -232,7 +232,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${cleanKey}`,
         "HTTP-Referer": "https://github.com/dbslim/lerminal",
-        "X-Title": "Learnimal",
+        "X-Title": "GRIOT",
       },
       body: JSON.stringify({
         model: input.model,
@@ -301,7 +301,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${cleanKey}`,
         "HTTP-Referer": "https://github.com/dbslim/lerminal",
-        "X-Title": "Learnimal",
+        "X-Title": "GRIOT",
       },
       body: JSON.stringify({
         model: input.model,
@@ -367,7 +367,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.setRequestHeader("Authorization", `Bearer ${cleanKey}`);
       xhr.setRequestHeader("HTTP-Referer", "https://github.com/dbslim/lerminal");
-      xhr.setRequestHeader("X-Title", "Learnimal");
+      xhr.setRequestHeader("X-Title", "GRIOT");
 
       let processed = 0;
       let full = "";

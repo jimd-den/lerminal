@@ -46,7 +46,7 @@ describe("MainLayout shell", () => {
 
 describe("modal stack", () => {
   it("mounts every sheet in one place", () => {
-    const content = read("learningDeck/ModalStack.tsx");
+    const content = read("griot/ModalStack.tsx");
 
     for (const modal of [
       "CardDetailModal",
@@ -65,7 +65,7 @@ describe("modal stack", () => {
 
 describe("screens module", () => {
   it("is split one file per screen, not a single omnibus file", () => {
-    expect(fs.existsSync(path.join(uiRoot, "learningDeck/screens.tsx"))).toBe(false);
+    expect(fs.existsSync(path.join(uiRoot, "griot/screens.tsx"))).toBe(false);
 
     for (const file of [
       "DeckScreen.tsx",
@@ -74,12 +74,12 @@ describe("screens module", () => {
       "DocumentScreen.tsx",
       "CaptureScreen.tsx",
     ]) {
-      expect(fs.existsSync(path.join(uiRoot, "learningDeck/screens", file))).toBe(true);
+      expect(fs.existsSync(path.join(uiRoot, "griot/screens", file))).toBe(true);
     }
   });
 
   it("keeps every screen small enough to hold in your head", () => {
-    const dir = path.join(uiRoot, "learningDeck/screens");
+    const dir = path.join(uiRoot, "griot/screens");
     for (const file of fs.readdirSync(dir)) {
       const lines = fs.readFileSync(path.join(dir, file), "utf-8").split("\n").length;
       expect(lines).toBeLessThan(400);

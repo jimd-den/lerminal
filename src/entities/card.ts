@@ -5,7 +5,7 @@ import { Provenance } from "./provenance";
  * # Card Entity Domain Model
  * 
  * ## Business Value & Purpose
- * The card is the universal unit of knowledge in Learnimal. Following the Unix philosophy,
+ * The card is the universal unit of knowledge in GRIOT. Following the Unix philosophy,
  * all sources, notes, concepts, and questions are stored as Cards. Having a single card format
  * allows commands to be chained together flexibly (e.g., source cards pipe into chunk cards,
  * which pipe into question cards).

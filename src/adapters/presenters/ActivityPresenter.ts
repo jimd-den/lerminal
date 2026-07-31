@@ -1,4 +1,4 @@
-import { AppState } from "./LearnimalController";
+import { AppState } from "./GriotController";
 import { findCommandDoc } from "../../usecases/commands/commandCatalog";
 
 /**

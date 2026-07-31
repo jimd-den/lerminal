@@ -5,6 +5,11 @@ import {
 import { KeyValueStore } from "./KeyValueStore";
 import { JsonDocumentStore, JsonStoreOptions } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const SETTINGS_KEY = "learnimal_settings_v1";
 
 /**

@@ -9,6 +9,11 @@ import {
   upsertAll,
 } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const CARDS_STORAGE_KEY = "learnimal_cards_v1";
 
 const cardId = (card: Card) => card.id;

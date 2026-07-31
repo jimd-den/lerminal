@@ -3,6 +3,11 @@ import { WorkspaceRepository } from "../../usecases/ports/repositories/Workspace
 import { KeyValueStore } from "./KeyValueStore";
 import { JsonCollectionStore, JsonStoreOptions, removeById, upsert } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const WORKSPACES_STORAGE_KEY = "learnimal_workspaces_v1";
 
 const workspaceId = (workspace: Workspace) => workspace.id;

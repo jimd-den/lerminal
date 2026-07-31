@@ -3,6 +3,11 @@ import { CardTypeRepository } from "../../usecases/ports/repositories/CardTypeRe
 import { KeyValueStore } from "./KeyValueStore";
 import { JsonCollectionStore, JsonStoreOptions, removeById, upsert } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const CARD_TYPES_KEY = "learnimal_card_types_v1";
 
 const typeId = (definition: CardTypeDefinition) => definition.id;

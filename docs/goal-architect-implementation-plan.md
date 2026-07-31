@@ -6,7 +6,7 @@ before the code so the boundaries are argued once rather than rediscovered per m
 
 ## The promise this feature must not break
 
-Learnimal's central claim is that **you can always tell where something came from.** A
+GRIOT's central claim is that **you can always tell where something came from.** A
 goal-planning agent is the easiest place in the app to break that, because plausible
 planning prose is cheap to generate and reads like authority. So the design rule is:
 
@@ -54,7 +54,7 @@ the vocabulary this feature needs (`goal`, `task`, `experiment`, `concept`, `que
 | usecases | `goal/GoalArchitectWorkflow.ts` | Session orchestration: ask, answer, skip, edit, request an agent turn, build the proposal. |
 | usecases | `goal/CreateMissionPlanInteractor.ts` | Accepted proposal → cards + workspace mission + receipt. The only module here that writes. |
 | adapters | `presenters/GoalArchitectPresenter.ts` | Projects session state into what the sheet renders. |
-| frameworks | `ui/learningDeck/GoalArchitectSheet.tsx` | The sheet. Reads presenter state, calls controller actions, touches no gateway. |
+| frameworks | `ui/griot/GoalArchitectSheet.tsx` | The sheet. Reads presenter state, calls controller actions, touches no gateway. |
 
 `deriveWorkingMap(answers)` lives in **entities**, not usecases: it is a pure function of
 the answers with no I/O, and keeping it pure is what makes "works without an API key"

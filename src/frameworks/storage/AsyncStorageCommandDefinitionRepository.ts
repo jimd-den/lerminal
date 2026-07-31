@@ -3,6 +3,11 @@ import { CommandDefinitionRepository } from "../../usecases/ports/repositories/C
 import { KeyValueStore } from "./KeyValueStore";
 import { JsonCollectionStore, JsonStoreOptions, removeById, upsert } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const COMMAND_DEFINITIONS_KEY = "learnimal_command_definitions_v1";
 
 const definitionId = (definition: CommandDefinition) => definition.id;

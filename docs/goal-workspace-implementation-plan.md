@@ -1,7 +1,7 @@
 # Goal Workspace Evolution — Implementation Plan
 
 Status: living document, updated at the end of each phase.
-Scope: turn Learnimal (app metadata still says "Chunk Buddy") into a goal-driven,
+Scope: turn GRIOT (app metadata still says "Chunk Buddy") into a goal-driven,
 trustworthy, touch-first learning/capstone workspace, per the product spec. This
 document is the Phase 0 deliverable: a reconnaissance map plus a phased plan.
 
@@ -50,20 +50,20 @@ document is the Phase 0 deliverable: a reconnaissance map plus a phased plan.
 - `gateways/AgentGateway.ts` (interface): `ask()`, `fetchModels()`, optional `streamChat()`, optional `designAssistantProfile()` (AI Prompt Architect).
 - `gateways/SearchGateway.ts`: `search(query): SearchResult[]`.
 - `gateways/ExtractionGateway.ts`: `extractText(url): string`.
-- `presenters/LearnimalController.ts` (~1850 lines) — the one controller/presenter. Owns split `DomainState`/`UiState`, composes all interactors + the `PipelineRunner`, exposes a flat `AppState` view-model via `subscribe()`. Already has `PendingOperation` (loading/error per in-flight pipeline run) and `OperationResult` (post-run summary: count, destination, one primary action label) — **this is the seed of a run receipt, but it's generic** (`"${n} ${label}s created"`, no scope/web/citation info) and is **not persisted** (lost on app restart, no "Inspect run").
-- `presenters/LearningDeckPresenter.ts` — pure view-model functions (`presentLearningDeck`, `presentDocument`, `filterMaterials`) layered on top of `AppState`; no own state.
+- `presenters/GriotController.ts` (~1850 lines) — the one controller/presenter. Owns split `DomainState`/`UiState`, composes all interactors + the `PipelineRunner`, exposes a flat `AppState` view-model via `subscribe()`. Already has `PendingOperation` (loading/error per in-flight pipeline run) and `OperationResult` (post-run summary: count, destination, one primary action label) — **this is the seed of a run receipt, but it's generic** (`"${n} ${label}s created"`, no scope/web/citation info) and is **not persisted** (lost on app restart, no "Inspect run").
+- `presenters/GriotDeckPresenter.ts` — pure view-model functions (`presentGriotDeck`, `presentDocument`, `filterMaterials`) layered on top of `AppState`; no own state.
 - `repositories/*Repository.ts` — interfaces only (`CardRepository`, `WorkspaceRepository`, `SettingsRepository`, `CommandDefinitionRepository`, `CardTypeRepository`, `PromptPresetRepository`, `AssistantProfileRepository`, `ReviewLogRepository`). Each has an `AsyncStorage*` impl (`src/frameworks/storage/`) and a `Memory*` impl (tests).
 
 ### Frameworks (`src/frameworks/`)
 - `network/OpenRouterAgentGateway.ts`, `DuckDuckGoSearchGateway.ts` (HTML-scrapes DDG, returns `[]` on any failure — swallowed, not thrown), `WebExtractionGateway.ts` (Wikipedia API special-case + generic HTML→Markdown via `node-html-markdown`, **throws** on failure — the only gateway that fails loud).
 - `ui/MainLayout.tsx` — root screen switcher over 4 "places" (`deck | library | capture | more`) plus 3 always-mounted modals (`CardDetailModal`, `ReviewModal`, `CommandConsoleModal`+`PendingInputModal`). Hardware back button, selection-aware.
 - `ui/useControllerState.ts` — subscribes the controller to React state.
-- `ui/learningDeck/theme.ts` — `resolveLearningTheme(mode, accent)`: 5 accents × dark/light, HUD-toned palette (`panelStrong`, `line`, `accentSoft`, mono font selection). No reduced-motion handling anywhere yet.
-- `ui/learningDeck/components.tsx` — shared primitives: `SystemHeader`, `Slab` (list row, 88pt min height, long-press-to-select), `Chip`, `OperationPanel` (renders `OperationResult` generically — no scope/receipt detail), `BottomNavigation`, `SelectionBar` (Cancel / Organize / Transform / Delete — **"Organize"/"Transform" both just open the generic command modal**, no distinct Explain/Research/Connect/Study actions yet).
-- `ui/learningDeck/screens.tsx` — `DeckScreen` (home: continue-learning hero, capture dock, recent activity, pending-operation banner), `LibraryScreen`/`SpaceScreen`/`DocumentScreen` (drill-down), `CaptureScreen` (intent chips `paste/link/note/ask` + a raw `/command` escape hatch — **typing `ask "..."` here gives no preflight, no web indicator, no destination preview; it just runs**).
-- `ui/learningDeck/CommandConsoleModal.tsx` — the command palette: pinned chips + a flat `BUILTIN_COMMANDS` list (name + one-line description + category) + custom-command CRUD + a raw pipeline text input. **Tapping any row calls `run(command.name)` immediately — zero preflight for any command, including `ask` and `search`.**
-- `ui/learningDeck/CardDetailModal.tsx`, `ReviewModal.tsx`, `SettingsScreen.tsx` (incl. `AssistantDesignerModal` — the AI Prompt Architect UI).
-- `App.tsx` — composition root: instantiates every `AsyncStorage*` repo + gateway, builds the one `LearnimalController`.
+- `ui/griot/theme.ts` — `resolveGriotTheme(mode, accent)`: 5 accents × dark/light, HUD-toned palette (`panelStrong`, `line`, `accentSoft`, mono font selection). No reduced-motion handling anywhere yet.
+- `ui/griot/components.tsx` — shared primitives: `SystemHeader`, `Slab` (list row, 88pt min height, long-press-to-select), `Chip`, `OperationPanel` (renders `OperationResult` generically — no scope/receipt detail), `BottomNavigation`, `SelectionBar` (Cancel / Organize / Transform / Delete — **"Organize"/"Transform" both just open the generic command modal**, no distinct Explain/Research/Connect/Study actions yet).
+- `ui/griot/screens.tsx` — `DeckScreen` (home: continue-learning hero, capture dock, recent activity, pending-operation banner), `LibraryScreen`/`SpaceScreen`/`DocumentScreen` (drill-down), `CaptureScreen` (intent chips `paste/link/note/ask` + a raw `/command` escape hatch — **typing `ask "..."` here gives no preflight, no web indicator, no destination preview; it just runs**).
+- `ui/griot/CommandConsoleModal.tsx` — the command palette: pinned chips + a flat `BUILTIN_COMMANDS` list (name + one-line description + category) + custom-command CRUD + a raw pipeline text input. **Tapping any row calls `run(command.name)` immediately — zero preflight for any command, including `ask` and `search`.**
+- `ui/griot/CardDetailModal.tsx`, `ReviewModal.tsx`, `SettingsScreen.tsx` (incl. `AssistantDesignerModal` — the AI Prompt Architect UI).
+- `App.tsx` — composition root: instantiates every `AsyncStorage*` repo + gateway, builds the one `GriotController`.
 - `app.json` — `name: "Chunk Buddy"`, `slug: "chunk_buddy"`, bundle id `com.ddsrv.x-chunk-buddy`. Confirms the "still branded Chunk Buddy" note in the brief.
 
 ## 2. The trust gaps, precisely (this is what Phases 2–8 fix)
@@ -158,7 +158,7 @@ written — including predictions that turned out wrong, which are noted below.*
 No migration runner was needed or written. Every field added is optional and resolves
 through a defaulting function — `resolveAppearance`, `readFailedRunCard`, the `mission`/
 `role`/`provenance` fields — so a settings or card blob written before this work loads
-unchanged. `resolveLearningTheme` still honours the legacy `mode`/`accent` arguments and
+unchanged. `resolveGriotTheme` still honours the legacy `mode`/`accent` arguments and
 only switches to a palette once one is explicitly chosen, so no existing user's appearance
 changed underneath them.
 

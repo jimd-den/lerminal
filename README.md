@@ -1,6 +1,6 @@
-# Learnimal
+# GRIOT
 
-Learnimal turns a goal into an evidence-backed capstone. You capture small units of
+GRIOT turns a goal into an evidence-backed capstone. You capture small units of
 knowledge, investigate them, practise them, and build from them — and at every step the
 app tells you exactly what it is about to do, what it read, and where the result went.
 
@@ -11,7 +11,7 @@ one visible, inspectable stage in that pipeline — never an invisible force.
 ## The promise this app makes
 
 Most AI tools leave you guessing whether an answer came from your notes, from the web, or
-from the model's imagination. Learnimal's core commitment is that you can always tell:
+from the model's imagination. GRIOT's core commitment is that you can always tell:
 
 - **Every AI action states its scope before it runs.** A preflight sheet names what will
   be read, whether the web is enabled, what will be created, and where it will land.

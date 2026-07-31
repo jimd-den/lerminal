@@ -1,4 +1,4 @@
-import { AppState } from "./LearnimalController";
+import { AppState } from "./GriotController";
 import { DomainState, UiState } from "./AppSessionStore";
 import { breadcrumbPath, directChildren } from "../../entities/tree";
 import { ResearchState } from "../../usecases/research/ResearchWorkflow";

@@ -3,6 +3,11 @@ import { AssistantProfileRepository } from "../../usecases/ports/repositories/As
 import { KeyValueStore } from "./KeyValueStore";
 import { JsonCollectionStore, JsonStoreOptions, removeById, upsert } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const ASSISTANT_PROFILES_KEY = "learnimal_assistant_profiles_v1";
 
 const profileId = (profile: AssistantProfile) => profile.id;

@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { LearnimalController } from "../../adapters/presenters/LearnimalController";
+import { GriotController } from "../../adapters/presenters/GriotController";
 import {
   NATIVE_FONT_FORMATS,
   WEB_FONT_FORMATS,
@@ -39,12 +39,12 @@ export interface CompositionOptions {
   logger?: Logger;
 }
 
-export function composeController(options: CompositionOptions = {}): LearnimalController {
+export function composeController(options: CompositionOptions = {}): GriotController {
   const store = options.store ?? asyncStorageKeyValueStore;
   const logger = options.logger ?? new ConsoleLogger();
   const storeOptions = { logger };
 
-  return new LearnimalController({
+  return new GriotController({
     cardRepo: new AsyncStorageCardRepository(store, storeOptions),
     workspaceRepo: new AsyncStorageWorkspaceRepository(store, storeOptions),
     settingsRepo: new AsyncStorageSettingsRepository(store, storeOptions),

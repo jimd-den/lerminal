@@ -2,27 +2,27 @@ import React, { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { LearnimalController } from "../../adapters/presenters/LearnimalController";
+import { GriotController } from "../../adapters/presenters/GriotController";
 import {
   presentDocument,
-  presentLearningDeck,
-} from "../../adapters/presenters/LearningDeckPresenter";
+  presentGriotDeck,
+} from "../../adapters/presenters/GriotDeckPresenter";
 import { useControllerState } from "./useControllerState";
 import { useDeckNavigation } from "./useDeckNavigation";
-import { BottomNavigation } from "./learningDeck/components";
-import { SelectionTray } from "./learningDeck/SelectionTray";
-import { ActivityBanner } from "./learningDeck/ActivityBanner";
+import { BottomNavigation } from "./griot/components";
+import { SelectionTray } from "./griot/SelectionTray";
+import { ActivityBanner } from "./griot/ActivityBanner";
 import { PlaceTransition } from "./motion/communicative";
-import { ModalStack } from "./learningDeck/ModalStack";
+import { ModalStack } from "./griot/ModalStack";
 import {
   CaptureScreen,
   DeckScreen,
   DocumentScreen,
   LibraryScreen,
   SpaceScreen,
-} from "./learningDeck/screens";
-import { SettingsScreen } from "./learningDeck/SettingsScreen";
-import { resolveLearningTheme } from "./learningDeck/theme";
+} from "./griot/screens";
+import { SettingsScreen } from "./griot/SettingsScreen";
+import { resolveGriotTheme } from "./griot/theme";
 
 /**
  * # Main Layout — the shell
@@ -34,13 +34,13 @@ import { resolveLearningTheme } from "./learningDeck/theme";
  *
  * Everything it used to also do now lives where it belongs — navigation state and the
  * back-button policy in {@link useDeckNavigation}, the sheets in {@link ModalStack}, the
- * screens in `learningDeck/screens/`. What remains is layout, which is what a component
+ * screens in `griot/screens/`. What remains is layout, which is what a component
  * called `MainLayout` should be.
  */
-export function MainLayout({ controller }: { controller: LearnimalController }) {
+export function MainLayout({ controller }: { controller: GriotController }) {
   const state = useControllerState(controller);
-  const theme = resolveLearningTheme(state.theme, state.accent, state.appearance);
-  const deck = presentLearningDeck(state);
+  const theme = resolveGriotTheme(state.theme, state.accent, state.appearance);
+  const deck = presentGriotDeck(state);
 
   // The capture draft lives here rather than in the screen: a pending-input prompt can
   // interrupt a capture, and the draft has to outlive that round trip.
