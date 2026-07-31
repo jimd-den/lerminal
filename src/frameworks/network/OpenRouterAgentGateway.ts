@@ -269,6 +269,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
     briefing: string;
     apiKey: string;
     model: string;
+    systemPrompt?: string;
   }): Promise<unknown> {
     const cleanKey = input.apiKey?.trim();
     if (!cleanKey) {
@@ -290,7 +291,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
       body: JSON.stringify({
         model: input.model,
         messages: [
-          { role: "system", content: GOAL_ARCHITECT_SYSTEM_PROMPT },
+          { role: "system", content: input.systemPrompt || GOAL_ARCHITECT_SYSTEM_PROMPT },
           { role: "user", content: input.briefing },
         ],
         // The turn is consumed as JSON; asking for it directly beats parsing prose.

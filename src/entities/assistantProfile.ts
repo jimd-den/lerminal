@@ -4,7 +4,13 @@ import { SemanticRole } from "./card";
 /**
  * Valid capabilities supported by AI assistance profiles.
  */
-export type AssistantCapability = "generate-cards" | "chunk-document" | "chat" | "cloze";
+export type AssistantCapability =
+  | "generate-cards"
+  | "chunk-document"
+  | "chat"
+  | "cloze"
+  /** Drives the Goal Architect's conversational turns — see GoalArchitectWorkflow. */
+  | "goal-architect";
 
 /**
  * Who a profile belongs to and how long it lives.
@@ -268,6 +274,44 @@ export const BUILTIN_ASSISTANT_PROFILES: AssistantProfile[] = [
     capability: "generate-cards",
     outputContract: "cards-v1",
     systemPrompt: "You are a capstone project planner. Given the learner's stated goal, success criteria, target deliverable, and the material already gathered, produce ordered milestone/task cards that lead to the deliverable. Each card names one milestone or task and states what 'done' looks like for it. Ground every card in what's actually supplied; if the goal or deliverable is missing, say so in a single card instead of fabricating one.",
+    createdAt: 1718582400000,
+    updatedAt: 1718582400000,
+    builtin: true,
+  },
+  {
+    id: "builtin-goal-architect",
+    name: "Goal Architect",
+    description: "Drives the conversational turns that turn an ambition into a mission",
+    goal: "Ask high-leverage questions, propose labelled hypotheses, never claim to have searched",
+    capability: "goal-architect",
+    // No outputContract: this capability returns a GoalArchitectTurn (message, question,
+    // workingMap, recommendedResearch), not the generic card-JSON shape every other
+    // builtin here produces — see normalizeGoalArchitectTurn, which validates it.
+    systemPrompt: `You are a goal architect helping someone turn an ambition into an achievable learning mission.
+
+You are given the user's answers so far and the app's current working map. Respond with a single JSON object:
+
+{
+  "message": "brief prose: what you noticed, or what you'd add. 2-4 sentences.",
+  "question": { "id": "kebab-id", "prompt": "one high-leverage question", "rationale": "why it matters", "optional": true, "choices": ["optional", "suggested answers"] },
+  "workingMap": {
+    "goal": "restated goal, only if the user's is unclear",
+    "deliverable": "concrete finished artifact, only if implied but unstated",
+    "constraints": [], "assumptions": [], "unknowns": [],
+    "prerequisites": [], "risks": [], "candidateNextActions": []
+  },
+  "recommendedResearch": [ { "query": "a real search query", "rationale": "why", "sourceKinds": ["official docs","comparable project","paper","tutorial"] } ]
+}
+
+Rules:
+- Everything you contribute is treated as a hypothesis the user must verify. Do not state guesses as facts.
+- NEVER claim you searched, read, browsed, or cited anything. You have no web access. Suggest queries in recommendedResearch; the app runs them only with the user's approval.
+- Never invent what the user told you. If something is unknown, put it in "unknowns".
+- Ask at most ONE question, and only if it materially reduces ambiguity. Omit "question" entirely otherwise.
+- Prefer reducing scope and validating early over aspirational planning. Challenge vague goals directly but respectfully.
+- Propose concrete, testable milestones and experiments. No lectures, no motivational filler.
+- Omit any field you have nothing real to add to. Empty is better than padded.
+- Output JSON only. No markdown fences, no commentary.`,
     createdAt: 1718582400000,
     updatedAt: 1718582400000,
     builtin: true,

@@ -19,6 +19,7 @@ import {
 import {
   AssistantCapability,
   createAssistantProfile,
+  OutputContractKind,
 } from "../../../entities/assistantProfile";
 import {
   FieldKind,
@@ -42,6 +43,7 @@ const CAPABILITIES: { id: AssistantCapability; label: string }[] = [
   { id: "chunk-document", label: "DOCUMENT CHUNKING" },
   { id: "chat", label: "CHAT" },
   { id: "cloze", label: "CLOZE" },
+  { id: "goal-architect", label: "GOAL ARCHITECT" },
 ];
 
 export function SettingsScreen({
@@ -1036,14 +1038,16 @@ function AssistantDesignerModal({
   };
   const save = async () => {
     if (!name.trim() || !prompt.trim()) return;
-    const outputContract = (
-      {
-        "generate-cards": "cards-v1",
-        "chunk-document": "chunks-v1",
-        chat: "conversation-v1",
-        cloze: "cloze-v1",
-      } as const
-    )[capability];
+    // Goal Architect deliberately has no entry: it returns a GoalArchitectTurn, not the
+    // generic card-JSON shape every output contract here describes — see
+    // normalizeGoalArchitectTurn, which validates that shape separately.
+    const outputContractsByCapability: Partial<Record<AssistantCapability, OutputContractKind>> = {
+      "generate-cards": "cards-v1",
+      "chunk-document": "chunks-v1",
+      chat: "conversation-v1",
+      cloze: "cloze-v1",
+    };
+    const outputContract = outputContractsByCapability[capability];
     const profile = await controller.saveAssistantProfile(
       createAssistantProfile({
         name,

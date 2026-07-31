@@ -132,6 +132,14 @@ export interface AgentGateway {
     briefing: string;
     apiKey: string;
     model: string;
+    /**
+     * The instruction to run the turn with. Sourced from the user-editable "Goal
+     * Architect" AssistantProfile so the conversation's own behavior is as configurable
+     * as any other capability — never hardcoded past the point the user can see or
+     * change it. Implementations fall back to their own built-in instruction when
+     * omitted, so every existing caller keeps working unchanged.
+     */
+    systemPrompt?: string;
   }): Promise<unknown>;
 
   /**

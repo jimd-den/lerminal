@@ -19,6 +19,9 @@ class RecordingHost implements GoalArchitectHost {
   model() {
     return this.modelId;
   }
+  systemPrompt() {
+    return "test system prompt";
+  }
   onChange() {
     this.changes += 1;
   }
@@ -30,7 +33,7 @@ class RecordingHost implements GoalArchitectHost {
 /** A gateway that records every call, so "did this browse?" is directly assertable. */
 class SpyGateway implements AgentGateway {
   askCalls = 0;
-  turnCalls: { briefing: string }[] = [];
+  turnCalls: { briefing: string; systemPrompt?: string }[] = [];
 
   constructor(
     private turn: unknown = { message: "ok", workingMap: {} },
@@ -44,8 +47,13 @@ class SpyGateway implements AgentGateway {
   async fetchModels() {
     return [];
   }
-  async designGoalArchitectTurn(input: { briefing: string; apiKey: string; model: string }) {
-    this.turnCalls.push({ briefing: input.briefing });
+  async designGoalArchitectTurn(input: {
+    briefing: string;
+    apiKey: string;
+    model: string;
+    systemPrompt?: string;
+  }) {
+    this.turnCalls.push({ briefing: input.briefing, systemPrompt: input.systemPrompt });
     if (this.failure) throw this.failure;
     return this.turn;
   }
@@ -233,6 +241,18 @@ describe("agent turns", () => {
     const briefing = gateway.turnCalls[0].briefing;
     expect(briefing).toContain("Build a playable puzzle game");
     expect(briefing).toContain("The user's answers so far");
+  });
+
+  it("runs the turn with the host's configured instruction, never a hardcoded one", async () => {
+    const gateway = new SpyGateway();
+    const workflow = started(new RecordingHost("key"), gateway);
+
+    await workflow.requestAgentTurn();
+
+    // RecordingHost.systemPrompt() — proves the workflow asks the host rather than
+    // carrying its own prompt, so the conversation's instruction is only ever the one
+    // the user's Goal Architect assistant profile resolves to.
+    expect(gateway.turnCalls[0].systemPrompt).toBe("test system prompt");
   });
 
   it("does not browse: an agent turn touches no search gateway", async () => {

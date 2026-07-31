@@ -108,6 +108,12 @@ export const INITIAL_GOAL_ARCHITECT_STATE: GoalArchitectState = {
 export interface GoalArchitectHost {
   apiKey(): string;
   model(): string;
+  /**
+   * The instruction the conversation runs with — resolved from the user-editable "Goal
+   * Architect" assistant profile, so this workflow never carries a hardcoded prompt of
+   * its own and the conversation's behavior is as configurable as any other capability.
+   */
+  systemPrompt(): string;
   onChange(): void;
   /**
    * Opens the normal research preflight with these queries. The host is responsible for
@@ -295,6 +301,7 @@ export class GoalArchitectWorkflow {
         briefing: this.briefing(),
         apiKey,
         model: this.deps.host.model(),
+        systemPrompt: this.deps.host.systemPrompt(),
       });
 
       const turn = normalizeGoalArchitectTurn(raw);

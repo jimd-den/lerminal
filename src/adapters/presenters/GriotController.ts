@@ -586,6 +586,15 @@ export class GriotController {
     const host: GoalArchitectHost = {
       apiKey: () => this.domain.openRouterKey ?? "",
       model: () => this.domain.selectedModel,
+      systemPrompt: () =>
+        resolveAssistantProfile(
+          "goal-architect",
+          this.domain.activeProfileIds,
+          this.domain.assistantProfiles,
+          BUILTIN_ASSISTANT_PROFILES,
+          undefined,
+          this.domain.activeWorkspaceId ?? undefined,
+        ).systemPrompt,
       onChange: () => this.emit(),
       requestResearchApproval: (queries: RecommendedResearch[]) => {
         // Pre-fills the normal preflight; the user still sees and approves the query.
