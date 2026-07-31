@@ -110,6 +110,31 @@ export interface AgentGateway {
   ): Promise<string>;
 
   /**
+   * Asks the Goal Architect model for its next conversational turn.
+   *
+   * Deliberately not folded into {@link ask}: that method's whole contract is "produce
+   * cards", and a goal-planning turn is a question plus a working map, which would have to
+   * be smuggled through card titles to fit. A dedicated method also means the caller can
+   * tell whether a model is available for *this* capability rather than assuming.
+   *
+   * Returns the model's **raw** parsed payload rather than a typed turn. Validation and
+   * origin-tagging belong to `normalizeGoalArchitectTurn` in the entities layer, so the
+   * gateway cannot accidentally present malformed output as a usable turn.
+   *
+   * Optional so existing and mocked gateways remain valid; the workflow checks for it and
+   * falls back to its deterministic path when absent.
+   *
+   * @throws when no model answered. It must never invent a turn — a fabricated question
+   *   would read exactly like a real one.
+   */
+  designGoalArchitectTurn?(input: {
+    /** The goal, the answers so far, and the current working map, already bounded. */
+    briefing: string;
+    apiKey: string;
+    model: string;
+  }): Promise<unknown>;
+
+  /**
    * Prompts the AI Prompt Architect to design or refine an AssistantProfile system instruction
    * based on the user's stated learning goal.
    */
