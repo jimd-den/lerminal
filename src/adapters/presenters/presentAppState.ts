@@ -8,6 +8,9 @@ import { presentGoalArchitect } from "./GoalArchitectPresenter";
 import { OperationsState } from "../../usecases/operations/OperationsWorkflow";
 import { ReviewSessionState } from "../../usecases/review/ReviewSession";
 import { GapReport } from "../../usecases/report/GapReportInteractor";
+import { WorkspaceAgentState } from "../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
+import { WorkspacePulseObservation } from "../../usecases/workspaceAgent/observeWorkspace";
+import { presentWorkspaceAgent, presentWorkspacePulse } from "./WorkspaceAgentPresenter";
 
 /**
  * # App State Presenter
@@ -37,6 +40,13 @@ export interface PresentAppStateInput {
   review: ReviewSessionState;
   /** Recomputed per projection — the report is a view of current cards, never stored. */
   gapReport: GapReport | null;
+  /** Recomputed per projection from current cards — deterministic, no model call. */
+  workspacePulseObservation: WorkspacePulseObservation | null;
+  workspaceAgent: WorkspaceAgentState;
+  /** Title of the group the Workspace Agent session's context points at, if any. */
+  workspaceAgentGroupTitle: string | null;
+  /** Compact "Linked notes" list for the currently open card — see `AppState`. */
+  linkedCardsForOpenCard: Array<{ cardId: string; title: string; relation?: string }>;
 }
 
 export function presentAppState(input: PresentAppStateInput): AppState {
@@ -85,6 +95,7 @@ export function presentAppState(input: PresentAppStateInput): AppState {
     // --- Sheets, navigation, and transient flags ---
     pendingCommandName: ui.pendingCommandName,
     openCardId: ui.openCardId,
+    linkedCardsForOpenCard: [...input.linkedCardsForOpenCard],
     pinEditMode: ui.pinEditMode,
     isModalOpen: ui.isModalOpen,
     isWorkspaceSheetOpen: ui.isWorkspaceSheetOpen,
@@ -136,5 +147,13 @@ export function presentAppState(input: PresentAppStateInput): AppState {
       ...mission.draft,
       successCriteria: [...mission.draft.successCriteria],
     },
+
+    // --- Owned by WorkspaceAgentWorkflow / observeWorkspace ---
+    workspacePulse: presentWorkspacePulse(input.workspacePulseObservation),
+    workspaceAgent: presentWorkspaceAgent(
+      input.workspaceAgent,
+      domain.workspaces,
+      input.workspaceAgentGroupTitle,
+    ),
   };
 }

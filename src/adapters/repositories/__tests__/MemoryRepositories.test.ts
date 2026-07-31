@@ -2,9 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { MemoryCardRepository } from "../MemoryCardRepository";
 import { MemoryWorkspaceRepository } from "../MemoryWorkspaceRepository";
 import { MemoryOperationLogRepository } from "../MemoryOperationLogRepository";
+import { MemoryCardLinkRepository } from "../MemoryCardLinkRepository";
 import { createCard } from "../../../entities/card";
 import { createWorkspace } from "../../../entities/workspace";
 import { createOperationRecord } from "../../../entities/operationLog";
+import { createCardLink } from "../../../entities/cardLink";
 
 describe("Memory Repositories", () => {
   it("should save and retrieve cards by workspace", async () => {
@@ -82,5 +84,26 @@ describe("Memory Repositories", () => {
     await logRepo.deleteRecord(recordA.id);
     expect(await logRepo.getRecord(recordA.id)).toBeNull();
     expect((await logRepo.getRecords("ws-a")).length).toBe(1);
+  });
+
+  it("should save and scope card links by workspace and by card", async () => {
+    const linkRepo = new MemoryCardLinkRepository();
+    const linkA = createCardLink({ workspaceId: "ws-a", fromCardId: "c1", toCardId: "c2" });
+    const linkB = createCardLink({ workspaceId: "ws-a", fromCardId: "c2", toCardId: "c3" });
+    const linkC = createCardLink({ workspaceId: "ws-b", fromCardId: "c4", toCardId: "c5" });
+
+    await linkRepo.saveLink(linkA);
+    await linkRepo.saveLink(linkB);
+    await linkRepo.saveLink(linkC);
+
+    const wsALinks = await linkRepo.getLinksByWorkspace("ws-a");
+    expect(wsALinks.map((l) => l.id).sort()).toEqual([linkA.id, linkB.id].sort());
+
+    const wsBLinks = await linkRepo.getLinksByWorkspace("ws-b");
+    expect(wsBLinks).toHaveLength(1);
+    expect(wsBLinks[0].id).toBe(linkC.id);
+
+    const c2Links = await linkRepo.getLinksByCard("c2");
+    expect(c2Links.map((l) => l.id).sort()).toEqual([linkA.id, linkB.id].sort());
   });
 });

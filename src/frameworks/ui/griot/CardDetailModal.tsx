@@ -451,6 +451,14 @@ export function CardDetailModal({
                     </Text>
                   </View>
                 ) : null}
+
+                {state.linkedCardsForOpenCard.length > 0 ? (
+                  <LinkedNotes
+                    controller={controller}
+                    theme={theme}
+                    links={state.linkedCardsForOpenCard}
+                  />
+                ) : null}
               </ScrollView>
             )}
 
@@ -992,6 +1000,66 @@ function SearchDetail({
   );
 }
 
+/**
+ * Compact "Linked notes" list for the currently expanded card — see
+ * `GriotController.computeLinkedCardsForOpenCard`. No graph visualization, just a small
+ * tappable list; omitted entirely (not rendered as an empty placeholder) when there are
+ * no links, which is the caller's job (`state.linkedCardsForOpenCard.length > 0`).
+ */
+function LinkedNotes({
+  controller,
+  theme,
+  links,
+}: {
+  controller: GriotController;
+  theme: GriotTheme;
+  links: Array<{ cardId: string; title: string; relation?: string }>;
+}) {
+  return (
+    <View
+      style={[
+        styles.linkedPanel,
+        { borderColor: theme.line, backgroundColor: theme.panelStrong },
+      ]}
+    >
+      <Text
+        style={[
+          styles.machineLabel,
+          { color: theme.textFaint, fontFamily: theme.fontMono },
+        ]}
+      >
+        LINKED NOTES
+      </Text>
+      {links.map((link) => (
+        <Pressable
+          key={link.cardId}
+          accessibilityRole="button"
+          accessibilityLabel={`Open linked note: ${link.title}`}
+          onPress={() => controller.openCard(link.cardId)}
+          style={[styles.linkedRow, { borderColor: theme.line }]}
+        >
+          {link.relation ? (
+            <Text
+              style={[
+                styles.linkedRelation,
+                { color: theme.accent, fontFamily: theme.fontMono },
+              ]}
+            >
+              {link.relation.toUpperCase()}
+            </Text>
+          ) : null}
+          <Text
+            numberOfLines={1}
+            style={[styles.linkedTitle, { color: theme.text }]}
+          >
+            {link.title}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function EmptyPanel({ theme, text }: { theme: GriotTheme; text: string }) {
   return (
     <View style={[styles.empty, { borderColor: theme.line }]}>
@@ -1236,6 +1304,16 @@ const styles = StyleSheet.create({
   score: { marginTop: 14, fontSize: 12, fontWeight: "900" },
   citation: { borderWidth: 1, borderRadius: 5, padding: 12, marginTop: 20 },
   citationText: { fontSize: 12, lineHeight: 16 },
+  linkedPanel: { borderWidth: 1, borderRadius: 7, padding: 12, marginTop: 20 },
+  linkedRow: {
+    minHeight: 44,
+    justifyContent: "center",
+    borderTopWidth: 1,
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  linkedRelation: { fontSize: 11, fontWeight: "900", letterSpacing: 0.8, marginBottom: 2 },
+  linkedTitle: { fontSize: 15, lineHeight: 20, fontWeight: "600" },
   fieldPanel: { borderWidth: 1, borderRadius: 6, padding: 13, marginTop: 12 },
   fieldValue: { fontSize: 15, lineHeight: 22, marginTop: 7 },
   webFrame: {

@@ -12,6 +12,7 @@ import { ResearchResultsSheet } from "./ResearchResultsSheet";
 import { MissionEditorSheet } from "./MissionEditorSheet";
 import { GapReportSheet } from "./GapReportSheet";
 import { GoalArchitectSheet } from "./GoalArchitectSheet";
+import { ConversationSheet } from "./ConversationSheet";
 
 /**
  * # Modal Stack
@@ -49,6 +50,7 @@ export function ModalStack({
       <MissionEditorSheet controller={controller} state={state} theme={theme} />
       <GapReportSheet controller={controller} state={state} theme={theme} />
       <GoalArchitectSheet controller={controller} state={state} theme={theme} />
+      <ConversationSheet controller={controller} state={state} theme={theme} />
       <PendingInputModal
         controller={controller}
         state={state}

@@ -39,6 +39,18 @@ function input(overrides: Partial<PresentAppStateInput> = {}): PresentAppStateIn
     operations: { pending: [], result: null, undoableOperationId: null },
     review: { queue: [], index: 0, isOpen: false, revealAnswer: false },
     gapReport: null,
+    workspacePulseObservation: null,
+    workspaceAgent: {
+      isOpen: false,
+      workspaceId: null,
+      context: { selectedCardIds: [], currentGroupId: null },
+      messages: [],
+      proposals: [],
+      isThinking: false,
+      agentError: null,
+    },
+    workspaceAgentGroupTitle: null,
+    linkedCardsForOpenCard: [],
     ...overrides,
   };
 }

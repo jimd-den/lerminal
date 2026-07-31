@@ -3,6 +3,7 @@ import { AsyncStorageCardRepository } from "../AsyncStorageCardRepository";
 import { AsyncStorageWorkspaceRepository } from "../AsyncStorageWorkspaceRepository";
 import { AsyncStorageSettingsRepository } from "../AsyncStorageSettingsRepository";
 import { AsyncStorageOperationLogRepository } from "../AsyncStorageOperationLogRepository";
+import { AsyncStorageCardLinkRepository } from "../AsyncStorageCardLinkRepository";
 import { KeyValueStore } from "../KeyValueStore";
 import { PersistenceError } from "../../../usecases/ports/PersistenceError";
 import { Card } from "../../../entities/card";
@@ -152,5 +153,20 @@ describe("AsyncStorageOperationLogRepository", () => {
     expect(stored).toHaveLength(200);
     expect(stored[stored.length - 1].id).toBe("r5");
     expect(await repo.getRecord("r0")).toBeNull();
+  });
+});
+
+describe("AsyncStorageCardLinkRepository", () => {
+  it("round-trips links scoped to a workspace and to a card", async () => {
+    const store = new FakeStore();
+    const repo = new AsyncStorageCardLinkRepository(store);
+
+    await repo.saveLink({ id: "l1", workspaceId: "w1", fromCardId: "a", toCardId: "b", createdAt: "1" });
+    await repo.saveLink({ id: "l2", workspaceId: "w1", fromCardId: "b", toCardId: "c", createdAt: "2" });
+    await repo.saveLink({ id: "l3", workspaceId: "w2", fromCardId: "d", toCardId: "e", createdAt: "3" });
+
+    expect((await repo.getLinksByWorkspace("w1")).map((l) => l.id)).toEqual(["l1", "l2"]);
+    expect((await repo.getLinksByWorkspace("w2")).map((l) => l.id)).toEqual(["l3"]);
+    expect((await repo.getLinksByCard("b")).map((l) => l.id)).toEqual(["l1", "l2"]);
   });
 });

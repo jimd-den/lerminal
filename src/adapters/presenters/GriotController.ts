@@ -1,4 +1,8 @@
-import { Card } from "../../entities/card";
+import { Card, createCard } from "../../entities/card";
+import { createProvenance } from "../../entities/provenance";
+import { AgentToolIntent } from "../../entities/workspaceAgent";
+import { ChunkCommand } from "../../usecases/pipeline/ChunkCommand";
+import { CommandContext } from "../../usecases/pipeline/Command";
 import { Workspace } from "../../entities/workspace";
 import { CardRepository } from "../../usecases/ports/repositories/CardRepository";
 import { WorkspaceRepository } from "../../usecases/ports/repositories/WorkspaceRepository";
@@ -21,6 +25,10 @@ import { ChatMessage } from "../../usecases/ports/gateways/AgentGateway";
 import { SearchGateway } from "../../usecases/ports/gateways/SearchGateway";
 import { ExtractionGateway } from "../../usecases/ports/gateways/ExtractionGateway";
 import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
+import { CardLink } from "../../entities/cardLink";
+import { CardLinkRepository } from "../../usecases/ports/repositories/CardLinkRepository";
+import { MemoryCardLinkRepository } from "../repositories/MemoryCardLinkRepository";
+import { LinkCardsInteractor } from "../../usecases/cardLink/LinkCardsInteractor";
 import { expandForPipe } from "../../entities/tree";
 import {
   CommandDefinition,
@@ -125,6 +133,13 @@ import { CreateMissionPlanInteractor } from "../../usecases/goal/CreateMissionPl
 import { GoalQuestionId, RecommendedResearch } from "../../entities/goalArchitect";
 import { GoalArchitectViewModel } from "./GoalArchitectPresenter";
 import {
+  WorkspaceAgentContext,
+  WorkspaceAgentHost,
+  WorkspaceAgentWorkflow,
+} from "../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
+import { observeWorkspace } from "../../usecases/workspaceAgent/observeWorkspace";
+import { WorkspaceAgentViewModel, WorkspacePulseViewModel } from "./WorkspaceAgentPresenter";
+import {
   FontCategory,
   FontFormat,
   RankedFontFamily,
@@ -197,6 +212,11 @@ export interface AppState {
   /** Command awaiting input in the input sheet (so submit re-runs the right one). */
   pendingCommandName: string;
   openCardId: string | null;
+  /**
+   * Compact "Linked notes" list for the currently open card — empty when it has no
+   * links, in which case the UI shows no section at all rather than a placeholder.
+   */
+  linkedCardsForOpenCard: Array<{ cardId: string; title: string; relation?: string }>;
   reviewQueue: Card[];
   reviewIndex: number;
   isReviewOpen: boolean;
@@ -284,6 +304,10 @@ export interface AppState {
   missionDraft: MissionDraft;
   /** The goal-architect sheet's full view model. */
   goalArchitect: GoalArchitectViewModel;
+  /** The Workspace Pulse banner's view model for the active workspace, or null if quiet. */
+  workspacePulse: WorkspacePulseViewModel | null;
+  /** The "Ask GRIOT" conversation sheet's full view model. */
+  workspaceAgent: WorkspaceAgentViewModel;
 }
 
 /** What a completed run hands to the undo log once its cards have settled. */
@@ -309,6 +333,8 @@ export interface GriotControllerDeps {
   reviewLogRepo?: ReviewLogRepository;
   /** Persists run receipts so the last operation can be undone. */
   operationLogRepo?: OperationLogRepository;
+  /** Persists card-to-card links created via the Workspace Agent's `link_cards` tool. */
+  cardLinkRepo?: CardLinkRepository;
   /** Resolves a font family name to a downloadable file. Optional so tests can omit it. */
   fontGateway?: FontGateway;
   /** Registers a downloaded font with the platform. Optional so tests can omit it. */
@@ -358,6 +384,10 @@ export class GriotController {
   private suggestNextActionInteractor: SuggestNextActionInteractor;
   private extractUrlInteractor: ExtractUrlInteractor;
   private groupCardsInteractor: GroupCardsInteractor;
+  private cardLinkRepo: CardLinkRepository;
+  private linkCardsInteractor: LinkCardsInteractor;
+  /** Card links for the active workspace, kept alongside `domain.cards` — see `loadCardsForActiveWorkspace`. */
+  private cardLinks: CardLink[] = [];
   private fsrsScheduler: FsrsScheduler;
   private reviewLogRepo?: ReviewLogRepository;
   private research: ResearchWorkflow;
@@ -390,6 +420,7 @@ export class GriotController {
   );
   private operations: OperationsWorkflow;
   private review: ReviewSession;
+  private workspaceAgent: WorkspaceAgentWorkflow;
 
   /** The session's two state halves, addressed directly for readability at call sites. */
   private get domain() {
@@ -422,6 +453,8 @@ export class GriotController {
     this.createNoteUseCase = new CreateNote(deps.cardRepo);
     this.suggestNextActionInteractor = new SuggestNextActionInteractor(deps.agentGateway);
     this.groupCardsInteractor = new GroupCardsInteractor(deps.cardRepo);
+    this.cardLinkRepo = deps.cardLinkRepo ?? new MemoryCardLinkRepository();
+    this.linkCardsInteractor = new LinkCardsInteractor(this.cardLinkRepo);
     this.commandRegistry = new CommandRegistry({
       cardRepo: deps.cardRepo,
       settingsRepo: deps.settingsRepo,
@@ -529,7 +562,31 @@ export class GriotController {
     );
     this.operations = this.buildOperationsWorkflow(deps);
     this.review = this.buildReviewSession(deps);
+    this.workspaceAgent = this.buildWorkspaceAgentWorkflow(deps);
 
+  }
+
+  /**
+   * Wires the Workspace Agent's session-only conversation state, plus (Phase C) its
+   * bounded, validated model turn — see `usecases/workspaceAgent/WorkspaceAgentWorkflow.ts`.
+   * No tool action is ever dispatched from here; that is Phase D's job.
+   */
+  private buildWorkspaceAgentWorkflow(deps: GriotControllerDeps): WorkspaceAgentWorkflow {
+    const host: WorkspaceAgentHost = {
+      onChange: () => this.emit(),
+      apiKey: () => this.domain.openRouterKey ?? "",
+      model: () => this.domain.selectedModel,
+      // No dedicated "workspace-agent" AssistantCapability/profile exists yet — the
+      // gateway falls back to its own built-in instruction, same as any other optional
+      // gateway method called without one. Adding a user-editable profile for this
+      // capability is a follow-up, not required for Phase C's validated-turn plumbing.
+      allCards: () => this.domain.cards,
+    };
+    return new WorkspaceAgentWorkflow({
+      host,
+      agentGateway: deps.agentGateway,
+      dispatchTool: (tool, context) => this.dispatchWorkspaceAgentTool(tool, context),
+    });
   }
 
   /**
@@ -950,7 +1007,39 @@ export class GriotController {
       operations: this.operations.state,
       review: this.review.state,
       gapReport: this.mission.computeGapReport(),
+      workspacePulseObservation: this.computeWorkspacePulse(),
+      workspaceAgent: this.workspaceAgent.state,
+      workspaceAgentGroupTitle:
+        this.domain.cards.find(
+          (card) => card.id === this.workspaceAgent.state.context.currentGroupId,
+        )?.title ?? null,
+      linkedCardsForOpenCard: this.computeLinkedCardsForOpenCard(),
     });
+  }
+
+  /**
+   * Resolves the currently open card's links (either direction) into a display-ready
+   * list, titles resolved against the currently loaded cards. A card with zero links
+   * yields an empty array — the caller renders no section at all, never a placeholder.
+   */
+  private computeLinkedCardsForOpenCard(): Array<{
+    cardId: string;
+    title: string;
+    relation?: string;
+  }> {
+    const openCardId = this.ui.openCardId;
+    if (!openCardId) return [];
+    const result: Array<{ cardId: string; title: string; relation?: string }> = [];
+    for (const link of this.cardLinks) {
+      let otherId: string | null = null;
+      if (link.fromCardId === openCardId) otherId = link.toCardId;
+      else if (link.toCardId === openCardId) otherId = link.fromCardId;
+      if (!otherId) continue;
+      const otherCard = this.domain.cards.find((c) => c.id === otherId);
+      if (!otherCard) continue;
+      result.push({ cardId: otherCard.id, title: otherCard.title, relation: link.relation });
+    }
+    return result;
   }
 
   // --- Selection Methods ---
@@ -2561,6 +2650,302 @@ export class GriotController {
     this.research.close();
   }
 
+  // --- Workspace Agent (delegated to WorkspaceAgentWorkflow; Phase B — no model call) ---
+
+  /** Opens the "Ask GRIOT" sheet scoped to the active workspace and current selection. */
+  openWorkspaceAgent(): void {
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) return;
+
+    const context: WorkspaceAgentContext = {
+      selectedCardIds: Array.from(this.domain.selection),
+      currentGroupId: this.domain.currentGroupId,
+    };
+    this.workspaceAgent.openConversation(workspaceId, context);
+  }
+
+  closeWorkspaceAgent(): void {
+    this.workspaceAgent.closeConversation();
+  }
+
+  /**
+   * Appends a user message to the session transcript and, when a model is configured,
+   * asks it for a validated turn — see `WorkspaceAgentWorkflow.sendMessage`. Not awaited
+   * here: the workflow's own `onChange` re-render is how the sheet learns the reply (or
+   * failure) arrived, the same fire-and-forget shape as other agent-turn call sites.
+   */
+  sendWorkspaceAgentMessage(text: string): void {
+    void this.workspaceAgent.sendMessage(text);
+  }
+
+  /**
+   * Confirms a proposed tool action, dispatching it to the real interactor via
+   * `dispatchWorkspaceAgentTool` — see `WorkspaceAgentWorkflow.confirmProposal`. This is
+   * the only path by which a Workspace Agent proposal ever executes.
+   */
+  async confirmWorkspaceAgentAction(id: string): Promise<void> {
+    await this.workspaceAgent.confirmProposal(id);
+  }
+
+  /**
+   * Dispatches one confirmed `AgentToolIntent` to the real, existing interactor for its
+   * tool type, mirroring how pipeline commands and research register their runs. Returns
+   * a truthful, factual completion message; throws (never partially applies) on failure.
+   *
+   * - `search_web` never calls `SearchGateway` directly — it only opens the same
+   *   preflight sheet a manual "Research" action would, pre-filled with the agent's
+   *   queries. The actual search only happens if the user then confirms *that* sheet.
+   * - `make_study_candidates` creates candidate cards only; it never calls
+   *   `SpaceCommand`/FSRS enrollment, which remains a separate, explicit user action.
+   * - `link_cards` creates a `CardLink` via `LinkCardsInteractor` (see `entities/cardLink.ts`)
+   *   — no graph traversal, just one directed association. `draft_experiment` (no
+   *   dedicated interactor exists) is left as a documented no-op rather than fabricating
+   *   execution. `suggest_next_actions` and `ask_clarifying_question` are purely
+   *   informational proposals with nothing to confirm.
+   */
+  private async dispatchWorkspaceAgentTool(
+    tool: AgentToolIntent,
+    context: WorkspaceAgentContext,
+  ): Promise<string> {
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) {
+      throw new Error("No active workspace. Nothing was changed.");
+    }
+    const startedAt = Date.now();
+    const model = this.domain.selectedModel;
+    const parentId = context.currentGroupId ?? undefined;
+
+    switch (tool.type) {
+      case "create_cards": {
+        const created: Card[] = [];
+        for (const spec of tool.cards) {
+          const card = createCard({
+            workspaceId,
+            type: spec.type,
+            role: spec.role,
+            title: spec.title,
+            body: spec.body,
+            answer: spec.answer,
+            parentId: spec.parentId ?? parentId,
+            provenance: createProvenance({
+              mode: "agent",
+              model,
+              sourceCardIds: spec.sourceCardIds,
+            }),
+          });
+          await this.cardRepo.saveCard(card);
+          created.push(card);
+        }
+        const summary = `Created ${created.length} card${created.length === 1 ? "" : "s"}.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:create_cards",
+          workspaceId,
+          parentId,
+          inputCardIds: [],
+          createdCards: created,
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
+      case "create_group": {
+        const cards = this.domain.cards.filter((c) => tool.cardIds.includes(c.id));
+        if (cards.length === 0) {
+          throw new Error("Couldn't find those cards. Nothing was changed.");
+        }
+        const group = await this.groupCardsInteractor.execute({
+          workspaceId,
+          parentId: tool.parentId !== undefined ? tool.parentId : parentId ?? null,
+          name: tool.name,
+          cards,
+        });
+        const summary = `Created group "${tool.name}" with ${cards.length} note${cards.length === 1 ? "" : "s"}.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:create_group",
+          workspaceId,
+          parentId,
+          inputCardIds: tool.cardIds,
+          createdCards: [group],
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
+      case "chunk_cards": {
+        const inputCards = this.domain.cards.filter((c) => tool.cardIds.includes(c.id));
+        if (inputCards.length === 0) {
+          throw new Error("Couldn't find those cards. Nothing was changed.");
+        }
+        const chunkCommand = new ChunkCommand(this.agentGateway, this.cardRepo, this.logger);
+        const ctx: CommandContext = {
+          workspaceId,
+          parentId: tool.destinationParentId !== undefined ? tool.destinationParentId : parentId ?? null,
+          inputCards,
+          workspaces: this.domain.workspaces,
+          apiKey: this.domain.openRouterKey ?? "",
+          model,
+          systemPrompt: this.domain.customSystemPrompt ?? "",
+          chunkSystemPrompt: this.domain.customChunkSystemPrompt ?? "",
+          assistantProfiles: this.domain.assistantProfiles,
+          activeProfileIds: this.domain.activeProfileIds,
+          cardTypes: this.domain.cardTypes,
+          expansionStack: [],
+        };
+        const arg = tool.mode === "deterministic" ? "--faithful" : "";
+        const result = await chunkCommand.execute(arg, ctx);
+        const createdCards = result.kind === "cards" ? result.cards : [];
+        const summary = `Chunked ${inputCards.length} card${inputCards.length === 1 ? "" : "s"} into ${createdCards.length} piece${createdCards.length === 1 ? "" : "s"}.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:chunk_cards",
+          workspaceId,
+          parentId,
+          inputCardIds: tool.cardIds,
+          createdCards,
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
+      case "extract_url": {
+        const source = this.domain.cards.find((c) => c.id === tool.cardId);
+        if (!source?.cite) {
+          throw new Error("That card has no link to extract. The original card is unchanged.");
+        }
+        const card = await this.extractUrlInteractor.execute({
+          url: source.cite,
+          title: source.title,
+          workspaceId,
+          parentId,
+        });
+        const summary = `Extracted "${card.title}" from the link.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:extract_url",
+          workspaceId,
+          parentId,
+          inputCardIds: [tool.cardId],
+          createdCards: [card],
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
+      case "search_web": {
+        // Only opens/pre-fills the existing preflight sheet — the same one "Research"
+        // opens manually. The real SearchGateway call happens only from that sheet's own
+        // confirm step (`confirmPreflight`), never from here.
+        this.openPreflight("research-web", tool.queries[0] ?? tool.purpose);
+        this.ui.aiQuerySuggestions = tool.queries;
+        this.emit();
+        return "Opened a search preflight for your review. Nothing was searched yet.";
+      }
+
+      case "make_study_candidates": {
+        const sourceCards = this.domain.cards.filter((c) => tool.cardIds.includes(c.id));
+        if (sourceCards.length === 0) {
+          throw new Error("Couldn't find those cards. Nothing was changed.");
+        }
+        // Candidate cards only — never enrolls into review/FSRS scheduling. Enrollment
+        // stays a separate, explicit user action (see SpaceCommand).
+        const created: Card[] = [];
+        for (const source of sourceCards) {
+          const card = createCard({
+            workspaceId,
+            type: tool.mode === "cloze" ? "cloze" : "question",
+            title: `${tool.mode === "cloze" ? "Cloze" : "Recall"}: ${source.title}`,
+            body: source.body,
+            parentId,
+            provenance: createProvenance({
+              mode: "agent",
+              model,
+              sourceCardIds: [source.id],
+            }),
+          });
+          await this.cardRepo.saveCard(card);
+          created.push(card);
+        }
+        const summary = `Made ${created.length} study candidate${created.length === 1 ? "" : "s"}. Not enrolled — review to add them.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:make_study_candidates",
+          workspaceId,
+          parentId,
+          inputCardIds: tool.cardIds,
+          createdCards: created,
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
+      case "link_cards": {
+        const fromCard = this.domain.cards.find((c) => c.id === tool.sourceCardId);
+        const toCard = this.domain.cards.find((c) => c.id === tool.targetCardId);
+        const link = await this.linkCardsInteractor.execute({
+          workspaceId,
+          fromCardId: tool.sourceCardId,
+          toCardId: tool.targetCardId,
+          relation: tool.relation,
+          cards: this.domain.cards,
+        });
+        const summary = `Linked "${fromCard?.title ?? tool.sourceCardId}" to "${toCard?.title ?? tool.targetCardId}".`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:link_cards",
+          workspaceId,
+          parentId,
+          inputCardIds: [tool.sourceCardId, tool.targetCardId],
+          createdCards: [],
+          startedAt,
+          summary,
+        });
+        void link; // the link itself isn't a Card and so isn't part of the run receipt
+        return summary;
+      }
+
+      case "draft_experiment":
+        // No dedicated interactor exists yet — deliberately not dispatched. Left as an
+        // inert, truthful no-op rather than fabricating execution.
+        return "This action isn't available to run yet. Nothing was changed.";
+
+      case "suggest_next_actions":
+      case "ask_clarifying_question":
+        // Purely informational proposals — displayed, nothing to confirm/execute.
+        return "Noted.";
+
+      default:
+        return "Noted.";
+    }
+  }
+
+  /** Reloads cards and registers the dispatch as an undoable, receipted run. */
+  private async finishWorkspaceAgentDispatch(run: {
+    commandName: string;
+    workspaceId: string;
+    parentId?: string;
+    inputCardIds: string[];
+    createdCards: Card[];
+    startedAt: number;
+    summary: string;
+  }): Promise<void> {
+    if (this.domain.activeWorkspaceId === run.workspaceId) {
+      await this.loadCardsForActiveWorkspace();
+    }
+    await this.operations.recordCompletedRun(run);
+    this.emit();
+  }
+
+  /**
+   * Deterministic, no-model observation about the active workspace's cards (see
+   * `usecases/workspaceAgent/observeWorkspace.ts`). Recomputed per render, never stored.
+   */
+  private computeWorkspacePulse(): ReturnType<typeof observeWorkspace> {
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) return null;
+    return observeWorkspace(this.domain.cards, workspaceId);
+  }
+
   // --- Mission Control & Gap Report (delegated to MissionWorkflow) ---
 
   openGapReport(): void {
@@ -2735,15 +3120,20 @@ export class GriotController {
     const workspaceId = this.domain.activeWorkspaceId;
     const loadToken = ++this.workspaceLoadToken;
     if (workspaceId) {
-      const cards = await this.cardRepo.getCardsByWorkspace(workspaceId);
+      const [cards, links] = await Promise.all([
+        this.cardRepo.getCardsByWorkspace(workspaceId),
+        this.cardLinkRepo.getLinksByWorkspace(workspaceId),
+      ]);
       if (
         loadToken === this.workspaceLoadToken &&
         this.domain.activeWorkspaceId === workspaceId
       ) {
         this.domain.cards = cards;
+        this.cardLinks = links;
       }
     } else if (loadToken === this.workspaceLoadToken) {
       this.domain.cards = [];
+      this.cardLinks = [];
     }
   }
 

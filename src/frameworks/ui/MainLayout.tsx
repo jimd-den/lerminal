@@ -12,6 +12,7 @@ import { useDeckNavigation } from "./useDeckNavigation";
 import { BottomNavigation } from "./griot/components";
 import { SelectionTray } from "./griot/SelectionTray";
 import { ActivityBanner } from "./griot/ActivityBanner";
+import { WorkspacePulse } from "./griot/WorkspacePulse";
 import { PlaceTransition } from "./motion/communicative";
 import { ModalStack } from "./griot/ModalStack";
 import {
@@ -222,6 +223,7 @@ export function MainLayout({ controller }: { controller: GriotController }) {
           {/* Always mounted: in-flight work outlives the screen that started it, so the
               shell reports it rather than each screen owning its own indicator. */}
           <ActivityBanner controller={controller} state={state} theme={theme} />
+          <WorkspacePulse controller={controller} state={state} theme={theme} />
 
           {state.selection.size > 0 ? (
             <SelectionTray

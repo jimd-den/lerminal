@@ -17,6 +17,7 @@ import { AsyncStoragePromptPresetRepository } from "../storage/AsyncStoragePromp
 import { AsyncStorageAssistantProfileRepository } from "../storage/AsyncStorageAssistantProfileRepository";
 import { AsyncStorageReviewLogRepository } from "../storage/AsyncStorageReviewLogRepository";
 import { AsyncStorageOperationLogRepository } from "../storage/AsyncStorageOperationLogRepository";
+import { AsyncStorageCardLinkRepository } from "../storage/AsyncStorageCardLinkRepository";
 import { OpenRouterAgentGateway } from "../network/OpenRouterAgentGateway";
 import { DuckDuckGoSearchGateway } from "../network/DuckDuckGoSearchGateway";
 import { WebExtractionGateway } from "../network/WebExtractionGateway";
@@ -54,6 +55,7 @@ export function composeController(options: CompositionOptions = {}): GriotContro
     assistantProfileRepo: new AsyncStorageAssistantProfileRepository(store, storeOptions),
     reviewLogRepo: new AsyncStorageReviewLogRepository(store, storeOptions),
     operationLogRepo: new AsyncStorageOperationLogRepository(store, storeOptions),
+    cardLinkRepo: new AsyncStorageCardLinkRepository(store, storeOptions),
     agentGateway: new OpenRouterAgentGateway(),
     searchGateway: new DuckDuckGoSearchGateway(),
     extractionGateway: new WebExtractionGateway(),

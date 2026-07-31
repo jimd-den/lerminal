@@ -8,6 +8,7 @@ import {
   GoalArchitectCitation,
   GoalArchitectTurnResult,
   PromptDesignResponse,
+  WorkspaceAgentTurnResult,
 } from "../../usecases/ports/gateways/AgentGateway";
 import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
 import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
@@ -45,6 +46,41 @@ Rules:
 - Prefer reducing scope and validating early over aspirational planning. Challenge vague goals directly but respectfully.
 - Propose concrete, testable milestones and experiments. No lectures, no motivational filler.
 - Omit any field you have nothing real to add to. Empty is better than padded.
+- Output JSON only. No markdown fences, no commentary.`;
+
+/**
+ * The Workspace Agent's instruction.
+ *
+ * Same discipline as the Goal Architect's prompt: no claiming to have searched or acted,
+ * every tool action is a *proposal* the user must confirm, and card/group ids it invents
+ * are validated (and rejected) downstream by `normalizeWorkspaceAgentResponse` — this
+ * prompt is the first line of defence, not the only one.
+ */
+const WORKSPACE_AGENT_SYSTEM_PROMPT = `You are the Workspace Agent for a notes/study app called GRIOT, embedded in a specific workspace.
+
+You are given a bounded set of the workspace's cards (never the whole workspace) and the conversation so far. Respond with a single JSON object:
+
+{
+  "message": "brief, direct prose reply. 1-4 sentences.",
+  "observation": "optional: a plain observation about the cards you were shown",
+  "contextSummary": "optional: one line naming what you actually looked at",
+  "proposedActions": [
+    {
+      "id": "kebab-id",
+      "label": "short action label",
+      "explanation": "why this action, in plain terms",
+      "requiresConfirmation": true,
+      "tool": { "type": "one of: suggest_next_actions | create_cards | create_group | link_cards | chunk_cards | extract_url | search_web | make_study_candidates | draft_experiment | ask_clarifying_question", "...": "fields specific to that tool" }
+    }
+  ],
+  "question": { "prompt": "a clarifying question", "rationale": "why it matters" }
+}
+
+Rules:
+- NEVER claim you searched, read, browsed, extracted, grouped, or created anything. You have not — every "tool" entry is a proposal the user must confirm before anything happens.
+- Only reference card ids that were actually given to you in the context. Never invent an id.
+- Propose at most a few actions per turn, only ones that are clearly useful given the cards you were shown.
+- Omit "proposedActions" (or leave it empty) and "question" entirely when you have nothing concrete to propose or ask.
 - Output JSON only. No markdown fences, no commentary.`;
 
 const PROMPT_ARCHITECT_SYSTEM_PROMPT = `You are a prompt architect for a study application.
@@ -339,6 +375,80 @@ export class OpenRouterAgentGateway implements AgentGateway {
     }
 
     return { raw, webCitations: extractWebCitations(message) };
+  }
+
+  /**
+   * Asks the model for one Workspace Agent turn.
+   *
+   * Returns the **raw parsed payload** rather than a typed response: validation happens
+   * in `normalizeWorkspaceAgentResponse`, so this method cannot accidentally hand
+   * malformed output to the UI wearing the right shape. Throws rather than falling back —
+   * there is no honest local fallback for a tool proposal, unlike `ask`'s card generation.
+   */
+  async designWorkspaceAgentTurn(input: {
+    briefing: string;
+    apiKey: string;
+    model: string;
+    systemPrompt?: string;
+  }): Promise<WorkspaceAgentTurnResult> {
+    const cleanKey = input.apiKey?.trim();
+    if (!cleanKey) {
+      throw new Error("API key is required for the workspace agent");
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] [OpenRouterAgentGateway.designWorkspaceAgentTurn] model="${input.model}" | briefingChars=${input.briefing.length}`
+    );
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cleanKey}`,
+        "HTTP-Referer": "https://github.com/dbslim/lerminal",
+        "X-Title": "GRIOT",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [
+          { role: "system", content: input.systemPrompt || WORKSPACE_AGENT_SYSTEM_PROMPT },
+          { role: "user", content: input.briefing },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
+      try {
+        const errData = await response.json();
+        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error("The model returned an empty response");
+    }
+
+    const cleanJson = content
+      .replace(/^```json/i, "")
+      .replace(/^```/, "")
+      .replace(/```$/, "")
+      .trim();
+
+    let raw: unknown;
+    try {
+      raw = JSON.parse(cleanJson);
+    } catch {
+      // Deliberately not salvaged into a partial turn — the caller shows an honest
+      // failure state and stores no proposals.
+      throw new Error("The model's reply was not valid JSON");
+    }
+
+    return { raw };
   }
 
   async designAssistantProfile(input: {

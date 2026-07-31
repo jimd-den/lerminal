@@ -74,6 +74,16 @@ export interface GoalArchitectTurnResult {
   webCitations: GoalArchitectCitation[];
 }
 
+/**
+ * What a Workspace Agent turn call returns: the model's raw payload, validated by
+ * `normalizeWorkspaceAgentResponse` in the entities layer. Kept as `raw` rather than a
+ * typed response for the same reason as {@link GoalArchitectTurnResult}: the gateway must
+ * not be able to hand malformed output to the UI wearing the right shape.
+ */
+export interface WorkspaceAgentTurnResult {
+  raw: unknown;
+}
+
 export interface PromptDesignResponse {
   needsClarification: boolean;
   question: string | null;
@@ -189,6 +199,27 @@ export interface AgentGateway {
     apiKey: string;
     model: string;
   }): Promise<string>;
+
+  /**
+   * Asks the model for one Workspace Agent ("Ask GRIOT") turn: a message, an optional
+   * observation, and any tool actions it proposes — never dispatched by this method or
+   * its caller, only validated (`normalizeWorkspaceAgentResponse`) and shown.
+   *
+   * Mirrors {@link designGoalArchitectTurn} exactly: returns the model's **raw** parsed
+   * payload rather than a typed response, so this gateway can never accidentally present
+   * malformed output as a usable turn. Optional so existing/mocked gateways remain valid;
+   * the workflow checks for it and produces a clear failure state when absent.
+   *
+   * @throws when no model answered. It must never invent a turn or a proposal.
+   */
+  designWorkspaceAgentTurn?(input: {
+    /** The bounded workspace/selection context plus the conversation so far, as prose. */
+    briefing: string;
+    apiKey: string;
+    model: string;
+    /** Resolved from the user-editable Workspace Agent assistant profile, if any. */
+    systemPrompt?: string;
+  }): Promise<WorkspaceAgentTurnResult>;
 
   /**
    * Prompts the AI Prompt Architect to design or refine an AssistantProfile system instruction
