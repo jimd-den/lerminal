@@ -8,52 +8,10 @@ import { styles } from "./screenStyles";
  * # Shared Screen Parts
  *
  * ## Business Value & Purpose
- * The small pieces more than one deck screen needs: a quick-action tile, a command slab,
- * the context panel, an empty readout, and the pipeline-argument escaper. They live
- * together because each is too small to justify a file and too shared to belong to any
- * one screen.
+ * The small pieces more than one deck screen needs: a command slab, the context panel,
+ * an empty readout, and the pipeline-argument escaper. They live together because each
+ * is too small to justify a file and too shared to belong to any one screen.
  */
-export function QuickAction({
-  label,
-  code,
-  theme,
-  onPress,
-}: {
-  label: string;
-  code: string;
-  theme: GriotTheme;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.quickAction,
-        { backgroundColor: theme.panelStrong, borderColor: theme.line },
-        pressed && styles.pressed,
-      ]}
-    >
-      <Text
-        style={[
-          styles.quickCode,
-          { color: theme.accent, fontFamily: theme.fontMono },
-        ]}
-      >
-        {code}
-      </Text>
-      <Text
-        style={[
-          styles.quickLabel,
-          { color: theme.text, fontFamily: theme.fontMono },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 export function CommandSlab({
   title,
   code,

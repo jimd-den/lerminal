@@ -71,42 +71,33 @@ export function MissionCanvasHeader({
     );
   }
 
+  // One panel, not a title shown twice across two boxes: eyebrow, the mission itself,
+  // the trio, done — the mockup's `.mission` block in a single glance.
   return (
     <View style={styles.wrap}>
-      <View style={styles.identityRow}>
-        <View style={styles.identityCopy}>
-          <Text
-            numberOfLines={2}
-            style={[styles.workspaceTitle, { color: theme.text, fontFamily: theme.fontSans }]}
-          >
-            {view.title}
-          </Text>
-          <Text style={[styles.contextLine, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
-            {view.contextLine}
-          </Text>
-        </View>
-        <View style={[styles.statusChip, { borderColor: theme.accent, backgroundColor: theme.accentSoft }]}>
-          <Text style={[styles.statusText, { color: theme.accent, fontFamily: theme.fontMono }]}>
-            {view.statusLabel}
-          </Text>
-        </View>
-      </View>
-
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Open mission status report"
         onPress={onOpenReport}
         style={({ pressed }) => [
-          styles.panel,
-          { backgroundColor: theme.panel, borderColor: theme.line },
+          styles.missionPanel,
+          { backgroundColor: theme.panelStrong, borderColor: theme.accent + "55" },
           pressed && styles.pressed,
         ]}
       >
-        <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
-          MISSION
-        </Text>
-        <Text style={[styles.title, { color: theme.text, fontFamily: theme.fontSans }]}>
+        <View style={styles.eyebrowRow}>
+          <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
+            MISSION
+          </Text>
+          <Text style={[styles.statusText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+            {view.statusLabel}
+          </Text>
+        </View>
+        <Text numberOfLines={2} style={[styles.title, { color: theme.text, fontFamily: theme.fontSans }]}>
           {view.title}
+        </Text>
+        <Text style={[styles.contextLine, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
+          {view.contextLine}
         </Text>
         {view.deliverable ? (
           <Text style={[styles.deliverable, { color: theme.textMuted }]}>{view.deliverable}</Text>
@@ -187,17 +178,9 @@ export function toneColor(tone: SemanticTone, theme: GriotTheme): string {
 const styles = StyleSheet.create({
   wrap: { gap: 10 },
   pressed: { opacity: 0.75 },
-  identityRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  identityCopy: { flex: 1 },
-  workspaceTitle: { fontSize: 24, fontWeight: "800", lineHeight: 30 },
   contextLine: { fontSize: TypeScale.meta, marginTop: 3 },
-  statusChip: {
-    borderWidth: 1,
-    borderRadius: Structure.radiusElbow,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  statusText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.1 },
+  eyebrowRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  statusText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1.1 },
   heroPanel: {
     borderWidth: 2,
     borderRadius: Structure.radius,
@@ -217,11 +200,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   heroCtaText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.2 },
-  panel: {
+  missionPanel: {
     borderWidth: 1,
-    borderRadius: Structure.radiusControl,
+    borderRadius: Structure.radius,
     padding: 16,
-    gap: 6,
+    gap: 4,
   },
   eyebrow: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
   title: { fontSize: 19, fontWeight: "800", lineHeight: 25 },
