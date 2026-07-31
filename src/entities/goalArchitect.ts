@@ -600,10 +600,17 @@ export function buildMissionProposal(
     origin: "app",
   });
 
-  // An experiment card only when there is a real proof to run. A placeholder experiment
-  // with an invented hypothesis would be exactly the fabricated rigour to avoid.
-  if (map.candidateNextActions.length > 0) {
-    const proof = map.candidateNextActions[0];
+  // An experiment card only when there is a *real* proof to run — never the app's own
+  // placeholder ("Define the smallest result that would prove this is working", written
+  // when the user never answered that question). Checking `[0]` for presence alone was
+  // the bug: it let that placeholder get spun into "Hypothesis: Define the smallest
+  // result... is achievable with what you have now" — a circular, nonsensical sentence
+  // dressed up as the user's own claim. Searching for the first non-placeholder entry
+  // (rather than only ever looking at index 0) also means a real proof an agent turn
+  // merges in later — after the placeholder that's already sitting at the front — is
+  // still found, instead of being silently shadowed by it.
+  const proof = map.candidateNextActions.find(action => action.origin !== "app");
+  if (proof) {
     suggestedCards.push({
       role: "experiment",
       type: "note",

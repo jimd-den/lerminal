@@ -367,6 +367,32 @@ describe("buildMissionProposal", () => {
     expect(proposal.suggestedCards.some(c => c.role === "experiment")).toBe(false);
   });
 
+  it("never spins the app's own placeholder gap into a fake experiment card", () => {
+    // deriveWorkingMap writes a generic app-authored placeholder into
+    // candidateNextActions when "smallest proof" was never answered — a stand-in
+    // marking the gap, not a real claim. Regression test for the bug where that
+    // placeholder was promoted into "Hypothesis: <placeholder> is achievable...", a
+    // circular, nonsensical sentence presented as if it were real proposed content.
+    const map = deriveWorkingMap([answer("outcome", "Build a playable puzzle game")]);
+    expect(map.candidateNextActions[0]?.origin).toBe("app");
+
+    const proposal = buildMissionProposal(map);
+
+    expect(proposal.suggestedCards.some(c => c.role === "experiment")).toBe(false);
+  });
+
+  it("still proposes an experiment from an agent- or web-suggested proof, not just the user's", () => {
+    const map = mergeIntoWorkingMap(deriveWorkingMap([answer("outcome", "Learn Rust")]), {
+      candidateNextActions: [insight("Compile a program that reads a file", "agent")],
+    });
+
+    const proposal = buildMissionProposal(map);
+    const experiment = proposal.suggestedCards.find(c => c.role === "experiment");
+
+    expect(experiment).toBeTruthy();
+    expect(experiment?.origin).toBe("agent");
+  });
+
   it("admits the gap instead of inventing a deliverable", () => {
     const proposal = buildMissionProposal(
       deriveWorkingMap([answer("outcome", "Learn electronics")])
