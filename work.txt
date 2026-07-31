@@ -1,0 +1,1123 @@
+You are working in the GRIOT repository.
+
+Your task is to design and implement the complete UI system, top to bottom, for GRIOT: a mobile-first, local-first learning shell that begins like a notes app and gradually reveals itself as an evidence-aware, agent-assisted mastery environment.
+
+Do not perform a visual reskin only. Build a coherent system of screens, components, presentation models, navigation states, interaction rules, settings, and workflows that makes the existing domain capabilities understandable to a person who initially thinks they are using a notes app.
+
+Read these files before changing code:
+- docs/architecture.md
+- docs/goal-architect-implementation-plan.md
+- newui.txt
+- Existing controller, presenters, workflow modules, UI screens, theme settings, font gateway, command registry, research workflow, mission workflow, review workflow, operation workflow, and tests.
+
+Do not begin broad implementation before writing:
+- docs/ui-system-implementation-plan.md
+
+The plan must map every visual feature and user interaction below to:
+1. Existing entities/use cases/workflows/controllers/presenters.
+2. New modules required.
+3. Persistence requirements.
+4. Migration and backwards compatibility behavior.
+5. Test coverage.
+6. Exact files likely to change.
+
+Do not remove existing working capabilities to simplify implementation.
+
+==================================================
+PRODUCT DEFINITION
+==================================================
+
+GRIOT is not a chatbot, productivity dashboard, online course platform, or generic notes app.
+
+GRIOT is a learning shell.
+
+A user may begin with:
+- A note.
+- A question.
+- A pasted excerpt.
+- A URL.
+- A source document.
+- A project idea.
+- A goal they cannot yet articulate clearly.
+
+The system helps them progressively turn material into:
+- Questions.
+- Concepts.
+- Evidence.
+- Claims.
+- Prerequisites.
+- Experiments.
+- Tasks.
+- Deliverables.
+- Recall practice.
+- A visible proof trail.
+
+The user should not need to understand commands, agent scopes, research provenance, FSRS, pipelines, or semantic roles on day one.
+
+Those capabilities must remain fully available and discoverable as the user gains confidence.
+
+The UI must use progressive disclosure:
+- Beginner surface: capture, understand, practice, make progress.
+- Intermediate surface: sources, prerequisites, experiments, status gaps, study generation.
+- Advanced surface: card selection, explicit pipelines, custom commands, custom assistants, prompt editing, assistant profiles, receipts, provenance, typed command expressions.
+
+The app’s deepest promise is trust:
+- The user can always inspect where an output came from.
+- The app distinguishes user-provided material, deterministic app findings, agent hypotheses, and real web evidence.
+- AI never falsely claims it searched, read, extracted, cited, or completed an action.
+- Search is executed only by SearchGateway.
+- Extraction is executed only by ExtractionGateway.
+- Model use is always visible before and after execution.
+- No network/model action occurs without an explicit, readable preflight.
+- Errors are specific and actionable.
+- A failed model or web operation is never replaced by fake success.
+
+==================================================
+FOUNDATIONAL INTERACTION MODEL
+==================================================
+
+Preserve and make visible the Unix model:
+
+- Cards are universal material.
+- Selected cards are stdin.
+- Commands are transformations.
+- Result cards are stdout.
+- Groups are folders/scopes.
+- Pipelines compose transformations.
+- Operation receipts are history.
+- Provenance is inspectable lineage.
+- Agent profiles are named, editable tools—not hidden personalities.
+- Web research is an external operation, never implied by generic “Ask.”
+- The canvas is the primary home surface.
+
+However, do not make the user type terminal commands by default.
+
+Mobile adaptation:
+- Touch-first action tiles are precomposed commands.
+- A touch action always maps to a real command or request object.
+- The user can reveal the underlying command/pipeline expression.
+- Typing is a power-user path, never required for normal use.
+- Selection creates an explicit visible input bundle.
+- The visible actions change based on selected card roles and state.
+- Every action has large, stable touch targets.
+- The bottom thumb zone is reserved for the highest-frequency actions.
+- Avoid menus inside menus and icon-only critical controls.
+
+Core product rule:
+“Touch is the friendly syntax. Pipelines are the underlying truth.”
+
+==================================================
+VISUAL DIRECTION
+==================================================
+
+Create a visual system named:
+
+FIELD SHELL
+
+This should be an original, low-fi operational interface inspired by the clarity and tactility of field instruments and retro-futurist HUDs. Do not imitate proprietary media UI, exact visual language, copyrighted assets, recognizable layouts, or branded terminology.
+
+It must feel:
+- Calm rather than noisy.
+- Tactile rather than decorative.
+- Dense but breathable.
+- Operational rather than gamified.
+- Warmly technical rather than military cosplay.
+- Mobile-first rather than a desktop terminal shrunk to a phone.
+- Focused on visible state rather than fake telemetry.
+
+Do not include:
+- Fake scans.
+- Random percentages.
+- Decorative coordinates.
+- Radar that does not represent data.
+- Endless animation.
+- Random status LEDs.
+- “System overload” theatrics.
+- Fake intelligence or fake completion states.
+- Overly tiny technical text.
+- Neon overload.
+- Decorative crosshairs.
+- Gamification points, streaks, coins, confetti, XP, or badges.
+
+Use HUD labels only when they name real state:
+- CAPTURE
+- INPUT
+- CONTEXT
+- SOURCE
+- WEB EVIDENCE
+- AGENT HYPOTHESIS
+- QUESTION
+- CONCEPT
+- EXPERIMENT
+- OUTPUT
+- BLOCKER
+- NEXT ACTION
+- PROVENANCE
+- RUN COMPLETE
+- REVIEW
+- DUE
+- ERROR
+
+Typography:
+- Body/headline: selected readable sans Google Font or safe system fallback.
+- Command, card IDs, structured labels, timestamps, pipeline expressions: selected mono Google Font or system mono fallback.
+- Never use a mono font for extended reading text.
+- Respect font scale and accessibility sizing.
+- Use text hierarchy before color hierarchy.
+
+Color:
+- Preserve semantic colors regardless of selected accent:
+  - Success.
+  - Warning.
+  - Error/destructive.
+  - Web evidence.
+  - Agent hypothesis.
+  - Selection.
+  - Due review.
+- Accent is for focus, active state, navigation, and primary actions.
+- Accent must not replace error, warning, web evidence, or destructive colors.
+- Enforce accessible contrast in every theme and custom color selection.
+- Use dark, light, and system modes.
+- Add appearance presets while preserving existing themes and palettes.
+
+Motion:
+- Only animate: sheet arrival, selection, output arrival, progress, success confirmation, and a meaningful state transition.
+- Reduced motion disables non-essential transitions.
+- Never animate merely to make the product look “futuristic.”
+
+==================================================
+APP SHELL
+==================================================
+
+Build one consistent mobile app shell.
+
+Top header:
+- Workspace switcher / workspace name.
+- Optional compact status: current group, mission title, or selected input count.
+- One obvious action for opening workspace tools/settings.
+- No permanent cluttered dashboard.
+
+Primary places:
+1. FIELD — the main canvas and active work surface.
+2. CAPTURE — create a note, source, question, experiment, or import content.
+3. LIBRARY — workspaces, documents, groups, sources, saved outputs.
+4. REVIEW — scheduled recall, cloze, question practice.
+5. TOOL DECK — command palette, agents, pipelines, custom commands.
+6. SETTINGS — appearance, fonts, agents, data, API configuration, accessibility.
+
+Use existing navigation architecture where practical. Do not create an unbounded tab bar. On small screens, the default bottom dock should show only 3–4 high-value actions plus Tools/More.
+
+Default idle dock:
+- Capture.
+- Library or Field.
+- Review, with due count when applicable.
+- Tools.
+
+Selection dock:
+- Clear selection and count.
+- Explain.
+- Research.
+- Connect.
+- Study.
+- More.
+
+The selection dock must:
+- State exact selected item count.
+- Explain if a group expands into children.
+- Never silently change selection.
+- Never run model/web work immediately.
+- Open preflight for model/web operations.
+- Clearly state the selected cards are the input bundle.
+
+==================================================
+FIRST-RUN EXPERIENCE
+==================================================
+
+A new user must not see a blank terminal, a complex dashboard, or an API-key wall.
+
+First-run sequence:
+
+1. Welcome:
+   - Plain statement:
+     “Capture something you want to understand, make, or solve.”
+   - Options:
+     - Start with a thought.
+     - Paste a source.
+     - Define a goal.
+     - Explore a blank workspace.
+   - Explain in one sentence that GRIOT turns notes into questions, evidence, practice, and projects over time.
+
+2. First capture:
+   - Support quick note, question, URL/source, pasted text, and project idea.
+   - Explain where the item was saved.
+   - Show only 2–3 contextual next actions.
+   - Do not show every available power tool.
+
+3. First next action:
+   - For a note:
+     - Explain this.
+     - Find prerequisites.
+     - Attach to a goal.
+   - For a source:
+     - Extract key ideas.
+     - Assess source.
+     - Make practice questions.
+   - For a question:
+     - Research it.
+     - Turn it into an experiment.
+     - Add supporting notes.
+   - For an experiment:
+     - Add measurement.
+     - Find prerequisites.
+     - Create a next task.
+
+4. Goal architect:
+   - Keep existing goal architect design and implementation direction.
+   - It must remain a focused bottom sheet or contained flow, never a permanent general chat screen.
+   - Ask one high-leverage question at a time.
+   - Show rationale for the question.
+   - Preserve skipped answers.
+   - Build a transparent working map.
+   - Label model contribution “Agent hypothesis — verify or edit.”
+   - Allow fully manual use without an API key.
+   - Offer web research only after explicit opt-in.
+   - Create mission cards only after the user approves a clearly labeled draft.
+
+==================================================
+FIELD: MAIN CANVAS
+==================================================
+
+FIELD is the primary home and replaces the feeling of a generic list of notes.
+
+It must still use the existing card and group model. Do not build a separate graph database or duplicate source of truth.
+
+FIELD presents a bounded, scrollable working set:
+- Current group / workspace context.
+- Mission module only when a mission exists.
+- Current next action.
+- Notes, questions, sources, concepts, claims, experiments, tasks, and results represented as cards.
+- Cards remain the actual domain cards.
+- Filters are presentation state, not destructive reclassification.
+
+Card visual grammar:
+- Semantic role label.
+- Title.
+- Concise preview.
+- Relevant status only: due, source retained, evidence caution, agent-generated, selected, incomplete, blocked.
+- Provenance affordance when provenance exists.
+- One primary contextual action available on expansion.
+- Selection affordance is always visible and accessible.
+- Cards must remain easy to scan one-handed.
+
+Card roles:
+- Note: user capture or working thought.
+- Source: imported/pasted/retained source.
+- Chunk: readable extracted learning material.
+- Question: unresolved or recall prompt.
+- Concept: a structured explanation/idea.
+- Claim: a proposition supported or needing support.
+- Experiment: hypothesis, method, measure, result, next action.
+- Task: a concrete action.
+- Deliverable: output that demonstrates capability.
+- Group: scope/container/document/milestone.
+- Goal: workspace mission.
+
+Mission module:
+- Only shown for workspaces with a mission.
+- Display:
+  - Goal title.
+  - Target deliverable.
+  - One success criterion.
+  - Counts: blockers, prerequisites, evidence, next tasks.
+  - One recommended next action with a short deterministic reason.
+- Tapping it opens the status gap report.
+- Never show an opaque “percent complete.”
+- If any maturity indicator exists, it must state that it is heuristic and explain why.
+
+Status gap report:
+- Answer:
+  - What do I want?
+  - What do I have?
+  - What is missing?
+  - What should I do next?
+- Use deterministic card graph analysis before any model enrichment.
+- Clearly distinguish:
+  - Deterministic result.
+  - Agent hypothesis.
+  - Web-grounded evidence.
+- Allow the user to turn a recommendation into a task, research preflight, experiment draft, or study action.
+
+==================================================
+CAPTURE SYSTEM
+==================================================
+
+Make capture feel immediate and forgiving.
+
+Capture types:
+- Note.
+- Question.
+- Source URL.
+- Pasted source text.
+- Experiment.
+- Task.
+- Voice input only if a supported existing capability exists; do not add unsupported voice infrastructure.
+
+Capture sheet:
+- Uses a simple type selector with plain labels.
+- Captures to current workspace/current group by default.
+- Clearly shows destination.
+- Allows user to change destination.
+- Validates before save.
+- Confirms save truthfully.
+- Shows created cards only after persistence succeeds.
+
+Source capture:
+- URL capture creates a source card; it must not claim text was extracted until extraction succeeds.
+- Pasted text can create source content directly.
+- If URL extraction is supported, it must use ExtractionGateway through a use case/workflow, not UI networking.
+- A failed extraction preserves the source URL card and reports what failed.
+
+==================================================
+RESEARCH AND EVIDENCE BENCH
+==================================================
+
+Research is a distinct operation from Ask/Explain.
+
+Research entry points:
+- Research action from selection dock.
+- Research action from a source/question card.
+- Research action from goal architect.
+- Typed `research` command or equivalent existing command.
+- Research action from status gap report.
+
+Preflight must show:
+- Action name and plain purpose.
+- Exact input cards.
+- Bounded context scope.
+- Exact query or editable query list.
+- Whether a model helped propose/refine a query.
+- Web enabled state.
+- Active model and agent profile, where relevant.
+- Expected output types.
+- Destination.
+- Warning if no API key/model is configured for model-dependent parts.
+- Clear statement:
+  “SearchGateway performs the web search. Search results are candidates, not verified conclusions.”
+
+Results screen:
+- Candidate source cards with:
+  - Title.
+  - Domain.
+  - Canonical URL.
+  - Snippet.
+  - Query.
+  - Access time.
+  - Relevance rationale.
+  - Source kind when identifiable.
+  - Credibility signals.
+  - Cautions or limitations.
+  - Keep, reject, open, extract actions.
+- No opaque “credibility score.”
+- Use explainable advisory labels:
+  - Official documentation.
+  - Primary source.
+  - Academic / technical paper.
+  - Comparable project.
+  - Tutorial — verify against stronger source.
+  - Limited provenance.
+  - Duplicate / overlapping source.
+- “Create cited brief” is disabled until retained evidence exists.
+- The model can synthesize only retained candidates and extracted text.
+- Source-derived cards must include provenance.
+
+==================================================
+AGENT SYSTEM
+==================================================
+
+Agents are user-configurable, scoped tools.
+
+Do not use a single global “AI” assistant with a hidden prompt.
+
+Build an Agent Studio with:
+- Built-in agents.
+- User-created agents.
+- Session-only agents.
+- Workspace-bound agents.
+- Global saved agents.
+- Duplicate built-in agent to customize.
+- Export/import agent definition as JSON only if safe and compatible with existing storage patterns.
+
+Required built-in agents:
+1. Goal Architect:
+   - Clarifies intention.
+   - Builds working map.
+   - Proposes mission draft.
+   - May propose research queries.
+   - Does not browse without approval.
+
+2. Learning Coach:
+   - Explains selected material.
+   - Finds misconceptions.
+   - Creates teaching explanations.
+   - Generates questions only from available context.
+   - Encourages prediction and application rather than long lectures.
+
+3. Research Scout:
+   - Proposes/refines research queries.
+   - Classifies source needs.
+   - Helps assess retained evidence.
+   - Uses actual web results only after SearchGateway runs.
+   - Never claims it searched unless a search receipt proves it.
+
+4. Prerequisite Mapper:
+   - Identifies missing concepts and dependencies.
+   - Outputs explicit question/concept cards.
+   - Marks uncertain suggestions as hypotheses.
+
+5. Experiment Designer:
+   - Converts an uncertainty into:
+     - Hypothesis.
+     - Method.
+     - Required tools/materials.
+     - Measurement.
+     - Expected result.
+     - Stop condition.
+     - Next action.
+   - Never claims an experiment was conducted.
+
+6. Study Builder:
+   - Converts selected learner-approved content into recall or cloze material.
+   - Requires explicit confirmation before enrollment in FSRS/review.
+   - Must preserve links to source content.
+
+7. Capstone Planner:
+   - Turns a mission and selected evidence into milestones, tasks, deliverables, and explicit unknowns.
+   - Must avoid creating false certainty or arbitrary deadlines.
+
+Agent definition model:
+Create or extend a serializable domain model, preferably in entities, such as:
+
+type AgentProfile = {
+  id: string;
+  name: string;
+  description: string;
+  scope: "builtin" | "global" | "workspace" | "session";
+  systemPrompt: string;
+  allowedCapabilities: AgentCapability[];
+  defaultModelId?: string;
+  preferredOutputRoles: SemanticRole[];
+  contextPolicy: ContextPolicy;
+  webPolicy: "never" | "preflight-required";
+  outputPolicy: OutputPolicy;
+  createdAt: number;
+  updatedAt: number;
+  isBuiltin: boolean;
+  isEditable: boolean;
+  sourceProfileId?: string;
+};
+
+type AgentCapability =
+  | "explain"
+  | "goal-architect"
+  | "query-planning"
+  | "research-synthesis"
+  | "prerequisite-mapping"
+  | "experiment-planning"
+  | "study-generation"
+  | "capstone-planning"
+  | "custom";
+
+type ContextPolicy = {
+  defaultScope: "selected-only" | "bounded-workspace" | "mission-only";
+  maxCards: number;
+  maxCharacters: number;
+  allowSources: boolean;
+  allowMission: boolean;
+  allowPriorOutputs: boolean;
+};
+
+type OutputPolicy = {
+  allowCardCreation: boolean;
+  allowedRoles: SemanticRole[];
+  requireReviewBeforeSave: boolean;
+  createGroupForOutputs: boolean;
+};
+
+Requirements:
+- Built-ins are read-only.
+- “Customize” duplicates a built-in agent into a user-owned profile.
+- User edits never mutate built-ins.
+- Every prompt is visible and editable in the agent editor.
+- Explain the impact of each capability and policy in plain language.
+- Validate prompt, name, capability, model selection, and context limits.
+- Do not allow profiles to request unbounded workspace upload.
+- Allow session-only changes that disappear after the session.
+- Persist global and workspace-scoped profiles safely.
+- Keep existing assistant profiles backwards compatible through migration/adapters.
+- If a profile references a missing model, show an actionable fallback selector; never silently switch models.
+
+Agent Studio UI:
+- List agents by scope: Built-in, Workspace, My agents, Session.
+- Each item displays:
+  - Name.
+  - What it does.
+  - Web availability.
+  - Default context policy.
+  - Default model if assigned.
+  - Editable / built-in state.
+- Agent detail:
+  - Purpose.
+  - Prompt editor.
+  - Allowed actions.
+  - Context policy.
+  - Web policy.
+  - Output behavior.
+  - Model selection.
+  - Test with sample context only if test execution is truthfully scoped and clearly separate from saved actions.
+- Prompt editor must not expose users to opaque raw system behavior only:
+  - Provide a plain-language “Behavior” summary.
+  - Provide the exact editable prompt.
+  - Provide a “Prompt Architect” action that proposes a revised prompt but never overwrites without confirmation.
+  - Show diff before applying a generated prompt revision.
+  - Preserve version history or at minimum a recoverable previous version for the latest edit.
+- Do not send prompts or cards to a model merely by opening the editor.
+
+Prompt Architect:
+- This is an optional agent-assisted tool for designing another agent profile.
+- Inputs:
+  - User goal.
+  - Desired behavior.
+  - Expected inputs.
+  - Desired outputs.
+  - Boundaries.
+  - Tone.
+  - Model/capabilities available.
+- Output:
+  - Proposed name.
+  - Description.
+  - System prompt.
+  - Context policy.
+  - Suggested output roles.
+  - Suggested web policy.
+  - Safety/quality rationale.
+- Must open an AI preflight showing what will be sent.
+- Must show a diff.
+- Must require explicit save.
+- Must store provenance that an agent designed/revised the profile, with model metadata.
+- Must not grant web access or broad context automatically.
+
+==================================================
+CUSTOM COMMAND SYSTEM
+==================================================
+
+Custom commands are first-class user tools, not a hidden advanced setting.
+
+Preserve existing command definitions and pipeline behavior.
+
+Create Command Workshop.
+
+A custom command may be:
+- Deterministic macro: a saved ordered pipeline of existing deterministic commands.
+- Agent command: a named agent profile plus explicit input/output policy.
+- Guided action: a preflight-backed shortcut that opens a known operation with defaults.
+- Research command: an explicit research workflow shortcut that always requires web preflight.
+- Hybrid pipeline: deterministic stages plus a declared agent stage and/or research stage.
+
+Do not allow arbitrary hidden code execution.
+
+Custom command definition model should include:
+- id.
+- name.
+- aliases.
+- plain-language label.
+- description.
+- kind.
+- pipeline expression or stage list.
+- agentProfileId when applicable.
+- required input roles/count.
+- allowed input scope.
+- web use declaration.
+- output roles.
+- destination policy.
+- whether preflight is mandatory.
+- session/workspace/global scope.
+- createdAt/updatedAt.
+- version/source metadata.
+- optional icon only if it remains accessible and not essential to meaning.
+
+Command workshop UI:
+- Start with templates:
+  - Explain simply.
+  - Challenge my reasoning.
+  - Turn notes into a practice set.
+  - Research and compare sources.
+  - Design an experiment.
+  - Build a capstone plan.
+  - My custom pipeline.
+- Command composer:
+  - Name and plain language description.
+  - Input requirements.
+  - Stage builder with reorderable stages.
+  - Context selector.
+  - Agent selector if applicable.
+  - Model selection if applicable.
+  - Web disclosure if applicable.
+  - Output card roles.
+  - Destination.
+  - Preflight preview.
+  - Underlying pipeline expression.
+- Every stage must display:
+  - What it reads.
+  - Whether it uses model/web.
+  - What it creates.
+  - Side effects.
+- Command validation:
+  - Detect empty commands.
+  - Reject invalid stage combinations.
+  - Reject non-existent agent profile.
+  - Reject required-selection commands when no selection exists.
+  - Reject web usage without explicit preflight.
+  - Reject output role conflicts.
+  - Reject pipeline stages that cannot consume the previous stage’s outputs, where type knowledge exists.
+- Commands can be pinned to the Tool Deck.
+- Commands can be duplicated and edited.
+- Built-in commands remain available and cannot be corrupted by user edits.
+- Existing typed command aliases must continue working.
+- If custom command behavior cannot be fully inferred, describe exposure conservatively rather than claiming it is deterministic, AI-free, or web-free.
+
+==================================================
+TOOL DECK AND PIPELINES
+==================================================
+
+Tool Deck is the advanced control surface.
+
+It must work for novices and experts:
+- Top: plain-language tiles.
+- Middle: pinned commands.
+- Bottom: command expression editor.
+- Selection summary is always visible.
+- Every action shows availability and reason if unavailable.
+- Pressing a tile opens preflight where required.
+- Long press or “inspect” reveals underlying pipeline and command documentation.
+
+Core action tiles:
+- Capture.
+- Explain.
+- Research web.
+- Find prerequisites.
+- Connect.
+- Plan experiment.
+- Make study cards.
+- Review.
+- Status.
+- Plan capstone.
+- Create goal.
+- Ask custom.
+
+Each tile includes:
+- Plain label.
+- One-line purpose.
+- Whether selection is required.
+- Whether it uses model.
+- Whether it uses web.
+- Output type.
+- Disabled reason if unavailable.
+
+Typed pipelines:
+- Preserve existing parsing and execution.
+- Keep expression entry available as a compact editable control.
+- Use autocomplete/help.
+- Show command documentation as user types.
+- Show selected context count.
+- Highlight model and web stages.
+- Preflight the full pipeline if it crosses model/web boundaries.
+- Display actual running stage via existing activity/pending operation state.
+- Show operation receipt on completion or actionable failure on error.
+
+==================================================
+PREFLIGHT, RECEIPTS, PROVENANCE, AND UNDO
+==================================================
+
+All external or agentic work is explicit and reviewable.
+
+Preflight bottom sheet:
+- Action title.
+- Plain-language explanation.
+- Exact inputs.
+- Selected-card preview.
+- Context scope.
+- Context truncation warning where applicable.
+- Model/profile.
+- Web state.
+- Exact query/queries if web search applies.
+- Expected outputs and destination.
+- Side effects.
+- Run button with exact language.
+- Cancel.
+- Link to inspect full prompt/context where appropriate.
+- No invented pricing or token estimates unless provider metadata makes it factual.
+
+Receipts:
+- Show after every agent, web, extraction, pipeline, custom command, mission acceptance, or custom-agent operation.
+- Include:
+  - Action.
+  - Run status.
+  - Actual model use.
+  - Actual web use.
+  - Search queries actually executed.
+  - Input card count/IDs.
+  - Created/updated output cards.
+  - Destination.
+  - Agent profile and version metadata where used.
+  - Errors/partial success.
+  - Undo availability.
+- Receipts must be persistent or safely reconstructable using existing operation records.
+- “Open outputs” must take users to the actual cards.
+- “Undo” only appears when safe.
+- If undo cannot run because output was edited, explain why before attempting destructive work.
+
+Provenance card details:
+- Creation mode: manual, command, agent, search, extraction.
+- Source inputs.
+- Search query.
+- Source URL.
+- Agent profile/model.
+- Creation time.
+- Operation receipt link.
+- Citation/excerpt where available.
+- User-readable explanation, not only raw IDs.
+
+==================================================
+APPEARANCE, THEMES, AND FONTS
+==================================================
+
+Build a complete Appearance Studio using existing font installation/settings infrastructure.
+
+Required settings:
+- Theme: system, dark, light.
+- Field Shell appearance profile.
+- Existing appearance profiles remain available and compatible.
+- Accent presets.
+- Controlled custom accent picker.
+- Surface tint presets: neutral, graphite, deep green, blue-black, warm paper.
+- Body font family.
+- Mono font family.
+- Font size: compact, standard, spacious.
+- Reading size independently adjustable if existing typography system permits it.
+- Corner/shape profile only if it can be expressed as controlled tokens; do not allow arbitrary visual chaos.
+- Motion: system, reduced, full.
+- High contrast option.
+- Reset profile / reset typography.
+
+Google Fonts:
+- Reuse existing font gateway/install flow by family name.
+- Font browser/search:
+  - Search family name.
+  - Preview headline/body/mono samples.
+  - Install.
+  - Installation status.
+  - Error state.
+  - Remove unused installed font only if supported safely.
+- Body and mono roles are separate.
+- A body font must not become mono simply because the user chooses it.
+- If font installation fails:
+  - Preserve current active font.
+  - Show why it failed.
+  - Offer retry.
+  - Do not corrupt settings.
+- If a font is no longer installed:
+  - Fall back to safe system font.
+  - Mark the setting as unavailable.
+  - Offer re-install or replacement.
+- Do not make font downloading occur without explicit user action.
+
+Design tokens:
+- Theme system must be token-driven.
+- Components must consume semantic tokens, not literal hex values.
+- Separate:
+  - Background/surface/border/text.
+  - Accent/focus/selection.
+  - Success/warning/error.
+  - Source/evidence/agent/due role states.
+  - Card role display markers.
+  - Typography and spacing.
+  - Motion durations/easings.
+  - Touch target dimensions.
+- Semantic safety colors must remain stable independently of user accent.
+
+==================================================
+REVIEW AND TEACHING EXPERIENCE
+==================================================
+
+Use existing recall/cloze/review/FSRS functionality, but present it as an active mastery loop.
+
+Review screen:
+- One question at a time.
+- Clear progress and exit.
+- Predict before reveal.
+- Reveal answer.
+- Grade honestly using existing grading behavior.
+- Avoid fake rewards.
+- Make it clear that review scheduling is separate from merely creating a note or concept.
+- Preserve existing schedules and review behavior.
+- Display source/reference link when appropriate.
+- Support opening the originating card after review.
+
+Study generation:
+- Never auto-enroll cards.
+- Show a reviewable draft:
+  - Candidate cards.
+  - Recall vs cloze.
+  - Source material.
+  - Number of cards.
+  - Whether enrollment is enabled.
+- Require explicit confirmation to enroll in review.
+- Allow creation without enrollment.
+
+Teaching loop:
+Design surfaces that encourage:
+1. Encounter material.
+2. Make a prediction/question.
+3. Receive/extract explanation.
+4. Retrieve the idea without looking.
+5. Apply it to a scenario, decision, experiment, or deliverable.
+6. Preserve a proof artifact.
+7. Return through scheduled review where appropriate.
+
+Do not claim the app is “better than a master’s degree.”
+Instead, make the product’s rigor visible through:
+- Source inspection.
+- Clear assumptions.
+- Retrieval.
+- Applied practice.
+- Experiments.
+- Capstones.
+- Feedback loops.
+- Explicit gaps.
+- Capability artifacts.
+
+==================================================
+CLEAN ARCHITECTURE REQUIREMENTS
+==================================================
+
+Preserve the repository’s four-layer architecture.
+
+Entities:
+- Pure values, state objects, normalization, validation, semantic rules.
+- No framework imports.
+- No IO.
+- No logging.
+- No React Native.
+- No OpenRouter imports.
+
+Use cases:
+- Interactors, workflow orchestration, port interfaces.
+- Define ports here.
+- One operation per interactor where practical.
+- Workflows own cohesive feature state and use narrowly defined Host interfaces.
+- Never import framework components or gateways directly.
+
+Adapters:
+- Controller methods remain thin.
+- Session store manages persisted/derived/on-screen state correctly.
+- Presenters are pure projections from state to UI models.
+- UI must not calculate business logic that belongs in entities/use cases.
+- Add presenter tests for every new major screen/state.
+
+Frameworks:
+- React Native views.
+- AsyncStorage repositories.
+- OpenRouter gateway.
+- Search and extraction gateways.
+- Font gateway.
+- Composition root.
+- UI calls controller actions only.
+- No direct network calls in components.
+
+Required new module groups, or equivalent names consistent with current conventions:
+- entities/agentProfile.ts
+- entities/customCommand.ts or extension of current command definition entity
+- entities/appearanceProfile.ts or extension of current appearance settings
+- usecases/agent/AgentProfileWorkflow.ts
+- usecases/agent/PromptArchitectInteractor.ts
+- usecases/commands/CustomCommandWorkflow.ts or extension of existing command workflow
+- usecases/appearance/FontInstallationInteractor.ts only if a clean use-case boundary is needed
+- adapters/presenters/AgentStudioPresenter.ts
+- adapters/presenters/CommandWorkshopPresenter.ts
+- adapters/presenters/AppearanceStudioPresenter.ts
+- frameworks/ui/AgentStudioSheet.tsx
+- frameworks/ui/AgentEditorSheet.tsx
+- frameworks/ui/PromptArchitectSheet.tsx
+- frameworks/ui/CommandWorkshopSheet.tsx
+- frameworks/ui/AppearanceStudioSheet.tsx
+- framework storage repositories for new persisted entities
+- tests colocated by layer
+
+Reuse existing:
+- GriotController.
+- AppSessionStore.
+- Existing workflows and Host seams.
+- Mission workflow.
+- Research workflow.
+- Operations workflow.
+- Review session.
+- SearchGateway.
+- Extraction gateway.
+- AgentGateway.
+- Operation record/undo support.
+- Card roles and provenance.
+- Existing AssistantProfile behavior and migrations.
+- Google Font gateway.
+- Command registry/pipeline runner.
+- Existing navigation/modal stack.
+
+Do not create a second competing agent, command, theme, or storage abstraction if an existing one can be extended safely.
+
+==================================================
+PERSISTENCE AND MIGRATION
+==================================================
+
+All changes must be additive and backwards compatible.
+
+Requirements:
+- Old cards, workspaces, schedules, palettes, assistant profiles, custom commands, and settings must load without data loss.
+- New fields resolve to safe defaults.
+- Built-in agents are generated or versioned safely; do not persist mutable copies as authoritative built-ins.
+- User agent profiles, command definitions, and appearance profiles are stored separately or through an existing compatible repository model.
+- Storage parse failures surface as errors, never as empty data.
+- Do not silently overwrite user preferences.
+- Version migrations must be deterministic and tested.
+- Workspace scoped agents/commands must not appear in unrelated workspaces.
+- Session agents/commands must not persist after app restart.
+- Deleting an agent used by a command must warn and require reassignment/delete of dependent commands.
+- Deleting a font must fall back safely.
+
+==================================================
+ACCESSIBILITY AND QUALITY
+==================================================
+
+- Minimum 44x44pt touch targets for primary interactive controls.
+- Respect screen-reader labels and roles.
+- Do not rely on color alone.
+- Support Dynamic Type/font scale.
+- Support reduced motion.
+- Support dark and light modes.
+- Ensure keyboard behavior is correct on Android and iOS.
+- Bottom sheets and text editors must avoid keyboard overlap.
+- Support one-handed use on a standard phone.
+- Use clear, non-technical language by default.
+- Show advanced terminology in inspectable detail views, not as required vocabulary.
+
+==================================================
+TESTING
+==================================================
+
+Add tests before or alongside each feature.
+
+Must test:
+- Existing pipeline behavior remains intact.
+- Existing commands and aliases remain available.
+- Existing custom commands load and execute as before.
+- New command validation and stage compatibility rules.
+- Custom commands cannot silently invoke web or model usage.
+- Research preflight is required when a command includes web.
+- Agent preflight exposes selected context, bounded workspace context, model, profile, and output destination.
+- Agent profile duplication does not mutate built-ins.
+- Prompt edits persist at allowed scope.
+- Session-only agents do not persist.
+- Workspace agents remain isolated by workspace.
+- Prompt Architect requires confirmation before saving.
+- Prompt Architect does not execute without preflight.
+- Malformed agent/profile output is rejected safely.
+- Missing model/API key produces actionable error states.
+- Search uses SearchGateway; agent-only actions do not.
+- Extraction failure does not erase source card.
+- Cited brief cannot be created without retained evidence.
+- Provenance/receipts accurately reflect model, web, query, inputs, outputs, and profile metadata.
+- Undo is safe and refuses edited outputs.
+- Appearance changes preserve semantic colors.
+- Font install failure preserves prior settings.
+- Missing installed font falls back safely.
+- Existing stored data remains readable.
+- Review behavior and schedules remain unchanged unless the user explicitly enrolls study cards.
+- No automatic study enrollment from agent, mission, research, or source workflows.
+- Reduced motion and high contrast change token output predictably.
+- Dependency rules still pass.
+- TypeScript strict mode passes.
+
+Run and report:
+- Unit tests.
+- Architecture/dependency rule tests.
+- TypeScript type check.
+- Any existing lint/format/build commands.
+
+==================================================
+IMPLEMENTATION SEQUENCE
+==================================================
+
+Phase 0 — Audit and plan
+- Read current repository architecture and existing implementations.
+- Write docs/ui-system-implementation-plan.md.
+- Identify reuse points and incompatibilities.
+- Do not perform broad UI rewrite yet.
+
+Phase 1 — Foundations
+- Define/extend appearance tokens and semantic UI primitives.
+- Define agent profile and custom command domain types.
+- Add persistence repositories and migrations.
+- Add unit tests for serialization, defaults, migration, validation.
+
+Phase 2 — Shell and field
+- Implement app shell, Field canvas presentation, selection bundle, role card grammar, mission module, capture receipts.
+- Preserve current navigation and card behavior.
+- Add presenter tests.
+
+Phase 3 — Agent Studio
+- Implement built-ins, profile list/detail/editor, scope rules, profile duplication, prompt history/diff, and Prompt Architect preflight.
+- Wire through controller/workflows, never directly through UI.
+- Add tests.
+
+Phase 4 — Command Workshop
+- Implement command templates, stage composer, validation, preview, pinning, pipeline inspection.
+- Preserve typed pipeline execution.
+- Add tests.
+
+Phase 5 — Research/evidence and preflight refinement
+- Improve Research Bench, source candidate cards, provenance detail, receipts, and explicit side-effect preflights.
+- Add tests.
+
+Phase 6 — Appearance Studio
+- Implement theme/token system, Google Font selector/install states, body/mono separation, density, motion, high contrast, safe fallback.
+- Add tests.
+
+Phase 7 — Mastery surfaces
+- Implement/revise review, study-generation confirmation, proof-trail presentation, status gap report actions.
+- Add tests.
+
+Phase 8 — Quality pass
+- Accessibility.
+- Android/iOS keyboard and bottom-sheet behavior.
+- Performance.
+- Empty states.
+- Error states.
+- Migration verification.
+- Documentation.
+- No regression of current features.
+
+==================================================
+FINAL DELIVERABLE
+==================================================
+
+At completion, provide:
+1. Feature summary.
+2. UI-system architecture summary.
+3. User flow summary.
+4. Changed-file list.
+5. New persistence entities and migration notes.
+6. Test commands run and results.
+7. Known limitations.
+8. Recommended next increment.
+
+Do not claim anything is implemented unless it is actually implemented and tested.
+Do not fake model, web, extraction, citation, or completion states.
+Keep the shell simple enough for a first-time note taker and deep enough for a user who wants programmable, evidence-aware learning.

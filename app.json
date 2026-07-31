@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "GRIOT",
-    "slug": "griot",
+    "slug": "chunk_buddy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -24,14 +24,15 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [
+      "expo-font"
+    ],
+    "backgroundColor": "#0a0d0c",
+    "owner": "ddsrv",
     "extra": {
       "eas": {
         "projectId": "60754f0d-760d-44ee-8f4b-a68f7edc1fb1"
       }
-    },
-    "plugins": [
-      "expo-font"
-    ],
-    "backgroundColor": "#0a0d0c"
+    }
   }
 }

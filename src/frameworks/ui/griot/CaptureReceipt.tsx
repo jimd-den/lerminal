@@ -44,12 +44,14 @@ export function CaptureReceipt({
     <View
       accessibilityRole="alert"
       accessibilityLiveRegion="polite"
-      style={[styles.panel, { backgroundColor: theme.panelStrong, borderColor: theme.accent }]}
+      style={[styles.panel, { backgroundColor: theme.panelStrong, borderColor: theme.line }]}
     >
-      <Text style={[styles.status, { color: theme.accent, fontFamily: theme.fontMono }]}>
-        RUN COMPLETE
-      </Text>
-      <Text style={[styles.summary, { color: theme.text }]}>{receipt.summary}</Text>
+      {/* The seal: a small, calm confirmation rather than a headline claiming victory —
+          one note saved, nothing else changed, matching the mockup's restraint. */}
+      <View style={[styles.seal, { borderColor: theme.line, backgroundColor: theme.panelMuted }]}>
+        <View style={[styles.sealDot, { backgroundColor: theme.accent }]} />
+        <Text style={[styles.sealText, { color: theme.accent }]}>{receipt.summary}</Text>
+      </View>
 
       {receipt.localFallbackReason ? (
         <View style={[styles.fallbackNotice, { borderColor: theme.warning, backgroundColor: `${theme.warning}14` }]}>
@@ -59,7 +61,28 @@ export function CaptureReceipt({
         </View>
       ) : null}
 
-      <Text style={[styles.destination, { color: theme.textMuted }]}>
+      {primaryCard ? (
+        <View
+          style={[
+            styles.noteCard,
+            { borderColor: theme.line, backgroundColor: theme.panel, borderLeftColor: theme.accent },
+          ]}
+        >
+          <Text style={[styles.noteTag, { color: theme.accent, fontFamily: theme.fontMono }]}>
+            YOUR NOTE
+          </Text>
+          <Text numberOfLines={2} style={[styles.noteTitle, { color: theme.text }]}>
+            {primaryCard.title}
+          </Text>
+          {primaryCard.body ? (
+            <Text numberOfLines={3} style={[styles.noteBody, { color: theme.textMuted }]}>
+              {primaryCard.body}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <Text style={[styles.destination, { color: theme.textFaint }]}>
         Added to {receipt.destinationLabel}
         {receipt.selectionChanged ? " · now selected, ready for the next step" : ""}
       </Text>
@@ -67,8 +90,8 @@ export function CaptureReceipt({
       {receipt.nextActions.length > 0 ? (
         <>
           <View style={styles.nextHeader}>
-            <Text style={[styles.nextLabel, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
-              NEXT
+            <Text style={[styles.nextLabel, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              CHOOSE ONE USEFUL NEXT MOVE
             </Text>
             {/* The agentic layer: not a new capability, only a highlighted pick among
                 the same actions below — see SuggestNextActionInteractor. */}
@@ -110,7 +133,7 @@ export function CaptureReceipt({
             </View>
           ) : null}
 
-          <View style={styles.actionRow}>
+          <View style={styles.choiceList}>
             {receipt.nextActions.map((action) => {
               const highlighted =
                 state.suggestedActionForCardId === primaryCard?.id &&
@@ -121,10 +144,10 @@ export function CaptureReceipt({
                   accessibilityRole="button"
                   onPress={() => void controller.dispatchSuggestedAction(action.dispatch)}
                   style={({ pressed }) => [
-                    styles.nextAction,
+                    styles.choice,
                     {
-                      borderColor: highlighted ? theme.evidence : theme.accent,
-                      backgroundColor: highlighted ? `${theme.evidence}22` : theme.accentSoft,
+                      borderColor: highlighted ? theme.evidence : theme.line,
+                      backgroundColor: highlighted ? `${theme.evidence}14` : theme.panel,
                     },
                     pressed && styles.pressed,
                   ]}
@@ -132,12 +155,17 @@ export function CaptureReceipt({
                   <Text
                     numberOfLines={1}
                     style={[
-                      styles.nextActionText,
-                      { color: highlighted ? theme.evidence : theme.accent },
+                      styles.choiceText,
+                      { color: highlighted ? theme.evidence : theme.text },
                     ]}
                   >
                     {action.label}
                   </Text>
+                  {highlighted ? (
+                    <Text style={[styles.choiceBadge, { color: theme.evidence, fontFamily: theme.fontMono }]}>
+                      SUGGESTED
+                    </Text>
+                  ) : null}
                 </Pressable>
               );
             })}
@@ -193,9 +221,29 @@ const styles = StyleSheet.create({
     padding: Structure.gutter,
     marginBottom: 18,
   },
-  status: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
-  summary: { fontSize: TypeScale.title, lineHeight: 28, fontWeight: "700", marginTop: 8 },
-  destination: { fontSize: TypeScale.meta, lineHeight: 19, marginTop: 5 },
+  seal: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  sealDot: { width: 7, height: 7, borderRadius: 4 },
+  sealText: { fontSize: TypeScale.meta, fontWeight: "700", flexShrink: 1 },
+  noteCard: {
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderRadius: Structure.radiusControl,
+    padding: 12,
+    marginTop: 12,
+    gap: 4,
+  },
+  noteTag: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
+  noteTitle: { fontSize: TypeScale.bodyStrong, fontWeight: "700" },
+  noteBody: { fontSize: TypeScale.meta, lineHeight: 19 },
+  destination: { fontSize: TypeScale.label, lineHeight: 17, marginTop: 10 },
   fallbackNotice: { borderWidth: 1, borderRadius: 10, padding: 10, marginTop: 10 },
   fallbackText: { fontSize: TypeScale.meta, lineHeight: 18, fontWeight: "600" },
   nextHeader: {
@@ -217,16 +265,18 @@ const styles = StyleSheet.create({
   },
   suggestionLabel: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
   suggestionReason: { fontSize: TypeScale.meta, lineHeight: 18 },
-  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
-  nextAction: {
-    minHeight: Structure.tap,
+  choiceList: { gap: 7, marginTop: 8 },
+  choice: {
+    minHeight: Structure.tapLarge,
     borderWidth: 1,
     borderRadius: Structure.radiusControl,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     justifyContent: "center",
-    maxWidth: "100%",
+    gap: 3,
   },
-  nextActionText: { fontSize: TypeScale.body, fontWeight: "700" },
+  choiceText: { fontSize: TypeScale.bodyStrong, fontWeight: "700" },
+  choiceBadge: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1 },
   footer: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 16 },
   primary: { minHeight: Structure.tapLarge, paddingHorizontal: 17, borderRadius: 10, justifyContent: "center" },
   primaryText: { fontSize: TypeScale.body, fontWeight: "800" },
