@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -200,7 +201,23 @@ export function SettingsScreen({
 
       <SectionLabel theme={theme}>AI LINK // OPENROUTER</SectionLabel>
       <Panel theme={theme}>
-        <FieldLabel theme={theme}>API KEY</FieldLabel>
+        <Text style={[styles.helperText, { color: theme.textMuted }]}>
+          Model features — Explain, Research, Study cards, and every agent-backed
+          suggestion — need your own OpenRouter key. Nothing here is required: the rest
+          of GRIOT works fully without one.
+        </Text>
+
+        <View style={styles.panelHead}>
+          <FieldLabel theme={theme}>API KEY</FieldLabel>
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => void Linking.openURL("https://openrouter.ai/keys")}
+          >
+            <Text style={[styles.link, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              GET A FREE KEY →
+            </Text>
+          </Pressable>
+        </View>
         <TextInput
           secureTextEntry
           value={apiKey}
@@ -208,6 +225,8 @@ export function SettingsScreen({
           onBlur={() => controller.setOpenRouterKey(apiKey)}
           placeholder="sk-or-..."
           placeholderTextColor={theme.textFaint}
+          autoCapitalize="none"
+          autoCorrect={false}
           style={[
             styles.input,
             {
@@ -217,6 +236,25 @@ export function SettingsScreen({
             },
           ]}
         />
+        {/*
+         * Honest about what this can and can't confirm: a key that's merely present has
+         * not been checked against OpenRouter, and claiming "connected" without a real
+         * call would be exactly the fabricated success this app refuses to show. The
+         * first real model call is the actual test, and its own error is truthful either
+         * way, so this only ever reports what is locally, verifiably true.
+         */}
+        <View style={styles.keyStatusRow}>
+          <View
+            style={[
+              styles.keyStatusDot,
+              { backgroundColor: apiKey.trim() ? theme.accent : theme.textFaint },
+            ]}
+          />
+          <Text style={[styles.keyStatusText, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
+            {apiKey.trim() ? "KEY SET — MODEL FEATURES ENABLED" : "NO KEY — MODEL FEATURES OFF"}
+          </Text>
+        </View>
+
         <View style={styles.panelHead}>
           <FieldLabel theme={theme}>MODEL</FieldLabel>
           <Pressable
@@ -1310,6 +1348,10 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   link: { fontSize: 12, fontWeight: "900", letterSpacing: 0.7 },
+  helperText: { fontSize: 13, lineHeight: 19 },
+  keyStatusRow: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 8 },
+  keyStatusDot: { width: 7, height: 7, borderRadius: 4 },
+  keyStatusText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.6 },
   input: {
     minHeight: 52,
     borderWidth: 1,
