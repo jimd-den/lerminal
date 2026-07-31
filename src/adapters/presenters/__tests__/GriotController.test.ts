@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { GriotController } from "../GriotController";
+import { createCommandDefinition } from "../../../entities/commandDefinition";
 import { MemoryCardRepository } from "../../repositories/MemoryCardRepository";
 import { MemoryWorkspaceRepository } from "../../repositories/MemoryWorkspaceRepository";
 import { MemorySettingsRepository } from "../../repositories/MemorySettingsRepository";
@@ -1063,6 +1064,76 @@ describe("GRIOT App Controller", () => {
 
       // Must not throw when the run this title belonged to was undone in the meantime.
       await controller.setCardTitle("missing-id", "New title");
+    });
+  });
+
+  describe("workspace-scoped custom commands", () => {
+    it("is unrunnable outside its own workspace, and runnable inside it", async () => {
+      const controller = new GriotController({
+        cardRepo,
+        workspaceRepo,
+        settingsRepo,
+        agentGateway,
+        commandDefinitionRepo,
+        cardTypeRepo,
+        promptPresetRepo,
+        assistantProfileRepo,
+        searchGateway,
+        extractionGateway,
+      });
+      await controller.init();
+      const wsA = controller.getState().activeWorkspaceId!;
+      await controller.createNewWorkspace("Second space");
+      const wsB = controller.getState().activeWorkspaceId!;
+      expect(wsB).not.toBe(wsA);
+
+      await commandDefinitionRepo.saveDefinition(
+        createCommandDefinition({
+          name: "wstest",
+          kind: "pipeline",
+          body: 'note "$1"',
+          scope: "workspace",
+          workspaceId: wsA,
+        }),
+      );
+      // Simulates the definition arriving the way it really does: loaded at startup.
+      await controller.init();
+      expect(controller.getState().activeWorkspaceId).toBe(wsA);
+
+      // Visible and runnable in its own workspace.
+      expect(await controller.runPipeline('wstest "hi"')).toBe(true);
+
+      // Not runnable after switching away — this is the isolation the field exists for.
+      await controller.switchWorkspace(wsB);
+      expect(await controller.runPipeline('wstest "hi"')).toBe(false);
+
+      // And runnable again on switching back.
+      await controller.switchWorkspace(wsA);
+      expect(await controller.runPipeline('wstest "hi"')).toBe(true);
+    });
+
+    it("leaves a global command runnable from every workspace, unchanged", async () => {
+      const controller = new GriotController({
+        cardRepo,
+        workspaceRepo,
+        settingsRepo,
+        agentGateway,
+        commandDefinitionRepo,
+        cardTypeRepo,
+        promptPresetRepo,
+        assistantProfileRepo,
+        searchGateway,
+        extractionGateway,
+      });
+      await controller.init();
+      await controller.createCustomCommand({
+        name: "globaltest",
+        kind: "pipeline",
+        body: 'note "$1"',
+      });
+      await controller.createNewWorkspace("Second space");
+
+      expect(await controller.runPipeline('globaltest "hi"')).toBe(true);
     });
   });
 });

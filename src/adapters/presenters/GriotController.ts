@@ -22,7 +22,10 @@ import { SearchGateway } from "../../usecases/ports/gateways/SearchGateway";
 import { ExtractionGateway } from "../../usecases/ports/gateways/ExtractionGateway";
 import { GroupCardsInteractor } from "../../usecases/grouping/GroupCardsInteractor";
 import { expandForPipe } from "../../entities/tree";
-import { CommandDefinition } from "../../entities/commandDefinition";
+import {
+  CommandDefinition,
+  isCommandVisibleInWorkspace,
+} from "../../entities/commandDefinition";
 import { CommandDefinitionRepository } from "../../usecases/ports/repositories/CommandDefinitionRepository";
 import {
   BUILTIN_CARD_TYPES,
@@ -863,7 +866,6 @@ export class GriotController {
       this.domain.cardTypes = await this.loadCardTypes();
       this.domain.promptPresets = await this.loadPromptPresets();
       this.domain.assistantProfiles = await this.loadAssistantProfiles();
-      this.rebuildPipeline();
 
       // Captured before the default workspace is created, so "nothing here yet" is
       // distinguishable from "a workspace was just made for you". A storage failure
@@ -879,6 +881,10 @@ export class GriotController {
       } else {
         this.domain.activeWorkspaceId = this.domain.workspaces[0].id;
       }
+      // Built only now that activeWorkspaceId has its real, final value — a
+      // workspace-scoped command filters on it, and building the pipeline any earlier
+      // would filter against whatever the field happened to hold before this point.
+      this.rebuildPipeline();
       await this.loadCardsForActiveWorkspace();
 
       // A genuinely empty first launch opens the goal architect. It is a sheet over the
@@ -1504,11 +1510,16 @@ export class GriotController {
   // --- Custom Commands ---
 
   /**
-   * Rebuilds the pipeline's command set from the built-ins plus the current custom
-   * command definitions. Called whenever definitions are loaded or change.
+   * Rebuilds the pipeline's command set from the built-ins plus the custom command
+   * definitions visible from the active workspace. Called whenever definitions are
+   * loaded or change, and whenever the active workspace changes — a workspace-scoped
+   * command must not still be runnable after switching away from where it belongs.
    */
   private rebuildPipeline(): void {
-    this.pipeline = this.commandRegistry.rebuild(this.domain.commandDefinitions);
+    const visible = this.domain.commandDefinitions.filter((definition) =>
+      isCommandVisibleInWorkspace(definition, this.domain.activeWorkspaceId),
+    );
+    this.pipeline = this.commandRegistry.rebuild(visible);
   }
 
   /** Defines and registers a new custom command, then makes it usable immediately. */
@@ -2011,6 +2022,8 @@ export class GriotController {
     this.domain.selection.clear();
     this.ui.isWorkspaceSheetOpen = false;
     this.domain.cards = [];
+    // A workspace-scoped command from the space just left must stop being runnable here.
+    this.rebuildPipeline();
     this.emit();
     const cards = await this.switchWorkspaceInteractor.execute(workspaceId);
     if (
