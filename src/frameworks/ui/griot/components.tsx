@@ -51,7 +51,7 @@ export function TextButton({ label, onPress, theme }: { label: string; onPress: 
 export function SectionLabel({ children, theme, code }: { children: React.ReactNode; theme: GriotTheme; code?: string }) {
   return (
     <View style={styles.sectionLabelRow}>
-      <Text style={[styles.sectionLabel, { color: theme.textMuted, fontFamily: theme.fontMono }]}>{children}</Text>
+      <Text style={[styles.sectionLabel, { color: theme.accent, fontFamily: theme.fontMono }]}>{children}</Text>
       {code ? <Text style={[styles.sectionCode, { color: theme.textFaint, fontFamily: theme.fontMono }]}>{code}</Text> : null}
     </View>
   );
@@ -146,17 +146,21 @@ export function Slab({
       delayLongPress={320}
       style={({ pressed }) => [
         styles.slab,
-        { backgroundColor: selected ? theme.accentSoft : theme.panelStrong, borderColor: selected ? theme.accent : theme.line },
+        { backgroundColor: selected ? theme.accentSoft : theme.panel, borderColor: selected ? theme.accent : theme.line },
         pressed && styles.pressed,
       ]}
     >
-      <View style={[styles.slabRail, { backgroundColor: rail }]} />
+      <View style={styles.slabRailTrack}>
+        <View style={[styles.slabRail, { backgroundColor: rail }]} />
+      </View>
       <View style={styles.slabBody}>
         {label ? <Text style={[styles.slabLabel, { color: rail, fontFamily: theme.fontMono }]}>{label}</Text> : null}
-        <Text numberOfLines={2} style={[styles.slabTitle, { color: theme.text, fontFamily: theme.fontMono }]}>{title}</Text>
+        <Text numberOfLines={1} style={[styles.slabTitle, { color: theme.text, fontFamily: theme.fontSans }]}>{title}</Text>
         {meta ? <Text numberOfLines={2} style={[styles.slabMeta, { color: theme.textMuted }]}>{meta}</Text> : null}
       </View>
-      <Text style={[styles.chevron, { color: selected ? theme.accent : theme.textFaint, fontFamily: theme.fontMono }]}>{selected ? "[x]" : ">"}</Text>
+      {selected ? (
+        <Text style={[styles.chevron, { color: theme.accent, fontFamily: theme.fontMono }]}>✓</Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -169,11 +173,11 @@ export function Chip({ label, active, theme, onPress }: { label: string; active:
       onPress={onPress}
       style={({ pressed }) => [
         styles.chip,
-        { backgroundColor: active ? theme.accent : theme.panel, borderColor: active ? theme.accent : theme.line },
+        { backgroundColor: active ? theme.accentSoft : theme.panel, borderColor: active ? theme.accent : theme.line },
         pressed && styles.pressed,
       ]}
     >
-      <Text style={[styles.chipText, { color: active ? theme.accentInk : theme.textMuted, fontFamily: theme.fontMono }]}>{label}</Text>
+      <Text style={[styles.chipText, { color: active ? theme.accent : theme.textMuted, fontFamily: theme.fontMono }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -233,15 +237,33 @@ const styles = StyleSheet.create({
   collapsibleBody: { marginTop: 9 },
   sectionLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 1.6 },
   sectionCode: { fontSize: 12, letterSpacing: 1 },
-  slab: { minHeight: 88, borderTopLeftRadius: 5, borderTopRightRadius: 14, borderBottomRightRadius: 14, borderBottomLeftRadius: 14, borderWidth: 1, marginBottom: 9, flexDirection: "row", overflow: "hidden", alignItems: "center" },
-  slabRail: { width: 7, alignSelf: "stretch" },
-  slabBody: { flex: 1, paddingHorizontal: 14, paddingVertical: 12 },
-  slabLabel: { fontSize: 12, lineHeight: 14, fontWeight: "800", letterSpacing: 1.3, marginBottom: 3 },
-  slabTitle: { fontSize: 17, lineHeight: 22, fontWeight: "700" },
-  slabMeta: { marginTop: 4, fontSize: 13, lineHeight: 18 },
-  chevron: { paddingHorizontal: 13, fontSize: 15, fontWeight: "800" },
-  chip: { minHeight: 48, borderRadius: 9, borderWidth: 1, justifyContent: "center", paddingHorizontal: 13, marginRight: 8 },
-  chipText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.7 },
+  slab: {
+    minHeight: 64,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: 12,
+  },
+  // A short, inset rail rather than a full-height bar — the mockup's `.card:before`
+  // (top:11, bottom:11), not an LCARS-style edge-to-edge spine.
+  slabRailTrack: { width: 13, alignSelf: "stretch", justifyContent: "center", alignItems: "center" },
+  slabRail: { width: 3, borderRadius: 2, alignSelf: "stretch", marginVertical: 11 },
+  slabBody: { flex: 1, paddingVertical: 12, paddingRight: 4, gap: 2 },
+  slabLabel: { fontSize: 10, lineHeight: 13, fontWeight: "800", letterSpacing: 1.1 },
+  slabTitle: { fontSize: 14, lineHeight: 19, fontWeight: "700", letterSpacing: -0.2 },
+  slabMeta: { fontSize: 11, lineHeight: 16 },
+  chevron: { paddingHorizontal: 12, fontSize: 15, fontWeight: "900" },
+  chip: {
+    minHeight: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    marginRight: 8,
+  },
+  chipText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
   bottomNav: { minHeight: 82, borderTopWidth: 1, borderTopLeftRadius: 18, borderTopRightRadius: 18, flexDirection: "row", paddingHorizontal: 8, paddingTop: 6, overflow: "hidden" },
   navItem: { flex: 1, minHeight: 67, borderRadius: 11, justifyContent: "center", alignItems: "center", position: "relative" },
   navGlyphBox: { width: 30, height: 27, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center", marginBottom: 2 },

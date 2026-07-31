@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   GriotDeckModel,
   MaterialFilter,
@@ -7,12 +7,13 @@ import {
 } from "../../../../adapters/presenters/GriotDeckPresenter";
 import { presentMissionCanvas } from "../../../../adapters/presenters/MissionCanvasPresenter";
 import { Card } from "../../../../entities/card";
-import { Chip, SectionLabel, SystemHeader } from "../components";
+import { Chip, SectionLabel } from "../components";
 import { MissionCanvasHeader } from "../MissionCanvas";
 import { ContextCardRow } from "../ContextCards";
 import { CaptureIntent, SharedProps } from "./types";
 import { EmptyReadout } from "./shared";
 import { styles } from "./screenStyles";
+import { TypeScale } from "../theme";
 
 /**
  * # Space Screen — the mission workstation
@@ -66,13 +67,24 @@ export function SpaceScreen({
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <SystemHeader
-          eyebrow="MISSION // WORKSTATION"
-          title={model.activeSpace?.name ?? "Learning space"}
-          theme={theme}
-          leftAction={{ label: "< LIBRARY", onPress: onBack }}
-          rightAction={{ label: "+ ADD", onPress: () => onCapture("note") }}
-        />
+        <View style={[localStyles.topBar, { borderBottomColor: theme.line }]}>
+          <Pressable accessibilityRole="button" onPress={onBack} hitSlop={8}>
+            <Text style={[localStyles.backLink, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              ‹ LIBRARY
+            </Text>
+          </Pressable>
+          <Text
+            numberOfLines={1}
+            style={[localStyles.spaceName, { color: theme.text, fontFamily: theme.fontSans }]}
+          >
+            {model.activeSpace?.name ?? "Learning space"}
+          </Text>
+          <Pressable accessibilityRole="button" onPress={() => onCapture("note")} hitSlop={8}>
+            <Text style={[localStyles.addLink, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              + ADD
+            </Text>
+          </Pressable>
+        </View>
 
         <MissionCanvasHeader
           view={mission}
@@ -137,3 +149,18 @@ export function SpaceScreen({
     </View>
   );
 }
+
+const localStyles = StyleSheet.create({
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  backLink: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6 },
+  spaceName: { flex: 1, fontSize: 16, fontWeight: "800", textAlign: "center" },
+  addLink: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 0.6 },
+});
