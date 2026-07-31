@@ -80,6 +80,12 @@ export interface GoalArchitectState {
   webUsed: boolean;
   /** True when a model contributed to the current map. Drives the receipt's honesty. */
   modelUsed: boolean;
+  /**
+   * True when this session opened itself on a first launch rather than being asked for.
+   * The sheet uses it to offer "Start blank instead" in place of a bare close, so an
+   * uninvited sheet always names the way out.
+   */
+  isFirstRun: boolean;
 }
 
 export const INITIAL_GOAL_ARCHITECT_STATE: GoalArchitectState = {
@@ -96,6 +102,7 @@ export const INITIAL_GOAL_ARCHITECT_STATE: GoalArchitectState = {
   recommendedResearch: [],
   webUsed: false,
   modelUsed: false,
+  isFirstRun: false,
 };
 
 export interface GoalArchitectHost {
@@ -137,6 +144,11 @@ export class GoalArchitectWorkflow {
       question: selectNextQuestion([]),
     };
     this.deps.host.onChange();
+  }
+
+  /** Marks this session as one the app opened on its own. See {@link GoalArchitectState.isFirstRun}. */
+  markFirstRun(): void {
+    this.patch({ isFirstRun: true });
   }
 
   close(): void {

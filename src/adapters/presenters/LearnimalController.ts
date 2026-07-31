@@ -836,7 +836,13 @@ export class LearnimalController {
       this.domain.assistantProfiles = await this.loadAssistantProfiles();
       this.rebuildPipeline();
 
-      if (this.domain.workspaces.length === 0) {
+      // Captured before the default workspace is created, so "nothing here yet" is
+      // distinguishable from "a workspace was just made for you". A storage failure
+      // throws to the catch below rather than reaching here, so a first run can never be
+      // confused with an unreadable library.
+      const isFirstLaunch = this.domain.workspaces.length === 0;
+
+      if (isFirstLaunch) {
         const defaultWs =
           await this.createWorkspaceInteractor.execute("My Workspace");
         this.domain.workspaces.push(defaultWs);
@@ -845,6 +851,14 @@ export class LearnimalController {
         this.domain.activeWorkspaceId = this.domain.workspaces[0].id;
       }
       await this.loadCardsForActiveWorkspace();
+
+      // A genuinely empty first launch opens the goal architect. It is a sheet over the
+      // canvas, not a gate: dismissing it leaves the blank workspace that was just
+      // created, which is exactly the no-assistance path.
+      if (isFirstLaunch && this.domain.cards.length === 0) {
+        this.openGoalArchitect();
+        this.goalArchitect.markFirstRun();
+      }
       this.loadAvailableModels();
       // Not awaited: a slow or failed font fetch must never delay first paint.
       void this.restoreInstalledFonts();
@@ -1335,6 +1349,11 @@ export class LearnimalController {
       case "mission":
         this.operations.dismissResult();
         this.openMissionEditor();
+        return;
+      case "goal":
+        this.operations.dismissResult();
+        this.ui.isModalOpen = false;
+        this.openGoalArchitect();
         return;
       case "palette":
         this.operations.dismissResult();

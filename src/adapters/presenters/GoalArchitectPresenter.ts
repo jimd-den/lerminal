@@ -50,6 +50,14 @@ export interface GoalArchitectViewModel {
   choices: string[];
   /** True when the current question came from the model rather than the app's bank. */
   isAgentQuestion: boolean;
+  /**
+   * True when the app opened this sheet itself on a first launch. The dismiss control
+   * then reads "Start blank instead", because a sheet the user didn't ask for owes them
+   * an obvious way out that says what dismissing it does.
+   */
+  isFirstRun: boolean;
+  /** The dismiss control's label, which differs for an uninvited sheet. */
+  dismissLabel: string;
   /** The model's prose for this turn. */
   agentMessage: string | null;
   agentError: string | null;
@@ -131,6 +139,8 @@ export function presentGoalArchitect(
     rationale: agentQuestion?.rationale ?? bankQuestion?.rationale ?? null,
     choices: agentQuestion?.choices ?? [],
     isAgentQuestion: agentQuestion !== null,
+    isFirstRun: state.isFirstRun,
+    dismissLabel: state.isFirstRun ? "START BLANK INSTEAD" : "CLOSE",
     agentMessage: state.agentMessage,
     agentError: state.agentError,
     isAgentThinking: state.isAgentThinking,

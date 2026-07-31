@@ -720,6 +720,84 @@ describe("Learnimal App Controller", () => {
         extractionGateway,
       });
 
+    it("opens itself on a genuinely empty first launch", async () => {
+      const controller = makeController();
+      await controller.init();
+
+      const view = controller.getState().goalArchitect;
+      expect(view.isOpen).toBe(true);
+      expect(view.isFirstRun).toBe(true);
+      // An uninvited sheet must name the way out, not just offer a bare close.
+      expect(view.dismissLabel).toBe("START BLANK INSTEAD");
+    });
+
+    it("leaves a usable blank workspace when the first-run sheet is dismissed", async () => {
+      const controller = makeController();
+      await controller.init();
+
+      controller.closeGoalArchitect();
+
+      const state = controller.getState();
+      expect(state.goalArchitect.isOpen).toBe(false);
+      // The no-assistance path: a workspace already exists and nothing was required.
+      expect(state.workspaces).toHaveLength(1);
+      expect(state.cards).toHaveLength(0);
+    });
+
+    it("does not reopen for a returning user who already has a workspace", async () => {
+      const first = makeController();
+      await first.init();
+      first.closeGoalArchitect();
+
+      // Same repositories, so this is the same user opening the app again.
+      const second = makeController();
+      await second.init();
+
+      expect(second.getState().goalArchitect.isOpen).toBe(false);
+    });
+
+    it("does not mistake an unreadable library for a first launch", async () => {
+      const failing = {
+        async getWorkspaces() {
+          throw new Error("storage unavailable");
+        },
+        async saveWorkspace() {},
+        async deleteWorkspace() {},
+      };
+      const controller = new LearnimalController({
+        cardRepo,
+        workspaceRepo: failing as any,
+        settingsRepo,
+        agentGateway,
+        commandDefinitionRepo,
+        cardTypeRepo,
+        promptPresetRepo,
+        assistantProfileRepo,
+        searchGateway,
+        extractionGateway,
+      });
+
+      await controller.init();
+
+      // Prompting someone to plan a goal on top of data that failed to load would
+      // invite them to start over on work that is still there.
+      expect(controller.getState().goalArchitect.isOpen).toBe(false);
+    });
+
+    it("opens from the workspace menu for an existing user", async () => {
+      const controller = makeController();
+      await controller.init();
+      controller.closeGoalArchitect();
+
+      await controller.dispatchSuggestedAction({ kind: "goal" });
+
+      const view = controller.getState().goalArchitect;
+      expect(view.isOpen).toBe(true);
+      // Asked for, not imposed — so the dismiss control is a plain close.
+      expect(view.isFirstRun).toBe(false);
+      expect(view.dismissLabel).toBe("CLOSE");
+    });
+
     it("opens from the goal command in the palette", async () => {
       const controller = makeController();
       await controller.init();

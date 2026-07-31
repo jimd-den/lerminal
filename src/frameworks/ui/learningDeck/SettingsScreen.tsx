@@ -391,6 +391,14 @@ export function SettingsScreen({
             compact
           />
         </View>
+        {/* The assisted alternative to a blank space. Both stay available: creating a
+            workspace above never involves a model, and this never creates one until the
+            draft mission is accepted. */}
+        <ActionButton
+          label="PLAN A GOAL"
+          theme={theme}
+          onPress={() => void controller.dispatchSuggestedAction({ kind: "goal" })}
+        />
         <Pressable
           onPress={deleteWorkspace}
           style={[styles.dangerButton, { borderColor: theme.danger }]}

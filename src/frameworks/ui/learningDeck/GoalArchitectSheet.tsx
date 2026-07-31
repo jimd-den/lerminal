@@ -80,7 +80,7 @@ export function GoalArchitectSheet({
             style={styles.close}
           >
             <Text style={[styles.closeText, { color: theme.accent, fontFamily: theme.fontMono }]}>
-              CLOSE
+              {view.dismissLabel}
             </Text>
           </Pressable>
         </View>
