@@ -1,5 +1,6 @@
 import { Card } from "../../../entities/card";
 import { AssistantCapability, OutputContractKind } from "../../../entities/assistantProfile";
+import { WebCitation } from "../../../entities/webCitation";
 
 /**
  * # Agent Gateway Interface
@@ -55,33 +56,39 @@ export interface ChatMessage {
 /**
  * Response structure returned by the AI Prompt Architect for assistant profile creation.
  */
-/** One citation a provider's own web search actually returned. */
-export interface GoalArchitectCitation {
-  url: string;
-  title: string;
-}
-
-/**
- * What a Goal Architect turn call returns: the model's raw payload, plus whatever real
- * web citations the provider's own search attached — kept as a *separate* field rather
- * than merged into `raw` so the caller can tell "the model said X" from "the provider's
- * search actually found Y" without guessing which parts of the JSON came from where.
- */
-export interface GoalArchitectTurnResult {
-  /** The model's raw parsed payload — validated by `normalizeGoalArchitectTurn`. */
-  raw: unknown;
-  /** Empty unless `webSearchEnabled` was set and the provider's search actually ran. */
-  webCitations: GoalArchitectCitation[];
-}
-
 /**
  * What a Workspace Agent turn call returns: the model's raw payload, validated by
  * `normalizeWorkspaceAgentResponse` in the entities layer. Kept as `raw` rather than a
- * typed response for the same reason as {@link GoalArchitectTurnResult}: the gateway must
- * not be able to hand malformed output to the UI wearing the right shape.
+ * typed response so the gateway cannot hand malformed output to the UI wearing the right
+ * shape.
  */
 export interface WorkspaceAgentTurnResult {
-  raw: unknown;
+  /**
+   * The model's reply as plain prose, tags and all — never JSON.
+   *
+   * Kept raw rather than pre-parsed so the gateway cannot decide what the app will act
+   * on: `entities/agentTags` does the parsing, and it is the only thing that turns text
+   * into an intent.
+   */
+  text: string;
+  /**
+   * Sources the provider's own search actually returned for this turn — empty when it
+   * did not run, found nothing, or was switched off.
+   *
+   * The emptiness is the whole point: it is the *only* evidence the app accepts that the
+   * web was consulted. Never infer "the agent searched" from the toggle being on — a
+   * toggled-on search can return nothing, and the model can answer without invoking it.
+   */
+  webCitations: WebCitation[];
+  /**
+   * The model's own intermediate reasoning for this turn, when the provider returned any.
+   *
+   * Optional and never synthesized: most models return nothing here, and a gateway must
+   * leave it `undefined` rather than paraphrasing the answer back as "thinking". The UI
+   * shows a reasoning trace if and only if this is a non-empty string, so nothing on
+   * screen can imply the model reasoned when it merely answered.
+   */
+  reasoning?: string;
 }
 
 export interface PromptDesignResponse {
@@ -139,49 +146,6 @@ export interface AgentGateway {
   ): Promise<string>;
 
   /**
-   * Asks the Goal Architect model for its next conversational turn.
-   *
-   * Deliberately not folded into {@link ask}: that method's whole contract is "produce
-   * cards", and a goal-planning turn is a question plus a working map, which would have to
-   * be smuggled through card titles to fit. A dedicated method also means the caller can
-   * tell whether a model is available for *this* capability rather than assuming.
-   *
-   * Returns the model's **raw** parsed payload rather than a typed turn. Validation and
-   * origin-tagging belong to `normalizeGoalArchitectTurn` in the entities layer, so the
-   * gateway cannot accidentally present malformed output as a usable turn.
-   *
-   * Optional so existing and mocked gateways remain valid; the workflow checks for it and
-   * falls back to its deterministic path when absent.
-   *
-   * @throws when no model answered. It must never invent a turn — a fabricated question
-   *   would read exactly like a real one.
-   */
-  designGoalArchitectTurn?(input: {
-    /** The goal, the answers so far, and the current working map, already bounded. */
-    briefing: string;
-    apiKey: string;
-    model: string;
-    /**
-     * The instruction to run the turn with. Sourced from the user-editable "Goal
-     * Architect" AssistantProfile so the conversation's own behavior is as configurable
-     * as any other capability — never hardcoded past the point the user can see or
-     * change it. Implementations fall back to their own built-in instruction when
-     * omitted, so every existing caller keeps working unchanged.
-     */
-    systemPrompt?: string;
-    /**
-     * Opt-in only — never defaulted true. When set, the implementation may use its
-     * provider's own web-grounded search (e.g. OpenRouter's `web` plugin) for this turn.
-     * This is deliberately a *different* search path from `SearchGateway`: it is the
-     * model's own provider performing the search, not this app's own gateway, so the
-     * result is reported back as {@link GoalArchitectTurnResult.webCitations} rather than
-     * merged into the turn's JSON — the app must be able to say *which* search path
-     * actually ran, never blend the two into one undifferentiated "the web was used".
-     */
-    webSearchEnabled?: boolean;
-  }): Promise<GoalArchitectTurnResult>;
-
-  /**
    * Asks the model to pick one next action for a freshly captured card, from a fixed
    * menu the caller supplies.
    *
@@ -198,27 +162,42 @@ export interface AgentGateway {
     prompt: string;
     apiKey: string;
     model: string;
+    /** The user's edited "next-action-suggestion" prompt body, if any. */
+    systemPrompt?: string;
   }): Promise<string>;
 
   /**
-   * Asks the model for one Workspace Agent ("Ask GRIOT") turn: a message, an optional
-   * observation, and any tool actions it proposes — never dispatched by this method or
-   * its caller, only validated (`normalizeWorkspaceAgentResponse`) and shown.
+   * Streams one Workspace Agent ("Ask GRIOT") turn: ordinary prose, with any concrete
+   * artifact marked by an inline tag (`entities/agentTags`). Nothing here dispatches
+   * anything; the user's `+` on a chip does that, later, explicitly.
    *
-   * Mirrors {@link designGoalArchitectTurn} exactly: returns the model's **raw** parsed
-   * payload rather than a typed response, so this gateway can never accidentally present
-   * malformed output as a usable turn. Optional so existing/mocked gateways remain valid;
-   * the workflow checks for it and produces a clear failure state when absent.
+   * Returns the model's text verbatim rather than anything pre-interpreted, so a gateway
+   * can never present its own reading of a reply as the app's. Optional so
+   * existing/mocked gateways remain valid; the workflow checks for it and produces a
+   * clear failure state when absent.
    *
-   * @throws when no model answered. It must never invent a turn or a proposal.
+   * @throws when no model answered. It must never invent a turn.
    */
   designWorkspaceAgentTurn?(input: {
     /** The bounded workspace/selection context plus the conversation so far, as prose. */
     briefing: string;
     apiKey: string;
     model: string;
-    /** Resolved from the user-editable Workspace Agent assistant profile, if any. */
+    /** The user's edited "workspace-agent" prompt body, if any — see `entities/agentPrompts`. */
     systemPrompt?: string;
+    /**
+     * Opt-*out* for the provider's own web-grounded search; defaults to on. Real sources
+     * come back as {@link WorkspaceAgentTurnResult.webCitations}, and only those may be
+     * shown as receipts. Distinct from `SearchGateway`, which remains the mechanism
+     * behind the `search_web` tool intent and its preflight.
+     */
+    webSearchEnabled?: boolean;
+    /**
+     * Called with each increment as it is generated — text, reasoning, or both. Optional:
+     * a gateway that cannot stream simply never calls it, and the caller shows the honest
+     * non-streaming state rather than faking a typing effect.
+     */
+    onDelta?: (delta: { text?: string; reasoning?: string }) => void;
   }): Promise<WorkspaceAgentTurnResult>;
 
   /**
@@ -230,5 +209,7 @@ export interface AgentGateway {
     capability: AssistantCapability;
     apiKey: string;
     model: string;
+    /** The user's edited "prompt-architect" prompt body, if any. */
+    systemPrompt?: string;
   }): Promise<PromptDesignResponse>;
 }

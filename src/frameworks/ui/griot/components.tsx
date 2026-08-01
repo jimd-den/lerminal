@@ -182,6 +182,54 @@ export function Chip({ label, active, theme, onPress }: { label: string; active:
   );
 }
 
+/**
+ * # Ask affordance — the always-there way to reach the assistant
+ *
+ * ## Business Value & Purpose
+ * The assistant used to be reachable only from the Workspace Pulse (which appears only
+ * when there is something to observe), from Settings, and from two "define mission"
+ * buttons — so on an ordinary home screen there was no way to ask it anything. This is
+ * that way: one persistent control, on every primary screen.
+ *
+ * Deliberately *not* a fifth `CorePlace` tab. `CorePlace` is a routing union — a place
+ * you navigate to and stay in — and the conversation is a modal sheet layered over
+ * whatever you were doing, which it must be, because its whole value is that it is scoped
+ * to the screen you are looking at. Routing to it would mean leaving that scope behind.
+ *
+ * Positioned by its parent (see `MainLayout`) relative to the *bottom cluster* as a
+ * whole, not to any nav item: it floats above whatever that cluster currently is — the
+ * pulse, the activity banner, or the bar itself — so nothing about it depends on how many
+ * tabs the bar has.
+ */
+export function AskAffordance({
+  theme,
+  onPress,
+  reducedMotion,
+}: {
+  theme: GriotTheme;
+  onPress: () => void;
+  /** When true the press feedback is opacity only — no scale. */
+  reducedMotion?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Ask GRIOT"
+      accessibilityHint="Opens the assistant for what you are looking at."
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.ask,
+        { backgroundColor: theme.accent, borderColor: theme.line },
+        pressed && (reducedMotion ? { opacity: 0.7 } : styles.pressed),
+      ]}
+    >
+      <Text style={[styles.askText, { color: theme.accentInk, fontFamily: theme.fontMono }]}>
+        ASK
+      </Text>
+    </Pressable>
+  );
+}
+
 export function BottomNavigation({ place, theme, onChange }: { place: CorePlace; theme: GriotTheme; onChange: (place: CorePlace) => void }) {
   const items: { id: CorePlace; label: string; glyph: string }[] = [
     { id: "deck", label: "Deck", glyph: ">_" },
@@ -264,6 +312,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   chipText: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  // 52 square clears the 44pt floor with room for the label; the parent decides where
+  // it sits, so nothing here encodes the nav's height or item count.
+  ask: {
+    minWidth: 52,
+    minHeight: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  askText: { fontSize: 13, fontWeight: "900", letterSpacing: 1.2 },
   bottomNav: { minHeight: 82, borderTopWidth: 1, borderTopLeftRadius: 18, borderTopRightRadius: 18, flexDirection: "row", paddingHorizontal: 8, paddingTop: 6, overflow: "hidden" },
   navItem: { flex: 1, minHeight: 67, borderRadius: 11, justifyContent: "center", alignItems: "center", position: "relative" },
   navGlyphBox: { width: 30, height: 27, borderRadius: 7, borderWidth: 1, alignItems: "center", justifyContent: "center", marginBottom: 2 },

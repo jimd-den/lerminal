@@ -13,6 +13,12 @@ export interface SuggestSearchQueriesRequest {
   mission?: WorkspaceMission;
   apiKey: string;
   model: string;
+  /**
+   * The user's edited "search-query-suggestion" prompt body. Falls back to the built-in
+   * Query Strategist profile so callers that don't plumb settings keep working. Only the
+   * instruction layer — `ask` still appends the strict cards-v1 contract.
+   */
+  systemPrompt?: string;
 }
 
 /** Serializes the mission into prompt context so suggested queries serve the actual goal. */
@@ -62,7 +68,7 @@ export class SuggestSearchQueriesInteractor {
       [],
       request.apiKey,
       request.model,
-      QUERY_STRATEGIST_PROFILE.systemPrompt,
+      request.systemPrompt?.trim() || QUERY_STRATEGIST_PROFILE.systemPrompt,
       "cards-v1"
     );
 

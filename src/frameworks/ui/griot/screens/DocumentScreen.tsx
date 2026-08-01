@@ -9,7 +9,7 @@ import { Card } from "../../../../entities/card";
 import { Chip, SectionLabel, Slab, SystemHeader } from "../components";
 import { ContextCardRow } from "../ContextCards";
 import { CaptureIntent, SharedProps } from "./types";
-import { CommandSlab, ContextPanel, EmptyReadout, encodeCommandArg } from "./shared";
+import { CommandSlab, ContextPanel, EmptyReadout } from "./shared";
 import { styles } from "./screenStyles";
 
 export function DocumentScreen({
@@ -28,7 +28,7 @@ export function DocumentScreen({
   onOpenCard: (cardId: string) => void;
   onCapture: (intent: CaptureIntent) => void;
 }) {
-  const [mode, setMode] = useState<"read" | "study" | "discuss">("read");
+  const [mode, setMode] = useState<"read" | "study">("read");
   const [filter, setFilter] = useState<MaterialFilter>("all");
   const [actionsOpen, setActionsOpen] = useState(false);
   const selectionMode = state.selection.size > 0;
@@ -84,12 +84,12 @@ export function DocumentScreen({
             onPress={() => onCapture("note")}
           />
           <CommandSlab
-            title="Discuss with grounded AI"
-            code="CHAT"
+            title="Ask GRIOT about your notes"
+            code="GRIOT"
             theme={theme}
             onPress={() => {
               setActionsOpen(false);
-              setMode("discuss");
+              controller.openWorkspaceAgent();
             }}
           />
           <CommandSlab
@@ -108,7 +108,7 @@ export function DocumentScreen({
       ) : null}
 
       <View style={styles.modeRow}>
-        {(["read", "study", "discuss"] as const).map((option) => (
+        {(["read", "study"] as const).map((option) => (
           <Pressable
             key={option}
             onPress={() => setMode(option)}
@@ -165,40 +165,6 @@ export function DocumentScreen({
           {document.materialCount} total
         </Text>
       </View>
-
-      {mode === "discuss" ? (
-        <View
-          style={[
-            styles.discussPanel,
-            { backgroundColor: theme.accentSoft, borderColor: theme.accent },
-          ]}
-        >
-          <Text style={[styles.discussTitle, { color: theme.text }]}>
-            Open a grounded channel
-          </Text>
-          <Text style={[styles.discussBody, { color: theme.textMuted }]}>
-            The assistant receives this document's material as context, not the
-            whole library.
-          </Text>
-          <Pressable
-            onPress={() => {
-              controller.clearSelection();
-              void controller.runPipeline(
-                `chat "${encodeCommandArg(document.group.title)} discussion"`,
-              );
-            }}
-            style={({ pressed }) => [
-              styles.beginButton,
-              { backgroundColor: theme.accent },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={[styles.beginText, { color: theme.accentInk }]}>
-              Discuss document
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
 
       {mode === "study" ? (
         <View style={styles.studyCommands}>

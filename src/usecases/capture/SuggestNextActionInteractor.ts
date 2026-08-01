@@ -49,7 +49,9 @@ export class SuggestNextActionInteractor {
     card: Card,
     apiKey: string,
     model: string,
-    options: NextActionOptions = {}
+    options: NextActionOptions = {},
+    /** The user's edited "next-action-suggestion" prompt body; the gateway defaults it. */
+    systemPrompt?: string
   ): Promise<SuggestedNextAction> {
     const menu = nextActionsForCard(card, options);
     if (menu.length === 0) {
@@ -70,6 +72,7 @@ export class SuggestNextActionInteractor {
         prompt: buildPrompt(card, menu),
         apiKey: trimmedKey,
         model,
+        ...(systemPrompt ? { systemPrompt } : {}),
       });
     } catch (err: any) {
       throw new SuggestNextActionError(err?.message ?? "Couldn't reach the model");

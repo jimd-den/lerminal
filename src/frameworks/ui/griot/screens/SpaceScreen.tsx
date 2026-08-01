@@ -90,7 +90,7 @@ export function SpaceScreen({
           view={mission}
           theme={theme}
           onOpenReport={() => controller.openGapReport()}
-          onDefineMission={() => controller.openGoalArchitect()}
+          onDefineMission={() => controller.openWorkspaceAgent()}
           onRunNextAction={() =>
             void controller.dispatchSuggestedAction(
               mission.nextAction?.presetId

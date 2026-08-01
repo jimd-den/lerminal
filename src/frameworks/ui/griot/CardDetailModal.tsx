@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Modal,
@@ -45,7 +44,6 @@ export function CardDetailModal({
   const [revealed, setRevealed] = useState(false);
   const [clozeAnswers, setClozeAnswers] = useState<Record<string, string>>({});
   const [clozeChecked, setClozeChecked] = useState(false);
-  const [chatInput, setChatInput] = useState("");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftTypeId, setDraftTypeId] = useState("");
@@ -55,7 +53,6 @@ export function CardDetailModal({
     setRevealed(false);
     setClozeAnswers({});
     setClozeChecked(false);
-    setChatInput("");
     setEditing(false);
     setDraft(card?.body ?? "");
     setDraftTypeId(card?.typeId ?? card?.type ?? "");
@@ -160,12 +157,8 @@ export function CardDetailModal({
             {card.type === "chat" ? (
               <ChatDetail
                 controller={controller}
-                state={state}
                 theme={theme}
-                cardId={card.id}
                 body={card.body}
-                value={chatInput}
-                onChange={setChatInput}
               />
             ) : (
               <ScrollView
@@ -545,22 +538,19 @@ export function CardDetailModal({
   );
 }
 
+/**
+ * Read-only transcript for chat cards created by the retired "Discuss" feature.
+ * New conversations happen in the workspace agent ("Ask GRIOT"), so there is no
+ * composer here — the archive stays readable, and the user is pointed forward.
+ */
 function ChatDetail({
   controller,
-  state,
   theme,
-  cardId,
   body,
-  value,
-  onChange,
 }: {
   controller: GriotController;
-  state: AppState;
   theme: GriotTheme;
-  cardId: string;
   body: string;
-  value: string;
-  onChange: (value: string) => void;
 }) {
   const messages: { role: string; content: string }[] = (() => {
     try {
@@ -570,7 +560,6 @@ function ChatDetail({
       return [];
     }
   })();
-  const streaming = state.chatStreamingCardId === cardId;
   return (
     <View style={styles.chatRoot}>
       <ScrollView
@@ -578,10 +567,7 @@ function ChatDetail({
         contentContainerStyle={styles.chatFeedContent}
       >
         {messages.length === 0 ? (
-          <EmptyPanel
-            theme={theme}
-            text="Channel ready. Ask about the material in this document."
-          />
+          <EmptyPanel theme={theme} text="This conversation is empty." />
         ) : null}
         {messages.map((message, index) => {
           const user = message.role === "user";
@@ -614,17 +600,11 @@ function ChatDetail({
                   { color: user ? theme.accentInk : theme.text },
                 ]}
               >
-                {message.content || (streaming ? "_" : "")}
+                {message.content}
               </Text>
             </View>
           );
         })}
-        {streaming ? (
-          <ActivityIndicator
-            color={theme.accent}
-            style={{ alignSelf: "flex-start" }}
-          />
-        ) : null}
       </ScrollView>
       <View
         style={[
@@ -632,47 +612,19 @@ function ChatDetail({
           { borderTopColor: theme.line, backgroundColor: theme.panelMuted },
         ]}
       >
-        <TextInput
-          multiline
-          value={value}
-          onChangeText={onChange}
-          placeholder="MESSAGE CHANNEL..."
-          placeholderTextColor={theme.textFaint}
-          style={[
-            styles.chatInput,
-            {
-              color: theme.text,
-              borderColor: theme.line,
-              fontFamily: theme.fontMono,
-            },
-          ]}
-        />
-        <Pressable
-          disabled={!value.trim() || streaming}
-          onPress={() => {
-            const submitted = value;
-            onChange("");
-            void controller.sendChatMessage(cardId, submitted).then((accepted) => {
-              if (!accepted) onChange(submitted);
-            });
-          }}
-          style={[
-            styles.sendButton,
-            {
-              backgroundColor: theme.accent,
-              opacity: value.trim() && !streaming ? 1 : 0.4,
-            },
-          ]}
+        <Text
+          style={[styles.retiredNote, { color: theme.textMuted }]}
         >
-          <Text
-            style={[
-              styles.sendText,
-              { color: theme.accentInk, fontFamily: theme.fontMono },
-            ]}
-          >
-            SEND &gt;
-          </Text>
-        </Pressable>
+          Saved conversation. Continue in Ask GRIOT, which can see your whole
+          workspace.
+        </Text>
+        <TerminalButton
+          label="ASK GRIOT"
+          primary
+          theme={theme}
+          onPress={() => controller.openWorkspaceAgent()}
+          compact
+        />
       </View>
     </View>
   );
@@ -1358,28 +1310,12 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   messageText: { fontSize: 15, lineHeight: 22 },
+  retiredNote: { flex: 1, fontSize: 12, lineHeight: 17 },
   chatComposer: {
     borderTopWidth: 1,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     padding: 9,
     gap: 7,
   },
-  chatInput: {
-    flex: 1,
-    minHeight: 52,
-    maxHeight: 130,
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 11,
-    fontSize: 14,
-  },
-  sendButton: {
-    minWidth: 79,
-    minHeight: 52,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  sendText: { fontSize: 12, fontWeight: "900" },
 });

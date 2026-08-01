@@ -1,6 +1,7 @@
 import { Card } from "../../entities/card";
 import { Workspace } from "../../entities/workspace";
 import { AppearanceSettings } from "../../entities/appearance";
+import { AgentPromptOverrides } from "../../entities/agentPrompts";
 import { FontCategory, RankedFontFamily } from "../../entities/fontCatalog";
 import { CommandDefinition } from "../../entities/commandDefinition";
 import {
@@ -59,6 +60,10 @@ export interface DomainState {
   assistantProfiles: AssistantProfile[];
   activeProfileIds: Partial<Record<AssistantCapability, string>>;
   searchSiteFlags: Record<string, string>;
+  /** User-edited agent prompt bodies (see `entities/agentPrompts.ts`). Empty = all defaults. */
+  agentPromptOverrides: AgentPromptOverrides;
+  /** Whether the provider's own web search rides along with agent calls. Defaults on. */
+  webSearchEnabled: boolean;
 }
 
 /** Ephemeral presentation state: open sheets, toasts, and transient toggles. */
@@ -129,6 +134,8 @@ export function createInitialDomainState(): DomainState {
     cardTypes: [...BUILTIN_CARD_TYPES],
     promptPresets: [...BUILTIN_PROMPT_PRESETS],
     assistantProfiles: [...BUILTIN_ASSISTANT_PROFILES],
+    agentPromptOverrides: {},
+    webSearchEnabled: true,
     activeProfileIds: {
       "generate-cards": "builtin-generate-cards",
       "chunk-document": "builtin-chunk-document",

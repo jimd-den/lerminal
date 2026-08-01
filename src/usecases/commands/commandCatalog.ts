@@ -112,16 +112,6 @@ export const COMMAND_DOCS: CommandDoc[] = [
     category: "capture",
   },
   {
-    name: "chat",
-    label: "Start a conversation",
-    purpose: "Open a chat card grounded in the cards around it.",
-    input: needsArgument("A name for the conversation"),
-    output: "One chat card you can talk to",
-    usesWeb: false,
-    usesModel: true,
-    category: "capture",
-  },
-  {
     name: "chunk",
     label: "Break into study chunks",
     purpose: "Restructure long material into small, self-contained ideas.",
@@ -180,20 +170,6 @@ export const COMMAND_DOCS: CommandDoc[] = [
     usesWeb: false,
     usesModel: false,
     category: "practice",
-  },
-  {
-    name: "goal",
-    label: "Plan a goal",
-    purpose:
-      "Turn an ambition into a mission: deliverable, first proof, prerequisites, risks.",
-    input: startsFresh("Asks you questions; reads no cards"),
-    output:
-      "A reviewable draft mission. Nothing is created until you accept it",
-    // The conversation is deterministic; asking the model for gaps is a separate,
-    // explicit tap inside the sheet, and searching needs its own preflight approval.
-    usesWeb: false,
-    usesModel: false,
-    category: "session",
   },
   {
     name: "review",

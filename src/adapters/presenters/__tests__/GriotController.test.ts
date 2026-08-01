@@ -715,7 +715,7 @@ describe("GRIOT App Controller", () => {
     expect(controller.getState().isMissionEditorOpen).toBe(true);
   });
 
-  describe("goal architect", () => {
+  describe("first-run onboarding", () => {
     const makeController = () =>
       new GriotController({
         cardRepo,
@@ -730,25 +730,21 @@ describe("GRIOT App Controller", () => {
         extractionGateway,
       });
 
-    it("opens itself on a genuinely empty first launch", async () => {
+    it("opens the workspace agent on a genuinely empty first launch", async () => {
       const controller = makeController();
       await controller.init();
 
-      const view = controller.getState().goalArchitect;
-      expect(view.isOpen).toBe(true);
-      expect(view.isFirstRun).toBe(true);
-      // An uninvited sheet must name the way out, not just offer a bare close.
-      expect(view.dismissLabel).toBe("START BLANK INSTEAD");
+      expect(controller.getState().workspaceAgent.isOpen).toBe(true);
     });
 
     it("leaves a usable blank workspace when the first-run sheet is dismissed", async () => {
       const controller = makeController();
       await controller.init();
 
-      controller.closeGoalArchitect();
+      controller.closeWorkspaceAgent();
 
       const state = controller.getState();
-      expect(state.goalArchitect.isOpen).toBe(false);
+      expect(state.workspaceAgent.isOpen).toBe(false);
       // The no-assistance path: a workspace already exists and nothing was required.
       expect(state.workspaces).toHaveLength(1);
       expect(state.cards).toHaveLength(0);
@@ -757,13 +753,13 @@ describe("GRIOT App Controller", () => {
     it("does not reopen for a returning user who already has a workspace", async () => {
       const first = makeController();
       await first.init();
-      first.closeGoalArchitect();
+      first.closeWorkspaceAgent();
 
       // Same repositories, so this is the same user opening the app again.
       const second = makeController();
       await second.init();
 
-      expect(second.getState().goalArchitect.isOpen).toBe(false);
+      expect(second.getState().workspaceAgent.isOpen).toBe(false);
     });
 
     it("does not mistake an unreadable library for a first launch", async () => {
@@ -791,164 +787,7 @@ describe("GRIOT App Controller", () => {
 
       // Prompting someone to plan a goal on top of data that failed to load would
       // invite them to start over on work that is still there.
-      expect(controller.getState().goalArchitect.isOpen).toBe(false);
-    });
-
-    it("opens from the workspace menu for an existing user", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.closeGoalArchitect();
-
-      await controller.dispatchSuggestedAction({ kind: "goal" });
-
-      const view = controller.getState().goalArchitect;
-      expect(view.isOpen).toBe(true);
-      // Asked for, not imposed — so the dismiss control is a plain close.
-      expect(view.isFirstRun).toBe(false);
-      expect(view.dismissLabel).toBe("CLOSE");
-    });
-
-    it("opens from the goal command in the palette", async () => {
-      const controller = makeController();
-      await controller.init();
-
-      await controller.runPipeline("goal");
-
-      expect(controller.getState().goalArchitect.isOpen).toBe(true);
-      expect(controller.getState().goalArchitect.prompt).toContain(
-        "What do you want to be able to make",
-      );
-    });
-
-    it("runs the whole flow to created cards with no API key", async () => {
-      const controller = makeController();
-      await controller.init();
-      // No key is ever set: the deterministic path must reach real cards on its own.
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a playable puzzle game");
-      controller.proposeMission();
-
-      expect(controller.getState().goalArchitect.proposal).toBeTruthy();
-      const created = await controller.acceptMission();
-
-      expect(created).toBe(true);
-      const state = controller.getState();
-      expect(state.goalArchitect.isOpen).toBe(false);
-      expect(state.cards.some((card) => card.role === "goal")).toBe(true);
-      expect(state.cards.some((card) => card.title === "Known gaps")).toBe(true);
-    });
-
-    it("sets the workspace mission on acceptance", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Learn to weld");
-      controller.proposeMission();
-      await controller.acceptMission();
-
-      const state = controller.getState();
-      const workspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
-      expect(workspace?.mission?.goalTitle).toBe("Learn to weld");
-    });
-
-    it("creates nothing while the mission is still a draft", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a synth");
-      controller.proposeMission();
-
-      // The draft says nothing has been created; that must be literally true.
-      expect(controller.getState().cards).toHaveLength(0);
-    });
-
-    it("leaves an undoable receipt naming the created cards", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a synth");
-      controller.proposeMission();
-      await controller.acceptMission();
-
-      const state = controller.getState();
-      expect(state.undoableOperationId).toBeTruthy();
-      expect(state.operationResult?.createdCardIds.length).toBeGreaterThan(0);
-    });
-
-    it("undoes an accepted mission, removing the cards it created", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a synth");
-      controller.proposeMission();
-      await controller.acceptMission();
-      expect(controller.getState().cards.length).toBeGreaterThan(0);
-
-      const undone = await controller.undoLastOperation();
-
-      expect(undone).toBe(true);
-      expect(controller.getState().cards).toHaveLength(0);
-    });
-
-    it("enrols nothing in spaced repetition", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a synth");
-      controller.proposeMission();
-      await controller.acceptMission();
-
-      expect(
-        controller.getState().cards.every((card) => card.schedule === undefined),
-      ).toBe(true);
-    });
-
-    it("reports that no model was used when none was", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a synth");
-      controller.proposeMission();
-
-      expect(controller.getState().goalArchitect.provenanceSummary).toContain(
-        "No model was used",
-      );
-    });
-
-    it("explains what needs a key rather than failing silently", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a synth");
-
-      await controller.requestGoalAgentTurn();
-
-      expect(controller.getState().goalArchitect.agentError).toContain("No API key");
-      // The answer survives the refused model call.
-      expect(controller.getState().goalArchitect.mapSections.length).toBeGreaterThan(0);
-    });
-
-    it("keeps provider web search off by default and toggles it explicitly", () => {
-      const controller = makeController();
-      controller.openGoalArchitect();
-      expect(controller.getState().goalArchitect.webSearchEnabled).toBe(false);
-
-      controller.setGoalWebSearchEnabled(true);
-      expect(controller.getState().goalArchitect.webSearchEnabled).toBe(true);
-
-      controller.setGoalWebSearchEnabled(false);
-      expect(controller.getState().goalArchitect.webSearchEnabled).toBe(false);
-    });
-
-    it("presents the conversation as a transcript once questions are answered", async () => {
-      const controller = makeController();
-      await controller.init();
-      controller.openGoalArchitect();
-      controller.submitGoalAnswer("Build a synth");
-
-      const transcript = controller.getState().goalArchitect.transcript;
-      expect(transcript[0].speaker).toBe("assistant");
-      expect(transcript[1]).toEqual({ speaker: "user", text: "Build a synth", skipped: false });
+      expect(controller.getState().workspaceAgent.isOpen).toBe(false);
     });
   });
 

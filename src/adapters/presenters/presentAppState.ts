@@ -3,8 +3,6 @@ import { DomainState, UiState } from "./AppSessionStore";
 import { breadcrumbPath, directChildren } from "../../entities/tree";
 import { ResearchState } from "../../usecases/research/ResearchWorkflow";
 import { MissionState } from "../../usecases/mission/MissionWorkflow";
-import { GoalArchitectState } from "../../usecases/goal/GoalArchitectWorkflow";
-import { presentGoalArchitect } from "./GoalArchitectPresenter";
 import { OperationsState } from "../../usecases/operations/OperationsWorkflow";
 import { ReviewSessionState } from "../../usecases/review/ReviewSession";
 import { GapReport } from "../../usecases/report/GapReportInteractor";
@@ -32,10 +30,6 @@ export interface PresentAppStateInput {
   ui: UiState;
   research: ResearchState;
   mission: MissionState;
-  /** The goal-architect session, projected through its own presenter. */
-  goalArchitect: GoalArchitectState;
-  /** Whether the session has enough to draft a mission — the workflow owns the rule. */
-  canProposeMission: boolean;
   operations: OperationsState;
   review: ReviewSessionState;
   /** Recomputed per projection — the report is a view of current cards, never stored. */
@@ -45,6 +39,8 @@ export interface PresentAppStateInput {
   workspaceAgent: WorkspaceAgentState;
   /** Title of the group the Workspace Agent session's context points at, if any. */
   workspaceAgentGroupTitle: string | null;
+  /** Title of the card currently open in the detail modal, if any — the focus card chip. */
+  workspaceAgentFocusCardTitle?: string | null;
   /** Compact "Linked notes" list for the currently open card — see `AppState`. */
   linkedCardsForOpenCard: Array<{ cardId: string; title: string; relation?: string }>;
 }
@@ -76,6 +72,8 @@ export function presentAppState(input: PresentAppStateInput): AppState {
     promptPresets: [...domain.promptPresets],
     assistantProfiles: [...domain.assistantProfiles],
     activeProfileIds: { ...domain.activeProfileIds },
+    agentPromptOverrides: { ...domain.agentPromptOverrides },
+    webSearchEnabled: domain.webSearchEnabled,
 
     // --- Owned by ReviewSession ---
     reviewQueue: [...review.queue],
@@ -139,7 +137,6 @@ export function presentAppState(input: PresentAppStateInput): AppState {
 
     // --- Owned by MissionWorkflow ---
     gapReport: input.gapReport,
-    goalArchitect: presentGoalArchitect(input.goalArchitect, input.canProposeMission),
 
     isGapReportOpen: mission.isGapReportOpen,
     isMissionEditorOpen: mission.isEditorOpen,
@@ -154,6 +151,8 @@ export function presentAppState(input: PresentAppStateInput): AppState {
       input.workspaceAgent,
       domain.workspaces,
       input.workspaceAgentGroupTitle,
+      input.workspaceAgentFocusCardTitle ?? null,
+      domain.cards,
     ),
   };
 }

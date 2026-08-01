@@ -95,46 +95,8 @@ export function AppearanceSettingsSection({
         );
       })}
 
-      <SectionHeading theme={theme}>SURFACE TINT</SectionHeading>
-      <Text style={[styles.help, { color: theme.textMuted }]}>
-        Recolours the palette's neutrals only — accent, warning, error, and web-evidence
-        colours are never affected.
-      </Text>
-      <View style={styles.tintRow}>
-        {(["neutral", "graphite", "deep-green", "blue-black", "warm-paper"] as const).map(
-          tint => {
-            const active = (appearance.surfaceTint ?? "neutral") === tint;
-            return (
-              <Pressable
-                key={tint}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => controller.setSurfaceTint(tint)}
-                style={({ pressed }) => [
-                  styles.tintChip,
-                  {
-                    borderColor: active ? theme.accent : theme.line,
-                    backgroundColor: active ? theme.accentSoft : theme.panelMuted,
-                  },
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.tintChipText,
-                    { color: active ? theme.accent : theme.textMuted, fontFamily: theme.fontMono },
-                  ]}
-                >
-                  {tint.toUpperCase()}
-                </Text>
-              </Pressable>
-            );
-          }
-        )}
-      </View>
-
       <SectionHeading theme={theme}>DENSITY</SectionHeading>
-      <View style={styles.tintRow}>
+      <View style={styles.chipRow}>
         {(["compact", "standard", "spacious"] as const).map(density => {
           const active = (appearance.density ?? "standard") === density;
           return (
@@ -144,7 +106,7 @@ export function AppearanceSettingsSection({
               accessibilityState={{ selected: active }}
               onPress={() => controller.setDensity(density)}
               style={({ pressed }) => [
-                styles.tintChip,
+                styles.chip,
                 {
                   borderColor: active ? theme.accent : theme.line,
                   backgroundColor: active ? theme.accentSoft : theme.panelMuted,
@@ -154,7 +116,7 @@ export function AppearanceSettingsSection({
             >
               <Text
                 style={[
-                  styles.tintChipText,
+                  styles.chipText,
                   { color: active ? theme.accent : theme.textMuted, fontFamily: theme.fontMono },
                 ]}
               >
@@ -166,7 +128,7 @@ export function AppearanceSettingsSection({
       </View>
 
       <SectionHeading theme={theme}>MOTION</SectionHeading>
-      <View style={styles.tintRow}>
+      <View style={styles.chipRow}>
         {(["system", "reduced", "full"] as const).map(motion => {
           const active = (appearance.motion ?? "system") === motion;
           return (
@@ -176,7 +138,7 @@ export function AppearanceSettingsSection({
               accessibilityState={{ selected: active }}
               onPress={() => controller.setMotionPreference(motion)}
               style={({ pressed }) => [
-                styles.tintChip,
+                styles.chip,
                 {
                   borderColor: active ? theme.accent : theme.line,
                   backgroundColor: active ? theme.accentSoft : theme.panelMuted,
@@ -186,7 +148,7 @@ export function AppearanceSettingsSection({
             >
               <Text
                 style={[
-                  styles.tintChipText,
+                  styles.chipText,
                   { color: active ? theme.accent : theme.textMuted, fontFamily: theme.fontMono },
                 ]}
               >
@@ -536,15 +498,15 @@ function SectionHeading({ children, theme }: { children: React.ReactNode; theme:
 
 const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
-  tintRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  tintChip: {
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
     minHeight: Structure.tap,
     borderWidth: 1,
     borderRadius: Structure.radiusControl,
     paddingHorizontal: 12,
     justifyContent: "center",
   },
-  tintChipText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.8 },
+  chipText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.8 },
   contrastRow: {
     flexDirection: "row",
     alignItems: "center",

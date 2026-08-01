@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -22,16 +24,24 @@ import { modalAnimation, useReducedMotion } from "../useReducedMotion";
  *
  * ## Business Value & Purpose
  * The workspace-scoped conversational surface: header, context chips (which workspace,
- * which group, how many cards selected), the transcript so far, a composer, and any tool
- * actions the model proposed. Proposals render as inspectable cards (label + explanation
- * + a plain-language tool summary); the "Confirm" button calls
- * `confirmWorkspaceAgentAction`, which dispatches the proposal to its real interactor
- * (Phase D) and reflects the outcome — "WORKING…" while in flight, then "DONE"/"FAILED"
- * with a truthful result message. Nothing is ever dispatched merely by being proposed or
- * displayed — only an explicit confirm triggers it. When no model is configured, or its
- * reply fails validation, `state.workspaceAgent.agentError` is shown as-is rather than a
- * fabricated reply — that honesty is enforced upstream in `WorkspaceAgentWorkflow`; this
- * component only renders what it's given.
+ * which group, how many cards selected), the transcript, and a composer. Most turns are
+ * plain conversation and render as nothing but bubbles — no scaffolding, no "no actions"
+ * placeholder.
+ *
+ * A reply arrives **progressively**: text and the model's own reasoning fill in as they
+ * are generated, with a "WRITING…" cue while tokens are still arriving. Nothing here fakes
+ * that — a gateway that doesn't stream simply delivers the reply whole.
+ *
+ * When the model marks something concrete, it appears as an inline chip
+ * (`NOTE · Spaced repetition`) exactly where it was written, with a `+`. Pressing `+` is
+ * the only thing in this file that can create anything: it calls `addWorkspaceAgentTag`,
+ * which dispatches the parsed intent to the same interactors as before, and the chip then
+ * reports the truth — ADDED with the dispatcher's own message, or FAILED with its reason.
+ * A chip with nothing addable behind it shows no `+` and says why.
+ *
+ * When no model is configured, or a stream dies, `state.workspaceAgent.agentError` is
+ * shown as-is rather than a fabricated reply — that honesty is enforced upstream in
+ * `WorkspaceAgentWorkflow`; this component only renders what it's given.
  */
 export function ConversationSheet({
   controller,
@@ -96,12 +106,24 @@ export function ConversationSheet({
               theme={theme}
               label={view.context.groupLabel ? view.context.groupLabel : "Workspace root"}
             />
-            {view.context.selectedCount > 0 ? (
-              <ContextChip theme={theme} label={`${view.context.selectedCount} selected`} />
+            {view.context.focusCardTitle ? (
+              <ContextChip theme={theme} label={view.context.focusCardTitle} />
+            ) : null}
+            {view.context.cardCount > 0 ? (
+              <ContextChip
+                theme={theme}
+                label={`${view.context.cardCount} card${view.context.cardCount === 1 ? "" : "s"}`}
+              />
             ) : null}
           </View>
 
-          <ScrollView style={styles.messages} contentContainerStyle={styles.messagesContent}>
+          <ScrollView
+            style={styles.messages}
+            contentContainerStyle={styles.messagesContent}
+            // The chips' `+` buttons sit inside this list; without this a tap while the
+            // composer has focus is swallowed by the keyboard dismiss.
+            keyboardShouldPersistTaps="handled"
+          >
             {view.isEmpty ? (
               <Text style={[styles.empty, { color: theme.textMuted, fontFamily: theme.fontSans }]}>
                 Ask a question about this workspace. Nothing is sent anywhere until a
@@ -116,11 +138,20 @@ export function ConversationSheet({
                     message.speaker === "user"
                       ? { alignSelf: "flex-end", backgroundColor: theme.accentSoft }
                       : { alignSelf: "flex-start", backgroundColor: theme.panelMuted },
+                    // A reply carrying a disclosure or a chip needs the full width to
+                    // stay legible; a plain one keeps the narrow bubble.
+                    message.sentContext || message.segments.length > 1
+                      ? styles.bubbleWide
+                      : null,
                   ]}
                 >
-                  <Text style={[styles.bubbleText, { color: theme.text, fontFamily: theme.fontSans }]}>
-                    {message.text}
-                  </Text>
+                  {message.segments.length > 0 ? (
+                    <MessageBody theme={theme} message={message} controller={controller} />
+                  ) : (
+                    <Text style={[styles.bubbleText, { color: theme.text, fontFamily: theme.fontSans }]}>
+                      {message.text}
+                    </Text>
+                  )}
                   {message.pending ? (
                     <Text
                       style={[styles.pendingText, { color: theme.textMuted, fontFamily: theme.fontMono }]}
@@ -128,17 +159,15 @@ export function ConversationSheet({
                       AWAITING REPLY
                     </Text>
                   ) : null}
+                  <SourceReceipts theme={theme} citations={message.webCitations} />
+                  <TurnDisclosure
+                    theme={theme}
+                    sentContext={message.sentContext}
+                    reasoning={message.reasoning}
+                  />
                 </View>
               ))
             )}
-
-            {view.isThinking ? (
-              <Text
-                style={[styles.pendingText, { color: theme.textMuted, fontFamily: theme.fontMono }]}
-              >
-                THINKING…
-              </Text>
-            ) : null}
 
             {view.agentError ? (
               <View style={[styles.errorBanner, { borderColor: theme.line, backgroundColor: theme.panelMuted }]}>
@@ -148,61 +177,6 @@ export function ConversationSheet({
               </View>
             ) : null}
 
-            {view.proposals.map((proposal) => (
-              <View
-                key={proposal.id}
-                style={[styles.proposalCard, { borderColor: theme.line, backgroundColor: theme.panelMuted }]}
-              >
-                <Text style={[styles.proposalLabel, { color: theme.text, fontFamily: theme.fontSans }]}>
-                  {proposal.label}
-                </Text>
-                <Text style={[styles.proposalExplanation, { color: theme.textMuted, fontFamily: theme.fontSans }]}>
-                  {proposal.explanation}
-                </Text>
-                <Text style={[styles.proposalTool, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
-                  {proposal.toolSummary.toUpperCase()}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Confirm: ${proposal.label}`}
-                  accessibilityState={{ disabled: proposal.isPendingDispatch }}
-                  disabled={proposal.isPendingDispatch}
-                  onPress={() => controller.confirmWorkspaceAgentAction(proposal.id)}
-                  style={[
-                    styles.confirmButton,
-                    { backgroundColor: proposal.isPendingDispatch ? theme.panelMuted : theme.accent },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.confirmText,
-                      { color: proposal.isPendingDispatch ? theme.textMuted : theme.accentInk, fontFamily: theme.fontMono },
-                    ]}
-                  >
-                    {proposal.status === "proposed"
-                      ? "CONFIRM"
-                      : proposal.status === "pending-dispatch"
-                        ? "WORKING…"
-                        : proposal.status === "done"
-                          ? "DONE"
-                          : "FAILED"}
-                  </Text>
-                </Pressable>
-                {proposal.resultMessage ? (
-                  <Text
-                    style={[
-                      styles.proposalExplanation,
-                      {
-                        color: proposal.status === "failed" ? theme.danger : theme.textMuted,
-                        fontFamily: theme.fontSans,
-                      },
-                    ]}
-                  >
-                    {proposal.resultMessage}
-                  </Text>
-                ) : null}
-              </View>
-            ))}
           </ScrollView>
 
           <View style={[styles.composer, { borderTopColor: theme.line }]}>
@@ -218,29 +192,341 @@ export function ConversationSheet({
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Send"
-              accessibilityState={{ disabled: !draft.trim() }}
+              accessibilityLabel={view.isThinking ? "Waiting for a reply" : "Send"}
+              accessibilityState={{ disabled: !draft.trim() || view.isThinking, busy: view.isThinking }}
               onPress={submit}
-              disabled={!draft.trim()}
+              disabled={!draft.trim() || view.isThinking}
               style={[
                 styles.sendButton,
-                { backgroundColor: draft.trim() ? theme.accent : theme.panelMuted },
+                {
+                  backgroundColor:
+                    draft.trim() && !view.isThinking ? theme.accent : theme.panelMuted,
+                },
               ]}
             >
-              <Text
-                style={[
-                  styles.sendText,
-                  { color: draft.trim() ? theme.accentInk : theme.textMuted, fontFamily: theme.fontMono },
-                ]}
-              >
-                SEND
-              </Text>
+              {/* The thinking state lives here rather than in the message list: it tracks a
+                  real in-flight request, and in the list it scrolled out of sight. */}
+              {view.isThinking ? (
+                reducedMotion ? (
+                  <Text
+                    style={[styles.sendText, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+                  >
+                    …
+                  </Text>
+                ) : (
+                  <ActivityIndicator size="small" color={theme.textMuted} />
+                )
+              ) : (
+                <Text
+                  style={[
+                    styles.sendText,
+                    { color: draft.trim() ? theme.accentInk : theme.textMuted, fontFamily: theme.fontMono },
+                  ]}
+                >
+                  SEND
+                </Text>
+              )}
             </Pressable>
           </View>
         </View>
         </KeyboardAvoidingView>
       </View>
     </Modal>
+  );
+}
+
+type MessageViewModel = AppState["workspaceAgent"]["messages"][number];
+type TagViewModel = Extract<
+  MessageViewModel["segments"][number],
+  { kind: "tag" }
+>["tag"];
+type SentContextViewModel = NonNullable<
+  AppState["workspaceAgent"]["messages"][number]["sentContext"]
+>;
+
+/**
+ * # Turn disclosure — "what was sent", and what the model thought
+ *
+ * ## Business Value & Purpose
+ * The auditable half of the trust model. Anything that leaves the device for a turn is
+ * listed here verbatim: the group it was scoped to, every card id and title that
+ * travelled, and the exact briefing text. It is projected from
+ * `WorkspaceAgentSentContext`, recorded by the workflow at send time from the very values
+ * the request was built from, so it cannot flatter the request or drift from it.
+ *
+ * The second half — the model's own intermediate reasoning — renders **only** when the
+ * provider actually returned some. Most models return none, and in that case this shows
+ * the "what was sent" half alone: no placeholder, no "(no reasoning available)", nothing
+ * that could read as the model having thought. When it is present it is labelled as the
+ * model's own working and styled subordinate to the answer, because it is not the answer.
+ *
+ * Collapsed by default, and expand/collapse is plain local state — the same pattern as
+ * `components.tsx`'s `CollapsibleSection`. Nothing about it decides anything.
+ */
+function TurnDisclosure({
+  theme,
+  sentContext,
+  reasoning,
+}: {
+  theme: GriotTheme;
+  sentContext?: SentContextViewModel;
+  reasoning?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!sentContext) return null;
+
+  const cardCount = sentContext.cards.length;
+
+  return (
+    <View style={[styles.disclosure, { borderTopColor: theme.line }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          reasoning
+            ? "What was sent, and the model's thinking"
+            : "What was sent to the model"
+        }
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((value) => !value)}
+        hitSlop={{ top: 6, bottom: 6 }}
+        style={styles.disclosureHead}
+      >
+        <Text
+          style={[styles.disclosureLabel, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+        >
+          {open ? "▾" : "▸"} {reasoning ? "WHAT WAS SENT · THINKING" : "WHAT WAS SENT"}
+        </Text>
+      </Pressable>
+
+      {open ? (
+        <View style={styles.disclosureBody}>
+          <Text
+            style={[styles.disclosureMeta, { color: theme.textFaint, fontFamily: theme.fontMono }]}
+          >
+            {`SCOPE: ${(sentContext.groupLabel ?? "Workspace root").toUpperCase()} · ${cardCount} CARD${cardCount === 1 ? "" : "S"}`}
+          </Text>
+
+          {sentContext.cards.map((card) => (
+            <Text
+              key={card.id}
+              style={[styles.disclosureItem, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+            >
+              {`${card.focus ? "[focus] " : ""}${card.id} — ${card.title}`}
+            </Text>
+          ))}
+
+          <Text
+            style={[styles.disclosureLabel, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+          >
+            BRIEFING SENT
+          </Text>
+          <Text
+            style={[styles.disclosureBriefing, { color: theme.textFaint, fontFamily: theme.fontMono }]}
+          >
+            {sentContext.briefing}
+          </Text>
+
+          {/* Rendered if and only if real reasoning came back. */}
+          {reasoning ? (
+            <View style={[styles.reasoning, { borderLeftColor: theme.line }]}>
+              <Text
+                style={[styles.disclosureLabel, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+              >
+                THE MODEL'S OWN THINKING — NOT ITS ANSWER
+              </Text>
+              <Text
+                style={[styles.reasoningText, { color: theme.textFaint, fontFamily: theme.fontSans }]}
+              >
+                {reasoning}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * # Message body — prose with the chips where the model actually put them
+ *
+ * ## Business Value & Purpose
+ * The model writes a sentence and drops a marker in it; this renders that sentence with a
+ * chip sitting exactly where the marker was, rather than a slab of proposal scaffolding
+ * underneath the conversation. Text that is still streaming renders as it arrives, so the
+ * reply is visibly being written instead of appearing all at once after a spinner.
+ *
+ * Nothing here can create anything. A chip's `+` calls `addWorkspaceAgentTag`, and that is
+ * the only route from this file to a real card.
+ */
+function MessageBody({
+  theme,
+  message,
+  controller,
+}: {
+  theme: GriotTheme;
+  message: MessageViewModel;
+  controller: GriotController;
+}) {
+  return (
+    <View style={styles.body}>
+      {message.segments.map((segment, index) =>
+        segment.kind === "text" ? (
+          <Text
+            key={`text-${index}`}
+            style={[styles.bubbleText, { color: theme.text, fontFamily: theme.fontSans }]}
+          >
+            {segment.text}
+          </Text>
+        ) : (
+          <TagChip
+            key={segment.tag.id}
+            theme={theme}
+            tag={segment.tag}
+            controller={controller}
+          />
+        )
+      )}
+      {/* The honest live-generation cue: shown only while tokens are actually arriving. */}
+      {message.streaming ? (
+        <Text style={[styles.pendingText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+          WRITING…
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * # Tag chip
+ *
+ * ## Business Value & Purpose
+ * One thing the reply mentioned that could become a real card, shown inline as
+ * `NOTE · Spaced repetition` with a `+`. Pressing `+` is the *only* thing in the app that
+ * turns a reply into a card — nothing is created by the model saying it, by the parser
+ * reading it, or by this chip rendering it.
+ *
+ * Afterwards the chip tells the truth about what happened: "ADDED" with the dispatcher's
+ * own completion message, or "FAILED" with its reason. A chip with nothing addable behind
+ * it (an unresolvable card reference, a link that isn't a URL) shows no `+` at all and
+ * says why, rather than offering a button that would quietly do nothing.
+ */
+function TagChip({
+  theme,
+  tag,
+  controller,
+}: {
+  theme: GriotTheme;
+  tag: TagViewModel;
+  controller: GriotController;
+}) {
+  const settled = tag.status === "done" || tag.status === "failed";
+  const disabled = !tag.canAdd || tag.status !== "offered";
+  const accent = tag.status === "failed" ? theme.danger : theme.accent;
+
+  return (
+    <View style={styles.tagChipWrap}>
+      <View
+        style={[
+          styles.tagChip,
+          { borderColor: tag.canAdd ? accent : theme.line, backgroundColor: theme.accentSoft },
+        ]}
+      >
+        <Text
+          numberOfLines={2}
+          style={[styles.tagChipText, { color: tag.canAdd ? accent : theme.textMuted, fontFamily: theme.fontMono }]}
+        >
+          {`${tag.kindLabel} · ${tag.title}`}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${tag.kindLabel.toLowerCase()}: ${tag.title}`}
+          accessibilityHint="Creates this in your workspace. Nothing is created until you press this."
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={() => void controller.addWorkspaceAgentTag(tag.messageId, tag.id)}
+          hitSlop={8}
+          style={styles.tagAdd}
+        >
+          <Text style={[styles.tagAddText, { color: disabled ? theme.textMuted : accent, fontFamily: theme.fontMono }]}>
+            {tag.status === "offered"
+              ? "+"
+              : tag.status === "pending"
+                ? "…"
+                : tag.status === "done"
+                  ? "ADDED"
+                  : "FAILED"}
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* The members a group would really use, named so they can be checked rather than
+          trusted. Only multi-card intents have any. */}
+      {tag.items.length > 1 && !settled ? (
+        <Text
+          numberOfLines={3}
+          style={[styles.tagItems, { color: theme.textFaint, fontFamily: theme.fontSans }]}
+        >
+          {tag.items.join(" · ")}
+        </Text>
+      ) : null}
+
+      {tag.detail ? (
+        <Text
+          style={[
+            styles.tagItems,
+            {
+              color: tag.status === "failed" ? theme.danger : theme.textMuted,
+              fontFamily: theme.fontSans,
+            },
+          ]}
+        >
+          {tag.detail}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The receipts strip: the sources the model's provider actually consulted for this
+ * reply, attached to the reply that used them.
+ *
+ * Renders nothing at all when the list is empty, which is what keeps the claim honest —
+ * the strip exists only where real citations came back, never because web search is
+ * switched on. The wording is deliberately "consulted", not "found" or "saved": these
+ * are the model's own reading, not research candidates the user kept, which still come
+ * only from the app's own search path.
+ */
+function SourceReceipts({
+  theme,
+  citations,
+}: {
+  theme: GriotTheme;
+  citations: { url: string; title: string }[];
+}) {
+  if (!citations || citations.length === 0) return null;
+
+  return (
+    <View style={[styles.receipts, { borderTopColor: theme.line }]}>
+      <Text style={[styles.receiptsLabel, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
+        SOURCES THE MODEL CONSULTED
+      </Text>
+      {citations.map((citation, index) => (
+        <Pressable
+          key={`${citation.url}-${index}`}
+          onPress={() => void Linking.openURL(citation.url).catch(() => {})}
+          style={styles.receipt}
+        >
+          <Text
+            numberOfLines={2}
+            style={[styles.receiptTitle, { color: theme.accent, fontFamily: theme.fontSans }]}
+          >
+            {citation.title}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -276,12 +562,16 @@ const styles = StyleSheet.create({
   },
   sheet: {
     maxHeight: "80%",
+    // Without this the sheet refuses to shrink below its content height, so the
+    // ScrollView below never gets a bounded height to scroll inside.
+    flexShrink: 1,
   },
   sheetInner: {
     borderTopWidth: 1,
     borderTopLeftRadius: Structure.radius,
     borderTopRightRadius: Structure.radius,
     paddingBottom: 12,
+    flexShrink: 1,
   },
   header: {
     flexDirection: "row",
@@ -319,6 +609,10 @@ const styles = StyleSheet.create({
   messages: {
     paddingHorizontal: Structure.gutter,
     marginTop: 10,
+    // Bounds the scroll viewport against the sheet's maxHeight. Without it the list
+    // grows to content height, gets clipped, and pushes the composer out of reach —
+    // proposal checkboxes ended up underneath it, untappable and unscrollable.
+    flexShrink: 1,
   },
   messagesContent: {
     gap: 8,
@@ -335,9 +629,112 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 4,
   },
+  bubbleWide: {
+    maxWidth: "100%",
+    alignSelf: "stretch",
+  },
   bubbleText: {
     fontSize: TypeScale.body,
     lineHeight: 19,
+  },
+  disclosure: {
+    marginTop: 6,
+    paddingTop: 4,
+    borderTopWidth: 1,
+  },
+  disclosureHead: {
+    minHeight: Structure.tap * 0.75,
+    justifyContent: "center",
+  },
+  disclosureLabel: {
+    fontSize: TypeScale.label,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  disclosureBody: {
+    gap: 4,
+    paddingBottom: 4,
+  },
+  disclosureMeta: {
+    fontSize: TypeScale.label,
+    letterSpacing: 0.4,
+  },
+  disclosureItem: {
+    fontSize: TypeScale.label,
+    lineHeight: 15,
+  },
+  disclosureBriefing: {
+    fontSize: TypeScale.label,
+    lineHeight: 15,
+  },
+  reasoning: {
+    borderLeftWidth: 2,
+    paddingLeft: 8,
+    marginTop: 6,
+    gap: 3,
+  },
+  reasoningText: {
+    fontSize: TypeScale.label,
+    lineHeight: 16,
+    fontStyle: "italic",
+  },
+  body: {
+    gap: 6,
+  },
+  tagChipWrap: {
+    gap: 3,
+  },
+  tagChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    minHeight: Structure.tap,
+    paddingLeft: 10,
+    paddingRight: 4,
+    paddingVertical: 4,
+  },
+  tagChipText: {
+    flex: 1,
+    fontSize: TypeScale.label,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    lineHeight: 16,
+  },
+  tagAdd: {
+    minWidth: Structure.tap,
+    minHeight: Structure.tap,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tagAddText: {
+    fontSize: TypeScale.body,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+  tagItems: {
+    fontSize: TypeScale.label,
+    lineHeight: 16,
+  },
+  receipts: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    gap: 3,
+  },
+  receiptsLabel: {
+    fontSize: TypeScale.label,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  receipt: {
+    paddingVertical: 2,
+  },
+  receiptTitle: {
+    fontSize: TypeScale.label,
+    lineHeight: 16,
+    textDecorationLine: "underline",
   },
   pendingText: {
     fontSize: TypeScale.label,
@@ -352,39 +749,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: TypeScale.body,
     lineHeight: 18,
-  },
-  proposalCard: {
-    borderWidth: 1,
-    borderRadius: Structure.radiusControl,
-    padding: 10,
-    gap: 4,
-  },
-  proposalLabel: {
-    fontSize: TypeScale.body,
-    fontWeight: "700",
-  },
-  proposalExplanation: {
-    fontSize: TypeScale.body,
-    lineHeight: 18,
-  },
-  proposalTool: {
-    fontSize: TypeScale.label,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  confirmButton: {
-    alignSelf: "flex-start",
-    minHeight: Structure.tap,
-    paddingHorizontal: 12,
-    borderRadius: Structure.radiusControl,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-  confirmText: {
-    fontSize: TypeScale.label,
-    fontWeight: "800",
-    letterSpacing: 0.6,
   },
   composer: {
     flexDirection: "row",

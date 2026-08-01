@@ -19,14 +19,12 @@ import { RecallCommand } from "./RecallCommand";
 import { SpaceCommand } from "./SpaceCommand";
 import { MoveCommand } from "./MoveCommand";
 import { ReviewCommand } from "./ReviewCommand";
-import { GoalCommand } from "./GoalCommand";
 import { GroupCommand } from "./GroupCommand";
 import { UngroupCommand } from "./UngroupCommand";
 import { DeleteCommand } from "./DeleteCommand";
 import { SearchCommand } from "./SearchCommand";
 import { ClozeCommand } from "./ClozeCommand";
 import { ElaborateCommand } from "./ElaborateCommand";
-import { ChatCommand } from "./ChatCommand";
 
 /**
  * # Command Registry
@@ -103,13 +101,11 @@ function buildBuiltinCommands(
     new SpaceCommand(deps.cardRepo),
     new MoveCommand(deps.cardRepo),
     new ReviewCommand(),
-    new GoalCommand(),
     new GroupCommand(deps.groupCards),
     new UngroupCommand(deps.cardRepo),
     new DeleteCommand(deps.cardRepo),
     new SearchCommand(deps.searchGateway, deps.cardRepo, deps.settingsRepo),
     new ClozeCommand(deps.cardRepo),
     new ElaborateCommand(deps.cardRepo),
-    new ChatCommand(deps.cardRepo),
   ];
 }

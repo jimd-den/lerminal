@@ -283,7 +283,7 @@ export function CaptureScreen({
 
 const styles = StyleSheet.create({
   pressed: { opacity: 0.75 },
-  content: { paddingHorizontal: 18, paddingBottom: 48 },
+  content: { paddingHorizontal: 18, paddingBottom: 104 },
   topBar: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -294,7 +294,9 @@ const styles = StyleSheet.create({
   brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
   brandDot: { width: 9, height: 9, borderRadius: 3 },
   brandName: { fontSize: 17, fontWeight: "800", letterSpacing: 0.5 },
-  brandSub: { fontSize: TypeScale.meta, marginTop: 3, lineHeight: 18 },
+  // Indented past the dot (9) + gap (9) so the subtext starts on the same vertical
+  // as the brand name it sits under, rather than hanging left of its own heading.
+  brandSub: { fontSize: TypeScale.meta, marginTop: 3, lineHeight: 18, marginLeft: 18 },
   topTag: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1.3 },
   hero: { paddingTop: 30 },
   eyebrow: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1.4 },

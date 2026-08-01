@@ -5,104 +5,34 @@ import {
   AgentGateway,
   AgentModel,
   ChatMessage,
-  GoalArchitectCitation,
-  GoalArchitectTurnResult,
   PromptDesignResponse,
   WorkspaceAgentTurnResult,
 } from "../../usecases/ports/gateways/AgentGateway";
 import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
-import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
+import { composeSystemPrompt } from "../../entities/agentPrompts";
+import { WebCitation } from "../../entities/webCitation";
 
 /**
- * The Goal Architect's instruction.
+ * Whether OpenRouter's own `web` plugin rides along with a request.
  *
- * Written to constrain the failure modes that matter rather than to elicit enthusiasm: no
- * claiming to have searched, no inventing what the user said, small numbers of questions,
- * and scope reduction over aspirational planning. The app validates and re-labels
- * everything this returns anyway — the prompt is the first line of defence, not the only
- * one.
+ * Web search is **on by default**: an assistant that can check its facts is the better
+ * default for a study app, and the honesty guarantee never came from withholding search
+ * — it comes from `extractWebCitations`, which reports only sources the provider
+ * actually returned. Callers opt *out* (globally, from Settings), and only an explicit
+ * `false` suppresses the plugin, so a caller that says nothing gets search.
  */
-const GOAL_ARCHITECT_SYSTEM_PROMPT = `You are a goal architect helping someone turn an ambition into an achievable learning mission.
-
-You are given the user's answers so far and the app's current working map. Respond with a single JSON object:
-
-{
-  "message": "brief prose: what you noticed, or what you'd add. 2-4 sentences.",
-  "question": { "id": "kebab-id", "prompt": "one high-leverage question", "rationale": "why it matters", "optional": true, "choices": ["optional", "suggested answers"] },
-  "workingMap": {
-    "goal": "restated goal, only if the user's is unclear",
-    "deliverable": "concrete finished artifact, only if implied but unstated",
-    "constraints": [], "assumptions": [], "unknowns": [],
-    "prerequisites": [], "risks": [], "candidateNextActions": []
-  },
-  "recommendedResearch": [ { "query": "a real search query", "rationale": "why", "sourceKinds": ["official docs","comparable project","paper","tutorial"] } ]
+function webPlugins(enabled: boolean | undefined): { plugins: { id: string }[] } | {} {
+  return enabled === false ? {} : { plugins: [{ id: "web" }] };
 }
-
-Rules:
-- Everything you contribute is treated as a hypothesis the user must verify. Do not state guesses as facts.
-- NEVER claim you searched, read, browsed, or cited anything. You have no web access. Suggest queries in recommendedResearch; the app runs them only with the user's approval.
-- Never invent what the user told you. If something is unknown, put it in "unknowns".
-- Ask at most ONE question, and only if it materially reduces ambiguity. Omit "question" entirely otherwise.
-- Prefer reducing scope and validating early over aspirational planning. Challenge vague goals directly but respectfully.
-- Propose concrete, testable milestones and experiments. No lectures, no motivational filler.
-- Omit any field you have nothing real to add to. Empty is better than padded.
-- Output JSON only. No markdown fences, no commentary.`;
 
 /**
- * The Workspace Agent's instruction.
+ * OpenRouter's unified reasoning request for the workspace agent turn.
  *
- * Same discipline as the Goal Architect's prompt: no claiming to have searched or acted,
- * every tool action is a *proposal* the user must confirm, and card/group ids it invents
- * are validated (and rejected) downstream by `normalizeWorkspaceAgentResponse` — this
- * prompt is the first line of defence, not the only one.
+ * `exclude: false` is explicit rather than implied: the whole point of asking is to be
+ * able to *show* the trace, so a future default flip on the provider's side must not
+ * silently strip it.
  */
-const WORKSPACE_AGENT_SYSTEM_PROMPT = `You are the Workspace Agent for a notes/study app called GRIOT, embedded in a specific workspace.
-
-You are given a bounded set of the workspace's cards (never the whole workspace) and the conversation so far. Respond with a single JSON object:
-
-{
-  "message": "brief, direct prose reply. 1-4 sentences.",
-  "observation": "optional: a plain observation about the cards you were shown",
-  "contextSummary": "optional: one line naming what you actually looked at",
-  "proposedActions": [
-    {
-      "id": "kebab-id",
-      "label": "short action label",
-      "explanation": "why this action, in plain terms",
-      "requiresConfirmation": true,
-      "tool": { "type": "one of: suggest_next_actions | create_cards | create_group | link_cards | chunk_cards | extract_url | search_web | make_study_candidates | draft_experiment | ask_clarifying_question", "...": "fields specific to that tool" }
-    }
-  ],
-  "question": { "prompt": "a clarifying question", "rationale": "why it matters" }
-}
-
-Rules:
-- NEVER claim you searched, read, browsed, extracted, grouped, or created anything. You have not — every "tool" entry is a proposal the user must confirm before anything happens.
-- Only reference card ids that were actually given to you in the context. Never invent an id.
-- Propose at most a few actions per turn, only ones that are clearly useful given the cards you were shown.
-- Omit "proposedActions" (or leave it empty) and "question" entirely when you have nothing concrete to propose or ask.
-- Output JSON only. No markdown fences, no commentary.`;
-
-const PROMPT_ARCHITECT_SYSTEM_PROMPT = `You are a prompt architect for a study application.
-
-Convert the learner's goal into a concise system instruction for one named assistant capability. Ask at most one clarifying question if needed.
-
-The instruction must:
-- Define the assistant's role and learning outcome
-- State preferred depth, style, and priorities
-- Require grounding in supplied material
-- Tell the assistant to say when source support is missing
-- Avoid output-format instructions, JSON schemas, tool use, or app policies
-- Be under 250 words
-
-Return JSON only:
-{
-  "needsClarification": boolean,
-  "question": "string or null",
-  "nameSuggestion": "string",
-  "description": "string",
-  "systemPrompt": "string or null"
-}`;
+const REASONING_REQUEST = { enabled: true, exclude: false } as const;
 
 /**
  * # OpenRouter Agent Gateway Implementation
@@ -150,11 +80,11 @@ export class OpenRouterAgentGateway implements AgentGateway {
       .substring(0, 3000); // Restrict length for token budgets
 
     // The incoming systemPrompt is treated purely as an *instruction* (what kind of
-    // output to make); the strict JSON format contract matching the caller's
-    // outputContract is always appended by composeCardPrompt, so any instruction yields
+    // output to make). `composeSystemPrompt` wraps it in the non-editable parent layer:
+    // the truthfulness rules ahead of it and the strict format contract for the caller's
+    // outputContract after it, so any instruction — including one a user wrote — yields
     // parseable output in the shape its capability actually expects.
-    const instruction = systemPrompt?.trim() || DEFAULT_CARD_INSTRUCTION;
-    const activeSystemPrompt = composeCardPrompt(instruction, outputContract);
+    const activeSystemPrompt = composeSystemPrompt("card-generation", systemPrompt, outputContract);
 
     const userPrompt = `${contextText ? `Use this source context to extract and base your facts on:\n${contextText}\n\n` : ""}Query: ${query}`;
 
@@ -239,29 +169,20 @@ export class OpenRouterAgentGateway implements AgentGateway {
    * based on the user's stated learning goal.
    */
   /**
-   * Asks the model for one Goal Architect turn.
-   *
-   * Returns the **raw parsed payload** rather than a typed turn: validation and
-   * origin-tagging happen in `normalizeGoalArchitectTurn`, so this method cannot
-   * accidentally hand malformed output to the UI wearing the right shape.
-   *
-   * Throws rather than falling back. Every other path in this gateway can degrade to
-   * locally-generated cards clearly flagged as a fallback, but there is no honest
-   * fallback for a planning turn — an invented follow-up question is indistinguishable
-   * from a real one, and the workflow's deterministic path is the correct answer instead.
-   */
-  /**
    * Asks the model to choose one next action for a card from the caller-supplied menu.
    *
-   * No response-format constraint and no output-contract system prompt: the prompt
-   * itself, built by `SuggestNextActionInteractor`, already specifies the exact
-   * `id:`/`reason:` shape, and the interactor — not this gateway — validates the id
-   * against the menu it sent. This method's only job is to get the model's raw text back.
+   * The user message, built by `SuggestNextActionInteractor`, carries the card and the
+   * candidate ids; the system message comes from the prompt registry, whose non-editable
+   * layer restates the exact `id:`/`reason:` shape. The interactor — not this gateway —
+   * still validates the chosen id against the menu it sent, so a hallucinated id can
+   * never reach a dispatch even if the contract is ignored.
    */
   async suggestNextAction(input: {
     prompt: string;
     apiKey: string;
     model: string;
+    /** The user's edited "next-action suggestion" prompt body, if they have one. */
+    systemPrompt?: string;
   }): Promise<string> {
     const cleanKey = input.apiKey?.trim();
     if (!cleanKey) {
@@ -282,7 +203,13 @@ export class OpenRouterAgentGateway implements AgentGateway {
       },
       body: JSON.stringify({
         model: input.model,
-        messages: [{ role: "user", content: input.prompt }],
+        messages: [
+          {
+            role: "system",
+            content: composeSystemPrompt("next-action-suggestion", input.systemPrompt),
+          },
+          { role: "user", content: input.prompt },
+        ],
       }),
     });
 
@@ -303,152 +230,144 @@ export class OpenRouterAgentGateway implements AgentGateway {
     return content;
   }
 
-  async designGoalArchitectTurn(input: {
+  /**
+   * Streams one Workspace Agent turn.
+   *
+   * Plain text, not JSON. The model writes prose and embeds `[[note: …]]`-style tags; the
+   * app parses them (`entities/agentTags`). There is no `response_format` on this path at
+   * all — a small local model can't be held to a JSON schema, and the schema was buying us
+   * a rejected turn rather than a usable one.
+   *
+   * Streamed over XHR + SSE, the same mechanism `streamChat` already uses (React Native's
+   * `fetch` has no readable body stream), so text *and* reasoning appear as they are
+   * generated rather than after the turn completes. `onDelta` receives increments only —
+   * the caller accumulates, because the caller owns the message.
+   *
+   * Throws rather than falling back: there is no honest local substitute for a model turn.
+   */
+  designWorkspaceAgentTurn(input: {
     briefing: string;
     apiKey: string;
     model: string;
     systemPrompt?: string;
     webSearchEnabled?: boolean;
-  }): Promise<GoalArchitectTurnResult> {
-    const cleanKey = input.apiKey?.trim();
-    if (!cleanKey) {
-      throw new Error("API key is required for goal planning");
-    }
-
-    console.log(
-      `[${new Date().toISOString()}] [OpenRouterAgentGateway.designGoalArchitectTurn] model="${input.model}" | briefingChars=${input.briefing.length} | webSearch=${Boolean(input.webSearchEnabled)}`
-    );
-
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${cleanKey}`,
-        "HTTP-Referer": "https://github.com/dbslim/lerminal",
-        "X-Title": "GRIOT",
-      },
-      body: JSON.stringify({
-        model: input.model,
-        messages: [
-          { role: "system", content: input.systemPrompt || GOAL_ARCHITECT_SYSTEM_PROMPT },
-          { role: "user", content: input.briefing },
-        ],
-        // The turn is consumed as JSON; asking for it directly beats parsing prose.
-        response_format: { type: "json_object" },
-        // OpenRouter's own web-grounded search — a genuinely different search path from
-        // this app's SearchGateway, so it is only ever added when the caller explicitly
-        // opted in for this one turn, never on by default.
-        ...(input.webSearchEnabled ? { plugins: [{ id: "web" }] } : {}),
-      }),
-    });
-
-    if (!response.ok) {
-      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
-      try {
-        const errData = await response.json();
-        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
-      } catch (_) {}
-      throw new Error(errMsg);
-    }
-
-    const data = await response.json();
-    const message = data.choices?.[0]?.message;
-    const content = message?.content?.trim();
-    if (!content) {
-      throw new Error("The model returned an empty response");
-    }
-
-    // Some models still wrap JSON in a fence despite response_format.
-    const cleanJson = content
-      .replace(/^```json/i, "")
-      .replace(/^```/, "")
-      .replace(/```$/, "")
-      .trim();
-
-    let raw: unknown;
-    try {
-      raw = JSON.parse(cleanJson);
-    } catch {
-      // Deliberately not salvaged into a partial turn — the caller shows an honest
-      // failure state and keeps the user's answers.
-      throw new Error("The model's reply was not valid JSON");
-    }
-
-    return { raw, webCitations: extractWebCitations(message) };
-  }
-
-  /**
-   * Asks the model for one Workspace Agent turn.
-   *
-   * Returns the **raw parsed payload** rather than a typed response: validation happens
-   * in `normalizeWorkspaceAgentResponse`, so this method cannot accidentally hand
-   * malformed output to the UI wearing the right shape. Throws rather than falling back —
-   * there is no honest local fallback for a tool proposal, unlike `ask`'s card generation.
-   */
-  async designWorkspaceAgentTurn(input: {
-    briefing: string;
-    apiKey: string;
-    model: string;
-    systemPrompt?: string;
+    onDelta?: (delta: { text?: string; reasoning?: string }) => void;
   }): Promise<WorkspaceAgentTurnResult> {
-    const cleanKey = input.apiKey?.trim();
-    if (!cleanKey) {
-      throw new Error("API key is required for the workspace agent");
-    }
+    return new Promise((resolve, reject) => {
+      const cleanKey = input.apiKey?.trim();
+      if (!cleanKey) {
+        reject(new Error("API key is required for the workspace agent"));
+        return;
+      }
 
-    console.log(
-      `[${new Date().toISOString()}] [OpenRouterAgentGateway.designWorkspaceAgentTurn] model="${input.model}" | briefingChars=${input.briefing.length}`
-    );
+      console.log(
+        `[${new Date().toISOString()}] [OpenRouterAgentGateway.designWorkspaceAgentTurn] model="${input.model}" | briefingChars=${input.briefing.length} | streaming`
+      );
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${cleanKey}`,
-        "HTTP-Referer": "https://github.com/dbslim/lerminal",
-        "X-Title": "GRIOT",
-      },
-      body: JSON.stringify({
-        model: input.model,
-        messages: [
-          { role: "system", content: input.systemPrompt || WORKSPACE_AGENT_SYSTEM_PROMPT },
-          { role: "user", content: input.briefing },
-        ],
-        response_format: { type: "json_object" },
-      }),
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "https://openrouter.ai/api/v1/chat/completions");
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.setRequestHeader("Authorization", `Bearer ${cleanKey}`);
+      xhr.setRequestHeader("HTTP-Referer", "https://github.com/dbslim/lerminal");
+      xhr.setRequestHeader("X-Title", "GRIOT");
+
+      let processed = 0;
+      let text = "";
+      let reasoning = "";
+      const citations: WebCitation[] = [];
+      const seenCitations = new Set<string>();
+
+      /** Citations arrive with or after the final chunk; collected wherever they appear. */
+      const collectCitations = (carrier: any): void => {
+        for (const citation of extractWebCitations(carrier)) {
+          if (seenCitations.has(citation.url)) continue;
+          seenCitations.add(citation.url);
+          citations.push(citation);
+        }
+      };
+
+      const drain = () => {
+        const data = xhr.responseText ?? "";
+        let nl: number;
+        while ((nl = data.indexOf("\n", processed)) !== -1) {
+          const line = data.substring(processed, nl).trim();
+          processed = nl + 1;
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "" || payload === "[DONE]") continue;
+
+          let json: any;
+          try {
+            json = JSON.parse(payload);
+          } catch {
+            // Keep-alive comment or a fragment that hasn't finished arriving.
+            continue;
+          }
+
+          const choice = json.choices?.[0];
+          const delta = choice?.delta ?? choice?.message;
+          collectCitations(delta);
+          collectCitations(choice?.message);
+
+          const contentDelta = typeof delta?.content === "string" ? delta.content : "";
+          // The streaming equivalent of `message.reasoning`: OpenRouter puts the same
+          // fields on the delta. Read through the same extractor so an encrypted block is
+          // skipped here exactly as it is on a non-streamed reply.
+          const reasoningDelta = extractReasoning(delta) ?? "";
+
+          if (contentDelta) text += contentDelta;
+          if (reasoningDelta) reasoning += reasoningDelta;
+          if (contentDelta || reasoningDelta) {
+            input.onDelta?.({
+              ...(contentDelta ? { text: contentDelta } : {}),
+              ...(reasoningDelta ? { reasoning: reasoningDelta } : {}),
+            });
+          }
+        }
+      };
+
+      xhr.onprogress = drain;
+      xhr.onload = () => {
+        drain();
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(
+            new Error(
+              `HTTP ${xhr.status}: ${xhr.responseText?.substring(0, 200) || xhr.statusText}`
+            )
+          );
+          return;
+        }
+        if (!text.trim()) {
+          reject(new Error("The model returned an empty response"));
+          return;
+        }
+        resolve({
+          text,
+          webCitations: citations,
+          // Never synthesized from the answer: no reasoning returned, no reasoning field.
+          ...(reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
+        });
+      };
+      xhr.onerror = () => reject(new Error("Network error while streaming"));
+
+      xhr.send(
+        JSON.stringify({
+          model: input.model,
+          stream: true,
+          messages: [
+            { role: "system", content: composeSystemPrompt("workspace-agent", input.systemPrompt) },
+            { role: "user", content: input.briefing },
+          ],
+          // Ask for the model's own reasoning alongside the answer. OpenRouter drops the
+          // parameter for models that cannot reason — those simply stream none, and no
+          // reasoning UI appears at all.
+          reasoning: REASONING_REQUEST,
+          // On unless the user turned it off globally — see `webPlugins`. Whether it
+          // actually ran is never inferred from this flag; only real citations say so.
+          ...webPlugins(input.webSearchEnabled),
+        })
+      );
     });
-
-    if (!response.ok) {
-      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
-      try {
-        const errData = await response.json();
-        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
-      } catch (_) {}
-      throw new Error(errMsg);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content?.trim();
-    if (!content) {
-      throw new Error("The model returned an empty response");
-    }
-
-    const cleanJson = content
-      .replace(/^```json/i, "")
-      .replace(/^```/, "")
-      .replace(/```$/, "")
-      .trim();
-
-    let raw: unknown;
-    try {
-      raw = JSON.parse(cleanJson);
-    } catch {
-      // Deliberately not salvaged into a partial turn — the caller shows an honest
-      // failure state and stores no proposals.
-      throw new Error("The model's reply was not valid JSON");
-    }
-
-    return { raw };
   }
 
   async designAssistantProfile(input: {
@@ -456,6 +375,8 @@ export class OpenRouterAgentGateway implements AgentGateway {
     capability: AssistantCapability;
     apiKey: string;
     model: string;
+    /** The user's edited "prompt architect" body, if they have one. */
+    systemPrompt?: string;
   }): Promise<PromptDesignResponse> {
     const logTimestamp = new Date().toISOString();
     const cleanKey = input.apiKey?.trim();
@@ -466,7 +387,10 @@ export class OpenRouterAgentGateway implements AgentGateway {
     console.log(`[${logTimestamp}] [OpenRouterAgentGateway.designAssistantProfile] capability=${input.capability} | messagesCount=${input.messages.length}`);
 
     const payloadMessages: ChatMessage[] = [
-      { role: "system", content: `${PROMPT_ARCHITECT_SYSTEM_PROMPT}\nTarget capability: ${input.capability}` },
+      {
+        role: "system",
+        content: `${composeSystemPrompt("prompt-architect", input.systemPrompt)}\n\nTarget capability: ${input.capability}`,
+      },
       ...input.messages,
     ];
 
@@ -679,11 +603,38 @@ export class OpenRouterAgentGateway implements AgentGateway {
  * this app controls — so an unexpected or missing shape degrades to no citations rather
  * than throwing and losing the turn the model otherwise answered correctly.
  */
-export function extractWebCitations(message: any): GoalArchitectCitation[] {
+/**
+ * The model's own reasoning text for one turn, or `undefined` when the provider returned
+ * none.
+ *
+ * OpenRouter exposes reasoning two ways: a plain `reasoning` string, and a
+ * `reasoning_details` array whose entries may be plaintext (`reasoning.text`), a
+ * provider-written summary (`reasoning.summary`), or an opaque encrypted blob
+ * (`reasoning.encrypted`). Only readable text is taken; encrypted blocks are skipped
+ * rather than shown as gibberish, and nothing here ever falls back to the answer itself.
+ * A model that did not reason produces `undefined`, which is what keeps the UI honest.
+ */
+export function extractReasoning(message: any): string | undefined {
+  const direct = message?.reasoning;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+  const details = message?.reasoning_details;
+  if (!Array.isArray(details)) return undefined;
+
+  const parts: string[] = [];
+  for (const detail of details) {
+    const text = detail?.text ?? detail?.summary;
+    if (typeof text === "string" && text.trim()) parts.push(text.trim());
+  }
+  const joined = parts.join("\n\n").trim();
+  return joined ? joined : undefined;
+}
+
+export function extractWebCitations(message: any): WebCitation[] {
   const annotations = message?.annotations;
   if (!Array.isArray(annotations)) return [];
 
-  const citations: GoalArchitectCitation[] = [];
+  const citations: WebCitation[] = [];
   for (const item of annotations) {
     const citation = item?.url_citation;
     const url = citation?.url;

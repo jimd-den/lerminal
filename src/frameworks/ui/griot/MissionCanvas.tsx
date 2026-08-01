@@ -59,12 +59,12 @@ export function MissionCanvasHeader({
           {view.title}
         </Text>
         <Text style={[styles.heroBody, { color: theme.textMuted }]}>
-          Describe what you're trying to make, understand, or solve — the Goal Architect
-          will ask a few questions and turn it into a mission you can actually work from.
+          Describe what you're trying to make, understand, or solve — the workspace agent
+          reads your notes and proposes a mission you can review before anything is created.
         </Text>
         <View style={[styles.heroCta, { backgroundColor: theme.accent }]}>
           <Text style={[styles.heroCtaText, { color: theme.accentInk, fontFamily: theme.fontMono }]}>
-            START THE GOAL ARCHITECT
+            PLAN A MISSION WITH THE AGENT
           </Text>
         </View>
       </Pressable>

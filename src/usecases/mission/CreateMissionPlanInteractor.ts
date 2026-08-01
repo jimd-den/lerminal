@@ -5,7 +5,7 @@ import {
   InsightOrigin,
   MissionProposal,
   WorkingMap,
-} from "../../entities/goalArchitect";
+} from "../../entities/mission";
 import {
   createOperationRecord,
   OperationRecord,

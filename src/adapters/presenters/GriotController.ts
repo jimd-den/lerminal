@@ -51,7 +51,6 @@ import {
   AssistantProfile,
   AssistantCapability,
   BUILTIN_ASSISTANT_PROFILES,
-  resolveAssistantProfile,
 } from "../../entities/assistantProfile";
 import { PromptPresetRepository } from "../../usecases/ports/repositories/PromptPresetRepository";
 import { AssistantProfileRepository } from "../../usecases/ports/repositories/AssistantProfileRepository";
@@ -122,16 +121,15 @@ import {
   Density,
   FontChoice,
   MotionPreference,
-  SurfaceTint,
 } from "../../entities/appearance";
 import { SuggestNextActionInteractor } from "../../usecases/capture/SuggestNextActionInteractor";
+import { CreateMissionPlanInteractor } from "../../usecases/mission/CreateMissionPlanInteractor";
 import {
-  GoalArchitectWorkflow,
-  GoalArchitectHost,
-} from "../../usecases/goal/GoalArchitectWorkflow";
-import { CreateMissionPlanInteractor } from "../../usecases/goal/CreateMissionPlanInteractor";
-import { GoalQuestionId, RecommendedResearch } from "../../entities/goalArchitect";
-import { GoalArchitectViewModel } from "./GoalArchitectPresenter";
+  EMPTY_WORKING_MAP,
+  insight,
+  mergeIntoWorkingMap,
+  MissionProposal,
+} from "../../entities/mission";
 import {
   WorkspaceAgentContext,
   WorkspaceAgentHost,
@@ -157,6 +155,11 @@ import {
   reloadInstalledFonts,
 } from "../../usecases/appearance/InstallFontInteractor";
 import { GapReport, GapReportInteractor, summarizeGapReportForPrompt } from "../../usecases/report/GapReportInteractor";
+import {
+  AgentPromptId,
+  AgentPromptOverrides,
+  effectiveAgentPromptBody,
+} from "../../entities/agentPrompts";
 import { createWorkspaceMission, updateWorkspaceMission, WorkspaceMission, WorkspacePhase } from "../../entities/workspace";
 
 // Default prompts are now *instructions* (the strict JSON format contract is appended
@@ -209,6 +212,14 @@ export interface AppState {
   assistantProfiles: AssistantProfile[];
   /** Active assistant profile ID per capability. */
   activeProfileIds: Partial<Record<AssistantCapability, string>>;
+  /**
+   * The user's rewritten agent prompt bodies, by id. Only the editable layer — the
+   * parent rules and output contract are composed at send time and are never shown here
+   * as something that could be changed.
+   */
+  agentPromptOverrides: AgentPromptOverrides;
+  /** Whether the model provider's own web search rides along with agent calls. */
+  webSearchEnabled: boolean;
   /** Command awaiting input in the input sheet (so submit re-runs the right one). */
   pendingCommandName: string;
   openCardId: string | null;
@@ -302,8 +313,6 @@ export interface AppState {
   isMissionEditorOpen: boolean;
   /** The in-progress mission edit, valid while `isMissionEditorOpen`. */
   missionDraft: MissionDraft;
-  /** The goal-architect sheet's full view model. */
-  goalArchitect: GoalArchitectViewModel;
   /** The Workspace Pulse banner's view model for the active workspace, or null if quiet. */
   workspacePulse: WorkspacePulseViewModel | null;
   /** The "Ask GRIOT" conversation sheet's full view model. */
@@ -392,10 +401,7 @@ export class GriotController {
   private reviewLogRepo?: ReviewLogRepository;
   private research: ResearchWorkflow;
   private mission: MissionWorkflow;
-  private goalArchitect: GoalArchitectWorkflow;
   private createMissionPlanInteractor: CreateMissionPlanInteractor;
-  /** When the current goal session began, for an accurate receipt. */
-  private goalSessionStartedAt = 0;
   private runResearchInteractor: RunResearchInteractor;
   private extractResearchResultInteractor: ExtractResearchResultInteractor;
   private createResearchBriefInteractor: CreateResearchBriefInteractor;
@@ -554,11 +560,13 @@ export class GriotController {
     // supplies context and effects, then delegates to it.
     this.research = this.buildResearchWorkflow(deps);
     this.mission = this.buildMissionWorkflow(deps);
-    this.goalArchitect = this.buildGoalArchitectWorkflow(deps);
+    // Deliberately without the operation log: its only caller is the Workspace Agent's
+    // `create_mission` dispatch, which registers the run through
+    // `finishWorkspaceAgentDispatch` exactly like every other intent. Passing the log here
+    // too would write two receipts for one run and leave undo pointed at the wrong one.
     this.createMissionPlanInteractor = new CreateMissionPlanInteractor(
       deps.cardRepo,
       deps.workspaceRepo,
-      this.operationLogRepo,
     );
     this.operations = this.buildOperationsWorkflow(deps);
     this.review = this.buildReviewSession(deps);
@@ -576,11 +584,16 @@ export class GriotController {
       onChange: () => this.emit(),
       apiKey: () => this.domain.openRouterKey ?? "",
       model: () => this.domain.selectedModel,
-      // No dedicated "workspace-agent" AssistantCapability/profile exists yet — the
-      // gateway falls back to its own built-in instruction, same as any other optional
-      // gateway method called without one. Adding a user-editable profile for this
-      // capability is a follow-up, not required for Phase C's validated-turn plumbing.
+      // The user-editable body from the prompt registry; the gateway wraps it in the
+      // parent rules and the workspace-agent output contract, neither of which is
+      // reachable from settings.
+      systemPrompt: () => this.agentPromptBody("workspace-agent"),
+      // Opt-out only, read live so flipping the Settings toggle applies to the next send.
+      webSearchEnabled: () => this.domain.webSearchEnabled,
       allCards: () => this.domain.cards,
+      // Live, not a snapshot: the sheet stays open while the user changes their selection
+      // or opens a card, and every send must reflect what is on screen at that moment.
+      currentContext: () => this.workspaceAgentContext(),
     };
     return new WorkspaceAgentWorkflow({
       host,
@@ -639,147 +652,6 @@ export class GriotController {
    * The host object is the seam: it hands the workflow the surrounding context it needs
    * to read and the effects it needs to cause, without handing over the controller itself.
    */
-  /**
-   * Wires the goal architect to the app around it.
-   *
-   * The host's only web-facing method hands queries to the *existing* research preflight
-   * rather than running a search, which is what keeps "the agent never browses without
-   * approval" true by construction instead of by convention.
-   */
-  private buildGoalArchitectWorkflow(
-    deps: GriotControllerDeps,
-  ): GoalArchitectWorkflow {
-    const host: GoalArchitectHost = {
-      apiKey: () => this.domain.openRouterKey ?? "",
-      model: () => this.domain.selectedModel,
-      systemPrompt: () =>
-        resolveAssistantProfile(
-          "goal-architect",
-          this.domain.activeProfileIds,
-          this.domain.assistantProfiles,
-          BUILTIN_ASSISTANT_PROFILES,
-          undefined,
-          this.domain.activeWorkspaceId ?? undefined,
-        ).systemPrompt,
-      onChange: () => this.emit(),
-      requestResearchApproval: (queries: RecommendedResearch[]) => {
-        // Pre-fills the normal preflight; the user still sees and approves the query.
-        this.ui.activePreflightPresetId = "research-web";
-        this.ui.preflightQuery = queries[0]?.query ?? "";
-        this.ui.aiQuerySuggestions = queries.map((item) => item.query);
-        this.emit();
-      },
-    };
-
-    return new GoalArchitectWorkflow({ host, agentGateway: deps.agentGateway });
-  }
-
-  // --- Goal Architect ---
-
-  /** Opens a fresh goal session. */
-  openGoalArchitect(): void {
-    this.goalSessionStartedAt = Date.now();
-    this.goalArchitect.open();
-  }
-
-  closeGoalArchitect(): void {
-    this.goalArchitect.close();
-  }
-
-  submitGoalAnswer(text: string): void {
-    this.goalArchitect.submitAnswer(text);
-  }
-
-  skipGoalQuestion(): void {
-    this.goalArchitect.skipCurrent();
-  }
-
-  editGoalAnswer(questionId: GoalQuestionId, text: string): void {
-    this.goalArchitect.editAnswer(questionId, text);
-  }
-
-  /** Explicitly asks the model for suggestions. Never automatic. */
-  async requestGoalAgentTurn(): Promise<void> {
-    await this.goalArchitect.requestAgentTurn();
-  }
-
-  /** Opts the *next* agent turn into the provider's own web search, or opts back out. */
-  setGoalWebSearchEnabled(enabled: boolean): void {
-    this.goalArchitect.setWebSearchEnabled(enabled);
-  }
-
-  proposeMission(): void {
-    this.goalArchitect.proposeMission();
-  }
-
-  backToGoalQuestions(): void {
-    this.goalArchitect.backToQuestions();
-  }
-
-  requestGoalResearch(): void {
-    this.goalArchitect.requestResearch();
-  }
-
-  /**
-   * Accepts the draft: creates the mission cards, sets the workspace mission, and leaves
-   * the user on the canvas with a receipt they can undo.
-   *
-   * The receipt is built from what the session actually recorded — whether a model
-   * contributed, whether a search really ran — so it can never credit work that did not
-   * happen.
-   */
-  async acceptMission(): Promise<boolean> {
-    const session = this.goalArchitect.state;
-    const proposal = session.proposal;
-    const workspaceId = this.domain.activeWorkspaceId;
-
-    if (!proposal || !workspaceId) return false;
-
-    const operationId = this.addPendingOperation("Creating mission");
-    try {
-      const outcome = await this.createMissionPlanInteractor.execute({
-        workspaceId,
-        proposal,
-        map: session.map,
-        answerIds: session.answers.map((answer) => answer.questionId),
-        modelUsed: session.modelUsed,
-        webUsed: session.webUsed,
-        model: session.modelUsed ? this.domain.selectedModel : undefined,
-        startedAt: this.goalSessionStartedAt || Date.now(),
-      });
-
-      this.removePendingOperation(operationId);
-      this.goalArchitect.close();
-      await this.loadCardsForActiveWorkspace();
-
-      // Selection genuinely changes here, so saying so is accurate.
-      this.domain.selection = new Set(
-        outcome.cards.filter((card) => card.id !== outcome.group.id).map((card) => card.id),
-      );
-      this.domain.workspaces = this.domain.workspaces.map((workspace) =>
-        workspace.id === outcome.workspace.id ? outcome.workspace : workspace,
-      );
-
-      this.operations.present({
-        summary: outcome.operation.summary,
-        createdCardIds: outcome.operation.createdCardIds,
-        destination: { spaceId: workspaceId, groupId: outcome.group.id },
-        primaryActionLabel: "Open mission",
-      });
-      // The interactor already wrote the receipt — it knows what actually ran. This only
-      // points undo at it, rather than logging a second, vaguer record of the same run.
-      this.operations.markUndoable(outcome.operation.id);
-      this.emit();
-      return true;
-    } catch (error: any) {
-      this.setPendingOperationError(
-        operationId,
-        error instanceof UseCaseError ? error.userMessage : "Couldn't create the mission",
-      );
-      return false;
-    }
-  }
-
   private buildMissionWorkflow(deps: GriotControllerDeps): MissionWorkflow {
       return new MissionWorkflow({
         workspaceRepo: deps.workspaceRepo,
@@ -904,6 +776,10 @@ export class GriotController {
           settings.customChunkSystemPrompt || DEFAULT_CHUNK_SYSTEM_PROMPT;
         this.domain.autoGroupByCommand = settings.autoGroupByCommand ?? true;
         this.domain.interleaveReviews = settings.interleaveReviews ?? true;
+        // Absent means "never customised" and "never opted out" respectively — an old
+        // blob must load with every prompt at its default and web search on.
+        this.domain.agentPromptOverrides = settings.agentPromptOverrides ?? {};
+        this.domain.webSearchEnabled = settings.webSearchEnabled ?? true;
         if (settings.activeProfileIds) {
           this.domain.activeProfileIds = {
             ...this.domain.activeProfileIds,
@@ -944,12 +820,11 @@ export class GriotController {
       this.rebuildPipeline();
       await this.loadCardsForActiveWorkspace();
 
-      // A genuinely empty first launch opens the goal architect. It is a sheet over the
+      // A genuinely empty first launch opens the workspace agent. It is a sheet over the
       // canvas, not a gate: dismissing it leaves the blank workspace that was just
       // created, which is exactly the no-assistance path.
       if (isFirstLaunch && this.domain.cards.length === 0) {
-        this.openGoalArchitect();
-        this.goalArchitect.markFirstRun();
+        this.openWorkspaceAgent();
       }
       this.loadAvailableModels();
       // Not awaited: a slow or failed font fetch must never delay first paint.
@@ -1002,8 +877,6 @@ export class GriotController {
       ui: this.ui,
       research: this.research.state,
       mission: this.mission.state,
-      goalArchitect: this.goalArchitect.state,
-      canProposeMission: this.goalArchitect.canPropose,
       operations: this.operations.state,
       review: this.review.state,
       gapReport: this.mission.computeGapReport(),
@@ -1012,6 +885,10 @@ export class GriotController {
       workspaceAgentGroupTitle:
         this.domain.cards.find(
           (card) => card.id === this.workspaceAgent.state.context.currentGroupId,
+        )?.title ?? null,
+      workspaceAgentFocusCardTitle:
+        this.domain.cards.find(
+          (card) => card.id === this.workspaceAgent.state.context.openCardId,
         )?.title ?? null,
       linkedCardsForOpenCard: this.computeLinkedCardsForOpenCard(),
     });
@@ -1247,13 +1124,6 @@ export class GriotController {
     this.emit();
   }
 
-  /** Recolours the active palette's neutrals only — never accent/danger/warning/evidence. */
-  setSurfaceTint(surfaceTint: SurfaceTint): void {
-    this.domain.appearance = { ...this.domain.appearance, surfaceTint };
-    this.saveCurrentSettings();
-    this.emit();
-  }
-
   setDensity(density: Density): void {
     this.domain.appearance = { ...this.domain.appearance, density };
     this.saveCurrentSettings();
@@ -1364,6 +1234,7 @@ export class GriotController {
         this.domain.openRouterKey,
         this.domain.selectedModel,
         { hasMission: Boolean(this.activeWorkspace()?.mission) },
+        this.agentPromptBody("next-action-suggestion"),
       );
       // The card may have changed (or the user moved on) while the request was in
       // flight; a stale suggestion landing on a different card would be confusing.
@@ -1489,6 +1360,56 @@ export class GriotController {
     this.emit();
   }
 
+  // --- Agent prompts (see `entities/agentPrompts.ts`) ---
+
+  /**
+   * Rewrites one agent prompt's *body*. The parent rules and the capability's output
+   * contract are composed at send time and are not reachable from here, so no value a
+   * user can type through this method can break parsing or remove a truthfulness rule.
+   *
+   * A blank body is stored as a reset rather than as an empty instruction: clearing the
+   * field is how someone asks for the default back.
+   */
+  setAgentPromptOverride(id: AgentPromptId, body: string): void {
+    if (!body.trim()) {
+      this.resetAgentPrompt(id);
+      return;
+    }
+    this.domain.agentPromptOverrides = { ...this.domain.agentPromptOverrides, [id]: body };
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  /**
+   * The prompt body in effect for a capability: the user's override, or the registry
+   * default. Only ever the editable layer — every consumer passes it to the gateway,
+   * which composes the non-editable parent and contract around it.
+   */
+  private agentPromptBody(id: AgentPromptId): string {
+    return effectiveAgentPromptBody(id, this.domain.agentPromptOverrides);
+  }
+
+  /** Drops the override so the built-in default is used again. */
+  resetAgentPrompt(id: AgentPromptId): void {
+    const next = { ...this.domain.agentPromptOverrides };
+    delete next[id];
+    this.domain.agentPromptOverrides = next;
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
+  /**
+   * Turns the model provider's own web search on or off for agent calls, globally.
+   *
+   * Turning it on does not entitle anything to *say* the web was used: that claim is
+   * only ever made from citations the provider actually returned.
+   */
+  setWebSearchEnabled(enabled: boolean): void {
+    this.domain.webSearchEnabled = enabled;
+    this.saveCurrentSettings();
+    this.emit();
+  }
+
   async updateSearchSiteFlags(flags: Record<string, string>): Promise<void> {
     this.domain.searchSiteFlags = flags;
     this.emit();
@@ -1550,11 +1471,6 @@ export class GriotController {
       case "mission":
         this.operations.dismissResult();
         this.openMissionEditor();
-        return;
-      case "goal":
-        this.operations.dismissResult();
-        this.ui.isModalOpen = false;
-        this.openGoalArchitect();
         return;
       case "palette":
         this.operations.dismissResult();
@@ -1889,126 +1805,14 @@ export class GriotController {
     this.emit();
   }
 
-  // --- Chat (streamed, group-aware) ---
-
-  /** Parses a chat card's body into its message list (empty on any malformed body). */
-  private parseChat(body: string): ChatMessage[] {
-    try {
-      const parsed = JSON.parse(body || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
-  /** Writes the message list back into the chat card (in-memory + persisted). */
-  private async writeChat(
-    cardId: string,
-    messages: ChatMessage[],
-    persist: boolean,
-  ): Promise<void> {
-    const card = this.domain.cards.find((c) => c.id === cardId);
-    if (!card) return;
-    const updated: Card = { ...card, body: JSON.stringify(messages) };
-    this.domain.cards = this.domain.cards.map((c) =>
-      c.id === cardId ? updated : c,
-    );
-    if (persist) await this.cardRepo.saveCard(updated);
-    this.emit();
-  }
-
   /**
-   * Builds the system context for a chat card from the workspace name and the other
-   * cards in the same group, so the agent answers grounded in what the user is studying.
+   * NOTE: the per-card "Discuss"/chat surface has been retired in favour of the
+   * workspace agent ("Ask GRIOT"). Existing `chat` cards remain persisted and render
+   * as a read-only transcript, so no chat sending path lives here any more.
+   * `chatStreamingCardId` stays on the UI state (still read by the activity presenter)
+   * but is never set; `AgentGateway.streamChat` now has no caller in the app — it is
+   * kept as a supported gateway capability.
    */
-  private buildChatContext(card: Card): string {
-    const ws = this.domain.workspaces.find(
-      (w) => w.id === this.domain.activeWorkspaceId,
-    );
-    const groupCards = this.domain.cards.filter(
-      (c) =>
-        c.parentId === card.parentId &&
-        c.id !== card.id &&
-        c.type !== "group" &&
-        c.type !== "chat",
-    );
-    const cardList =
-      groupCards.length > 0
-        ? groupCards
-            .map(
-              (c) =>
-                `- ${c.title}: ${(c.body || c.answer || "").substring(0, 400)}`,
-            )
-            .join("\n")
-        : "(no other cards in this group yet)";
-    return `You are a focused study tutor helping the user learn. They are in the workspace "${ws?.name ?? "Untitled"}". Use the following cards from the current group as the primary context for your answers; be accurate and concise, and say when something isn't covered by them.\n\nCards in context:\n${cardList}`;
-  }
-
-  /**
-   * Sends a user message in a chat card and streams the agent's reply token-by-token,
-   * updating the card live. The group's cards + workspace name are supplied as context.
-   */
-  async sendChatMessage(cardId: string, userText: string): Promise<boolean> {
-    const text = userText.trim();
-    if (!text) return false;
-    if (this.ui.chatStreamingCardId) return false;
-    const card = this.domain.cards.find((c) => c.id === cardId);
-    if (!card) return false;
-
-    if (!this.agentGateway.streamChat) {
-      this.showToast("This model gateway can't stream chat");
-      return false;
-    }
-    if (!this.domain.openRouterKey?.trim()) {
-      this.showToast("Add your OpenRouter key in Settings");
-      return false;
-    }
-
-    const history = this.parseChat(card.body);
-    history.push({ role: "user", content: text });
-    history.push({ role: "assistant", content: "" });
-    const assistantIdx = history.length - 1;
-    this.ui.chatStreamingCardId = cardId;
-    this.emit();
-
-    const requestMessages: ChatMessage[] = [
-      {
-        role: "system",
-        content: `${
-          resolveAssistantProfile(
-            "chat",
-            this.domain.activeProfileIds,
-            this.domain.assistantProfiles,
-          ).systemPrompt
-        }\n\n${this.buildChatContext(card)}`,
-      },
-      ...history.slice(0, assistantIdx), // everything up to (not incl.) the empty assistant
-    ];
-
-    try {
-      await this.writeChat(cardId, history, true);
-      await this.agentGateway.streamChat(
-        requestMessages,
-        this.domain.openRouterKey,
-        this.domain.selectedModel,
-        (delta) => {
-          history[assistantIdx].content += delta;
-          // Update in-memory + emit for a live feed; persistence happens once at the end.
-          void this.writeChat(cardId, history, false);
-        },
-      );
-      await this.writeChat(cardId, history, true);
-    } catch (err: any) {
-      history[assistantIdx].content +=
-        `\n\n_[error: ${err?.message || "stream failed"}]_`;
-      await this.writeChat(cardId, history, true);
-      this.showToast("Chat failed");
-    } finally {
-      this.ui.chatStreamingCardId = null;
-      this.emit();
-    }
-    return true;
-  }
 
   // --- Search & Extraction ---
 
@@ -2076,6 +1880,8 @@ export class GriotController {
       autoGroupByCommand: this.domain.autoGroupByCommand,
       interleaveReviews: this.domain.interleaveReviews,
       searchSiteFlags: this.domain.searchSiteFlags,
+      agentPromptOverrides: this.domain.agentPromptOverrides,
+      webSearchEnabled: this.domain.webSearchEnabled,
     };
   }
 
@@ -2216,11 +2022,6 @@ export class GriotController {
         this.startReview();
         return true;
       }
-      if (outcome.kind === "goal") {
-        this.openGoalArchitect();
-        return true;
-      }
-
       const pendingRecord =
         outcome.cards.length > 0
           ? await this.settleRunOutput(outcome.cards, {
@@ -2554,6 +2355,7 @@ export class GriotController {
         mission: this.activeWorkspace()?.mission,
         apiKey: this.domain.openRouterKey,
         model: this.domain.selectedModel,
+        systemPrompt: this.agentPromptBody("search-query-suggestion"),
       });
       this.ui.aiQuerySuggestions = queries;
     } catch (err: any) {
@@ -2652,16 +2454,25 @@ export class GriotController {
 
   // --- Workspace Agent (delegated to WorkspaceAgentWorkflow; Phase B — no model call) ---
 
+  /**
+   * The Workspace Agent's live scope: the current multi-selection, the group being
+   * viewed, and the card open in the detail modal. Read fresh by the workflow's host on
+   * every projection and every send, so nothing here is ever a stale snapshot.
+   */
+  private workspaceAgentContext(): WorkspaceAgentContext {
+    return {
+      selectedCardIds: Array.from(this.domain.selection),
+      currentGroupId: this.domain.currentGroupId,
+      openCardId: this.ui.openCardId,
+    };
+  }
+
   /** Opens the "Ask GRIOT" sheet scoped to the active workspace and current selection. */
   openWorkspaceAgent(): void {
     const workspaceId = this.domain.activeWorkspaceId;
     if (!workspaceId) return;
 
-    const context: WorkspaceAgentContext = {
-      selectedCardIds: Array.from(this.domain.selection),
-      currentGroupId: this.domain.currentGroupId,
-    };
-    this.workspaceAgent.openConversation(workspaceId, context);
+    this.workspaceAgent.openConversation(workspaceId, this.workspaceAgentContext());
   }
 
   closeWorkspaceAgent(): void {
@@ -2679,12 +2490,12 @@ export class GriotController {
   }
 
   /**
-   * Confirms a proposed tool action, dispatching it to the real interactor via
-   * `dispatchWorkspaceAgentTool` — see `WorkspaceAgentWorkflow.confirmProposal`. This is
-   * the only path by which a Workspace Agent proposal ever executes.
+   * The user pressed `+` on a tag in a reply: dispatches that tag's intent to the real
+   * interactor via `dispatchWorkspaceAgentTool` — see `WorkspaceAgentWorkflow.addTag`.
+   * This is the only path by which anything a reply mentioned ever gets created.
    */
-  async confirmWorkspaceAgentAction(id: string): Promise<void> {
-    await this.workspaceAgent.confirmProposal(id);
+  async addWorkspaceAgentTag(messageId: string, tagId: string): Promise<void> {
+    await this.workspaceAgent.addTag(messageId, tagId);
   }
 
   /**
@@ -2702,6 +2513,10 @@ export class GriotController {
    *   dedicated interactor exists) is left as a documented no-op rather than fabricating
    *   execution. `suggest_next_actions` and `ask_clarifying_question` are purely
    *   informational proposals with nothing to confirm.
+   * - `create_mission` goes through the surviving `CreateMissionPlanInteractor` — the
+   *   capability the retired Goal Architect sheet used to own. The agent's steps become
+   *   `agent`-origin insights, so every card it produces records itself as the model's
+   *   suggestion rather than the user's own words, and nothing exists until confirm.
    */
   private async dispatchWorkspaceAgentTool(
     tool: AgentToolIntent,
@@ -2904,6 +2719,74 @@ export class GriotController {
         return summary;
       }
 
+      case "create_mission": {
+        // The agent's plan is origin-tagged `agent` throughout: it is a hypothesis the
+        // user must verify, and the mission's own "assumptions"/"known gaps" notes say so.
+        const inputCardIds = tool.cardIds ?? [];
+        const map = mergeIntoWorkingMap(EMPTY_WORKING_MAP, {
+          goal: insight(tool.goalStatement, "agent"),
+          ...(tool.targetDeliverable
+            ? { deliverable: insight(tool.targetDeliverable, "agent") }
+            : {}),
+          assumptions: [
+            insight(
+              `This plan was proposed by the assistant from ${inputCardIds.length} note${inputCardIds.length === 1 ? "" : "s"} in this space. Verify each step.`,
+              "agent",
+            ),
+          ],
+        });
+        // Built from the narrowed intent, so the steps here are exactly the ones the user
+        // left checked — which is what makes the completion count truthful.
+        const proposal: MissionProposal = {
+          title: tool.title,
+          goalStatement: tool.goalStatement,
+          targetDeliverable: tool.targetDeliverable ?? "",
+          successCriteria: tool.successCriteria ?? [],
+          constraints: [],
+          assumptions: map.assumptions,
+          firstMilestone: tool.steps[0]?.title ?? "",
+          smallestProof: "",
+          prerequisites: [],
+          risks: [],
+          unknowns: [],
+          recommendedResearch: [],
+          suggestedCards: tool.steps.map((step) => ({
+            role: step.role ?? "task",
+            type: "note" as const,
+            title: step.title,
+            body: step.detail ?? step.title,
+            origin: "agent" as const,
+          })),
+        };
+
+        const outcome = await this.createMissionPlanInteractor.execute({
+          workspaceId,
+          proposal,
+          map,
+          answerIds: inputCardIds,
+          modelUsed: true,
+          model,
+          webUsed: false,
+          startedAt,
+        });
+
+        this.domain.workspaces = this.domain.workspaces.map((workspace) =>
+          workspace.id === outcome.workspace.id ? outcome.workspace : workspace,
+        );
+
+        const summary = `Created mission "${tool.title}" with ${tool.steps.length} step${tool.steps.length === 1 ? "" : "s"}.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:create_mission",
+          workspaceId,
+          parentId,
+          inputCardIds,
+          createdCards: outcome.cards,
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
       case "draft_experiment":
         // No dedicated interactor exists yet — deliberately not dispatched. Left as an
         // inert, truthful no-op rather than fabricating execution.
@@ -3076,6 +2959,7 @@ export class GriotController {
       messages,
       apiKey: this.domain.openRouterKey,
       model: this.domain.selectedModel,
+      systemPrompt: this.agentPromptBody("prompt-architect"),
     });
   }
 

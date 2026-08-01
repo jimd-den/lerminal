@@ -83,6 +83,23 @@ describe("resolveScopedContext", () => {
     expect(result.truncated).toBe(true);
   });
 
+  it("keeps the selection when a crowded workspace would otherwise fill the budget", () => {
+    const selected = createCard({ id: "sel", workspaceId: "w", type: "note", title: "Sel", body: "SELECTED BODY" });
+    const noise = Array.from({ length: 100 }, (_, i) =>
+      createCard({ id: `n${i}`, workspaceId: "w", type: "note", title: `N${i}`, body: "x".repeat(200) }),
+    );
+
+    const result = resolveScopedContext({
+      scope: "workspace",
+      allCards: [...noise, selected],
+      selectedCards: [selected],
+      parentId: null,
+    });
+
+    expect(result.cards[0].id).toBe("sel");
+    expect(result.truncated).toBe(true);
+  });
+
   it("de-duplicates a card that is both selected and a breadcrumb ancestor", () => {
     const parent = createCard({ id: "p", workspaceId: "w", type: "group", title: "P", body: "" });
     const result = resolveScopedContext({

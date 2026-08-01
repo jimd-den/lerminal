@@ -97,7 +97,6 @@ export const RESERVED_COMMAND_NAMES: readonly string[] = [
   "search",
   "cloze",
   "elaborate",
-  "chat",
   "note",
   "split",
 ];

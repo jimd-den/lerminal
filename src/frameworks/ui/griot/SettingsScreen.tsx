@@ -32,6 +32,12 @@ import {
   DEFAULT_CARD_INSTRUCTION,
   DEFAULT_CHUNK_INSTRUCTION,
 } from "../../../entities/promptPreset";
+import {
+  AGENT_PROMPT_DEFINITIONS,
+  AGENT_PROMPT_IDS,
+  AgentPromptId,
+  PARENT_SYSTEM_PROMPT,
+} from "../../../entities/agentPrompts";
 import { Chip, CollapsibleSection, SectionLabel, Slab, SystemHeader } from "./components";
 import { ACCENT_OPTIONS, GriotTheme } from "./theme";
 import { AppearanceSettingsSection } from "./AppearanceSettings";
@@ -43,7 +49,6 @@ const CAPABILITIES: { id: AssistantCapability; label: string }[] = [
   { id: "chunk-document", label: "DOCUMENT CHUNKING" },
   { id: "chat", label: "CHAT" },
   { id: "cloze", label: "CLOZE" },
-  { id: "goal-architect", label: "GOAL ARCHITECT" },
 ];
 
 export function SettingsScreen({
@@ -348,6 +353,13 @@ export function SettingsScreen({
           onPress={() => controller.setSelectedModel(customModel)}
         />
       </Panel>
+      <ToggleRow
+        title="Web search"
+        detail="Let the model's provider search the web during agent turns. Only sources it actually consulted are ever shown."
+        enabled={state.webSearchEnabled}
+        theme={theme}
+        onToggle={() => controller.setWebSearchEnabled(!state.webSearchEnabled)}
+      />
       </CollapsibleSection>
 
       <CollapsibleSection theme={theme} title="STUDY BEHAVIOR">
@@ -437,12 +449,12 @@ export function SettingsScreen({
           />
         </View>
         {/* The assisted alternative to a blank space. Both stay available: creating a
-            workspace above never involves a model, and this never creates one until the
-            draft mission is accepted. */}
+            workspace above never involves a model, and the agent never creates anything
+            until its proposal is confirmed. */}
         <ActionButton
-          label="PLAN A GOAL"
+          label="PLAN A GOAL WITH THE AGENT"
           theme={theme}
-          onPress={() => void controller.dispatchSuggestedAction({ kind: "goal" })}
+          onPress={() => controller.openWorkspaceAgent()}
         />
         <Pressable
           onPress={deleteWorkspace}
@@ -771,6 +783,10 @@ export function SettingsScreen({
       </Panel>
       </CollapsibleSection>
 
+      <CollapsibleSection theme={theme} title="AGENT PROMPTS">
+      <AgentPromptsSection controller={controller} state={state} theme={theme} />
+      </CollapsibleSection>
+
       <CollapsibleSection theme={theme} title="CARD TYPE REGISTRY">
       <Panel theme={theme}>
         {state.cardTypes.map((type) => (
@@ -970,6 +986,138 @@ export function SettingsScreen({
   );
 }
 
+/**
+ * # Agent Prompts — every instruction the app sends, and the layer it won't let you touch
+ *
+ * Each row edits a prompt's **body**: role, voice, emphasis. What it cannot edit is shown
+ * first and marked read-only — the parent rules (never claim a tool ran, never invent a
+ * source or an id) and, per capability, the output contract the app parses. Those are
+ * composed around the body at send time by `composeSystemPrompt`, so nothing typed into
+ * these fields can break parsing or remove a truthfulness guarantee. Saying so plainly
+ * here is the point: a customisation surface that hides its own limits reads as a promise
+ * it can't keep.
+ */
+function AgentPromptsSection({
+  controller,
+  state,
+  theme,
+}: {
+  controller: GriotController;
+  state: AppState;
+  theme: GriotTheme;
+}) {
+  const [parentOpen, setParentOpen] = useState(false);
+
+  return (
+    <Panel theme={theme}>
+      <View
+        style={[
+          styles.promptGuide,
+          { borderColor: theme.accent, backgroundColor: theme.accentSoft },
+        ]}
+      >
+        <Text
+          style={[
+            styles.promptGuideTitle,
+            { color: theme.accent, fontFamily: theme.fontMono },
+          ]}
+        >
+          ALWAYS ENFORCED // NOT EDITABLE
+        </Text>
+        <Text style={[styles.promptGuideText, { color: theme.textMuted }]}>
+          These rules, and each capability's response format, are added around whatever
+          you write below. You are changing how an assistant behaves — never what the app
+          is able to parse, or what it is allowed to claim.
+        </Text>
+        <Pressable onPress={() => setParentOpen(!parentOpen)}>
+          <Text
+            style={[
+              styles.promptGuideTitle,
+              { color: theme.accent, fontFamily: theme.fontMono },
+            ]}
+          >
+            {parentOpen ? "HIDE THE RULES" : "SHOW THE RULES"}
+          </Text>
+        </Pressable>
+        {parentOpen ? (
+          <Text
+            style={[
+              styles.promptExample,
+              { color: theme.text, fontFamily: theme.fontMono },
+            ]}
+          >
+            {PARENT_SYSTEM_PROMPT}
+          </Text>
+        ) : null}
+      </View>
+
+      {AGENT_PROMPT_IDS.map((id) => (
+        <AgentPromptRow
+          key={id}
+          id={id}
+          override={state.agentPromptOverrides[id]}
+          controller={controller}
+          theme={theme}
+        />
+      ))}
+    </Panel>
+  );
+}
+
+function AgentPromptRow({
+  id,
+  override,
+  controller,
+  theme,
+}: {
+  id: AgentPromptId;
+  override: string | undefined;
+  controller: GriotController;
+  theme: GriotTheme;
+}) {
+  const definition = AGENT_PROMPT_DEFINITIONS[id];
+  const [draft, setDraft] = useState(override ?? definition.defaultBody);
+  const isCustomised = Boolean(override && override.trim());
+
+  return (
+    <View style={styles.agentPromptRow}>
+      <FieldLabel theme={theme}>{definition.label.toUpperCase()}</FieldLabel>
+      <Text style={[styles.promptHint, { color: theme.textFaint }]}>
+        {definition.description}
+      </Text>
+      <TextInput
+        multiline
+        value={draft}
+        onChangeText={setDraft}
+        onBlur={() => controller.setAgentPromptOverride(id, draft)}
+        placeholder={definition.defaultBody}
+        placeholderTextColor={theme.textFaint}
+        style={[styles.promptInput, { color: theme.text, borderColor: theme.line }]}
+      />
+      <View style={styles.inlineForm}>
+        <Text style={[styles.promptHint, { color: theme.textFaint, flex: 1 }]}>
+          {isCustomised ? "CUSTOMISED" : "USING THE DEFAULT"}
+        </Text>
+        <ActionButton
+          label="SAVE"
+          theme={theme}
+          compact
+          onPress={() => controller.setAgentPromptOverride(id, draft)}
+        />
+        <ActionButton
+          label="RESET TO DEFAULT"
+          theme={theme}
+          compact
+          onPress={() => {
+            setDraft(definition.defaultBody);
+            controller.resetAgentPrompt(id);
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
 function AssistantDesignerModal({
   visible,
   controller,
@@ -1048,9 +1196,8 @@ function AssistantDesignerModal({
   };
   const save = async () => {
     if (!name.trim() || !prompt.trim()) return;
-    // Goal Architect deliberately has no entry: it returns a GoalArchitectTurn, not the
-    // generic card-JSON shape every output contract here describes — see
-    // normalizeGoalArchitectTurn, which validates that shape separately.
+    // Only capabilities whose model output is card-shaped JSON get an output contract;
+    // anything else validates its own shape at its own boundary.
     const outputContractsByCapability: Partial<Record<AssistantCapability, OutputContractKind>> = {
       "generate-cards": "cards-v1",
       "chunk-document": "chunks-v1",
@@ -1487,6 +1634,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     paddingHorizontal: 8,
   },
+  agentPromptRow: { marginBottom: 18 },
   promptInput: {
     minHeight: 150,
     borderWidth: 1,

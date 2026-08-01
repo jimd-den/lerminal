@@ -86,3 +86,54 @@ describe("screens module", () => {
     }
   });
 });
+
+/**
+ * The assistant needs a way in that does not depend on the Workspace Pulse having
+ * something to say. It is an affordance, not a place: `CorePlace` is a routing union, and
+ * the conversation is a modal sheet layered over the screen it is scoped to.
+ */
+describe("Ask affordance", () => {
+  const shell = read("MainLayout.tsx");
+  const components = read("griot/components.tsx");
+
+  it("is mounted in the shell and opens the conversation", () => {
+    expect(shell).toContain("AskAffordance");
+    expect(shell).toContain("controller.openWorkspaceAgent()");
+  });
+
+  it("is not a fifth navigation place", () => {
+    // The routing union stays four members; nothing routes to the agent.
+    expect(components).toContain('export type CorePlace = "deck" | "library" | "capture" | "more";');
+    expect(components).not.toContain('id: "agent"');
+  });
+
+  it("stands down for the sheet it opens and for the selection tray", () => {
+    expect(shell).toContain("!state.workspaceAgent.isOpen && state.selection.size === 0");
+  });
+
+  it("is positioned relative to the bottom cluster, not to the nav's items", () => {
+    // So the pulse and activity banner push it up rather than being covered by it, and
+    // changing how many tabs the bar has cannot strand it.
+    expect(shell).toContain("bottomCluster");
+    expect(shell).toContain("askSlot");
+  });
+
+  it("meets the tap-target floor, is labelled, and uses theme tokens", () => {
+    expect(components).toContain('accessibilityLabel="Ask GRIOT"');
+    expect(components).toMatch(/ask: \{[^}]*minHeight: 5[2-9]/);
+    // No raw hex anywhere in the affordance's colours.
+    const askBlock = components.slice(
+      components.indexOf("export function AskAffordance"),
+      components.indexOf("export function BottomNavigation")
+    );
+    expect(askBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(askBlock).toContain("theme.accent");
+    // Press feedback drops the scale transform when motion is reduced.
+    expect(askBlock).toContain("reducedMotion");
+  });
+
+  it("leaves room for itself at the bottom of scrolled screens", () => {
+    const screenStyles = read("griot/screens/screenStyles.ts");
+    expect(screenStyles).toMatch(/content: \{[^}]*paddingBottom: 10[0-9]/);
+  });
+});

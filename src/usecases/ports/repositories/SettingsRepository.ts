@@ -8,6 +8,7 @@
  */
 
 import { AppearanceSettings } from "../../../entities/appearance";
+import { AgentPromptOverrides } from "../../../entities/agentPrompts";
 
 export interface AppSettings {
   theme: "dark" | "light";
@@ -29,6 +30,21 @@ export interface AppSettings {
   interleaveReviews?: boolean;
   /** Configurable Unix-like site flags for the search command (e.g., wiki: wikipedia.org) */
   searchSiteFlags?: Record<string, string>;
+  /**
+   * The user's rewritten agent prompt bodies, by id. Optional so blobs written before
+   * the prompt registry existed load unchanged, with every prompt at its default.
+   *
+   * Only the *editable* layer is stored: the parent rules and each capability's output
+   * contract are composed at send time and are not persisted, so they cannot be lost,
+   * corrupted, or edited out through storage.
+   */
+  agentPromptOverrides?: AgentPromptOverrides;
+  /**
+   * Whether the model provider's own web search rides along with agent calls.
+   * Optional and **absent means on** — a blob written before this existed gets the new
+   * default rather than being read as an explicit opt-out.
+   */
+  webSearchEnabled?: boolean;
 }
 
 export interface SettingsRepository {

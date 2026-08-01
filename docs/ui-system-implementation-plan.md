@@ -35,8 +35,8 @@ Two naming conflicts to resolve up front, both cosmetic:
 | Status gap report (deterministic-first) | `GapReportInteractor` + `GapReportSheet.tsx` |
 | Research bench / evidence cards / keep-reject-extract | `ResearchWorkflow` + `ResearchResultsSheet.tsx` |
 | Cited brief gated on retained evidence | `CreateResearchBriefInteractor` |
-| Goal Architect (one question at a time, working map, labelled hypotheses, no-key path, opt-in research) | `GoalArchitectWorkflow`, `entities/goalArchitect.ts`, `GoalArchitectSheet.tsx` (built this session) |
-| First-run capture-first entry | `GriotController.init()` first-launch check + `markFirstRun` |
+| Goal/mission planning (working map, labelled hypotheses, nothing created until confirm) | Folded into the Workspace Agent as the `create_mission` tool intent — see "Goal Architect fold-in" below |
+| First-run capture-first entry | `GriotController.init()` first-launch check, which opens the Workspace Agent |
 | Selection dock stating count/expansion, routing to preflight | `SelectionTray.tsx` + `selectionActions.ts` |
 | Idle dock: Capture/Library/Review/Tools | `BottomNavigation` in `components.tsx` |
 | Review loop, predict-then-reveal-capable | `ReviewSession`, `ReviewModal.tsx`, FSRS scheduler |
@@ -295,3 +295,58 @@ This plan is large enough that each phase should land as its own reviewable incr
 the same pattern the Goal Architect work used (entities → workflow → presenter/UI →
 entry points, each its own commit with tests passing throughout). Phase 1 is the
 dependency for everything after it and is where implementation starts next.
+
+
+## Goal Architect fold-in
+
+The Goal Architect was a second conversational agent with its own sheet, its own staged
+question flow, and its own model-turn contract. Having two agents meant two places to
+teach, two prompt bodies to keep honest, and a planning conversation the user could not
+start from the notes they were already looking at. It is gone; the one Workspace Agent
+("Ask GRIOT") now plans missions as an ordinary proposal mid-conversation.
+
+**Deleted**
+
+- `entities/goalArchitect.ts` — the staged question flow (`GOAL_QUESTIONS`,
+  `selectNextQuestion`, `recordAnswer`, `deriveWorkingMap`, `normalizeGoalArchitectTurn`).
+- `usecases/goal/GoalArchitectWorkflow.ts` and the whole `usecases/goal/` directory.
+- `usecases/pipeline/GoalCommand.ts`, its `CommandRegistry` entry, the `goal` entry in
+  `commandCatalog`, and the `{ kind: "goal" }` pipeline outcome it halted with.
+- `adapters/presenters/GoalArchitectPresenter.ts` and `frameworks/ui/griot/GoalArchitectSheet.tsx`.
+- `AgentGateway.designGoalArchitectTurn` + `GoalArchitectTurnResult`, and the
+  `GoalArchitectCitation` alias, plus the `OpenRouterAgentGateway` implementation.
+- The `goal-architect` `AgentPromptId`, its prompt definition, the `goal-architect`
+  `AssistantCapability`, and the `builtin-goal-architect` profile. Profiles already saved
+  against that capability still load — nothing validates the field on read — they simply
+  no longer resolve for any capability.
+- The `{ kind: "goal" }` `SuggestedActionDispatch` variant and its handlers.
+
+**Rehomed, not deleted**
+
+- `entities/mission.ts` — `InsightOrigin`, `Insight`, `WorkingMap`, `EMPTY_WORKING_MAP`,
+  `RecommendedResearch`, `ProposedCard`, `MissionProposal`, `mergeIntoWorkingMap`,
+  `buildMissionProposal`, `describeKnownGaps`, `describeAssumptions`. This is exactly the
+  part that describes a *mission* rather than a *wizard*, which is why it survived.
+- `usecases/mission/CreateMissionPlanInteractor.ts` — still the one place a proposal
+  becomes real cards, a workspace mission, and an undoable receipt.
+
+**Where the capability lives now**
+
+`AgentToolIntent` gained `create_mission` (title, goal statement, optional deliverable and
+success criteria, ordered steps, and the card ids the plan was drawn from).
+`normalizeWorkspaceAgentResponse` validates it with the same closed-shape, no-salvage rule
+as every other intent, and rejects card ids the workspace does not contain.
+`toolIntentItems`/`narrowToolIntent` expose each step and each source card as its own
+checkbox, so an unwanted step is never created and the completion message counts what
+actually ran. `GriotController.dispatchWorkspaceAgentTool` dispatches it through
+`CreateMissionPlanInteractor` with the same `finishWorkspaceAgentDispatch` treatment the
+other intents get.
+
+The invariants the deleted feature was built around are unchanged: agent-proposed content
+is tagged `InsightOrigin: "agent"` and carries agent `Provenance`, nothing is created until
+the user confirms, a mission is never enrolled into review, and the agent still cannot
+search — it can only propose queries the research preflight runs with approval.
+
+The first-run empty-launch check now opens the Workspace Agent instead of the Goal
+Architect sheet; `markFirstRun` lived on the deleted workflow and went with it, so the
+sheet's dismiss control is the agent's ordinary close.

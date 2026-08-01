@@ -16,7 +16,9 @@ import { StyleSheet } from "react-native";
  */
 export const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingBottom: 42 },
+  // The bottom inset clears the floating Ask affordance, so the last item in a list is
+  // never stranded underneath it.
+  content: { paddingHorizontal: 16, paddingBottom: 104 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
   intro: { fontSize: 15, lineHeight: 22, marginHorizontal: 3, marginBottom: 4 },
   kicker: {
@@ -25,21 +27,6 @@ export const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 1.3,
   },
-  beginButton: {
-    minHeight: 62,
-    borderTopLeftRadius: 5,
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
-    borderBottomLeftRadius: 12,
-    paddingHorizontal: 20,
-    marginTop: 22,
-    alignSelf: "stretch",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 11,
-  },
-  beginText: { fontSize: 17, fontWeight: "800" },
   pendingPanel: {
     minHeight: 68,
     borderRadius: 13,
@@ -97,14 +84,6 @@ export const styles = StyleSheet.create({
   overview: { borderRadius: 15, borderWidth: 1, padding: 17, marginTop: 13 },
   overviewText: { fontSize: 19, fontWeight: "700", marginTop: 8 },
   overviewMeta: { fontSize: 12, marginTop: 6 },
-  discussPanel: {
-    borderWidth: 1,
-    borderRadius: 15,
-    padding: 17,
-    marginTop: 13,
-  },
-  discussTitle: { fontSize: 20, fontWeight: "800" },
-  discussBody: { fontSize: 14, lineHeight: 20, marginTop: 6 },
   studyCommands: { marginTop: 13 },
   commandSlab: {
     minHeight: 62,

@@ -5,7 +5,6 @@ import {
   createInitialUiState,
 } from "../AppSessionStore";
 import { Card, createCard } from "../../../entities/card";
-import { INITIAL_GOAL_ARCHITECT_STATE } from "../../../usecases/goal/GoalArchitectWorkflow";
 
 const card = (id: string, parentId?: string, type: Card["type"] = "note"): Card => ({
   ...createCard({ workspaceId: "w1", type, title: id, body: "b", parentId }),
@@ -34,8 +33,6 @@ function input(overrides: Partial<PresentAppStateInput> = {}): PresentAppStateIn
       isEditorOpen: false,
       isGapReportOpen: false,
     },
-    goalArchitect: INITIAL_GOAL_ARCHITECT_STATE,
-    canProposeMission: false,
     operations: { pending: [], result: null, undoableOperationId: null },
     review: { queue: [], index: 0, isOpen: false, revealAnswer: false },
     gapReport: null,

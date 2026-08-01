@@ -88,6 +88,8 @@ const localStyles = StyleSheet.create({
   brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
   brandDot: { width: 9, height: 9, borderRadius: 3 },
   brandName: { fontSize: 17, fontWeight: "800", letterSpacing: 0.5 },
-  brandSub: { fontSize: TypeScale.meta, marginTop: 3, lineHeight: 18 },
+  // Indented past the dot (9) + gap (9) so the subtext starts on the same vertical
+  // as the brand name it sits under, rather than hanging left of its own heading.
+  brandSub: { fontSize: TypeScale.meta, marginTop: 3, lineHeight: 18, marginLeft: 18 },
   tag: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.3, marginTop: 3 },
 });

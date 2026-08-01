@@ -9,7 +9,7 @@ import {
 } from "../../adapters/presenters/GriotDeckPresenter";
 import { useControllerState } from "./useControllerState";
 import { useDeckNavigation } from "./useDeckNavigation";
-import { BottomNavigation } from "./griot/components";
+import { AskAffordance, BottomNavigation } from "./griot/components";
 import { SelectionTray } from "./griot/SelectionTray";
 import { ActivityBanner } from "./griot/ActivityBanner";
 import { WorkspacePulse } from "./griot/WorkspacePulse";
@@ -24,6 +24,7 @@ import {
 } from "./griot/screens";
 import { SettingsScreen } from "./griot/SettingsScreen";
 import { resolveGriotTheme } from "./griot/theme";
+import { useReducedMotion } from "./useReducedMotion";
 
 /**
  * # Main Layout — the shell
@@ -42,6 +43,7 @@ export function MainLayout({ controller }: { controller: GriotController }) {
   const state = useControllerState(controller);
   const theme = resolveGriotTheme(state.theme, state.accent, state.appearance);
   const deck = presentGriotDeck(state);
+  const reducedMotion = useReducedMotion();
 
   // The capture draft lives here rather than in the screen: a pending-input prompt can
   // interrupt a capture, and the draft has to outlive that round trip.
@@ -220,21 +222,40 @@ export function MainLayout({ controller }: { controller: GriotController }) {
             </View>
           ) : null}
 
-          {/* Always mounted: in-flight work outlives the screen that started it, so the
-              shell reports it rather than each screen owning its own indicator. */}
-          <ActivityBanner controller={controller} state={state} theme={theme} />
-          <WorkspacePulse controller={controller} state={state} theme={theme} />
+          {/* The bottom cluster: banners, then either the selection tray or the nav.
+              The Ask affordance floats above whatever the cluster currently is, anchored
+              to the cluster's own top edge rather than to a fixed offset from the bar —
+              so it can never land on top of the pulse or the activity banner, and it is
+              unaffected by how many items the nav has. */}
+          <View style={styles.bottomCluster}>
+            {/* Always mounted: in-flight work outlives the screen that started it, so the
+                shell reports it rather than each screen owning its own indicator. */}
+            <ActivityBanner controller={controller} state={state} theme={theme} />
+            <WorkspacePulse controller={controller} state={state} theme={theme} />
 
-          {state.selection.size > 0 ? (
-            <SelectionTray
-              controller={controller}
-              state={state}
-              theme={theme}
-              onDelete={confirmSelectionDelete}
-            />
-          ) : (
-            <BottomNavigation place={nav.place} theme={theme} onChange={nav.changePlace} />
-          )}
+            {/* Hidden while the sheet is up (it would be stranded under the modal) and
+                while cards are selected, where the tray owns the bottom of the screen. */}
+            {!state.workspaceAgent.isOpen && state.selection.size === 0 ? (
+              <View style={styles.askSlot} pointerEvents="box-none">
+                <AskAffordance
+                  theme={theme}
+                  reducedMotion={reducedMotion}
+                  onPress={() => controller.openWorkspaceAgent()}
+                />
+              </View>
+            ) : null}
+
+            {state.selection.size > 0 ? (
+              <SelectionTray
+                controller={controller}
+                state={state}
+                theme={theme}
+                onDelete={confirmSelectionDelete}
+              />
+            ) : (
+              <BottomNavigation place={nav.place} theme={theme} onChange={nav.changePlace} />
+            )}
+          </View>
         </View>
       </SafeAreaView>
 
@@ -264,11 +285,23 @@ const styles = StyleSheet.create({
     borderRightWidth: StyleSheet.hairlineWidth,
   },
   screenSlot: { flex: 1 },
+  // `relative` so the Ask affordance can hang off the cluster's top edge; the cluster
+  // itself stays in normal flow beneath the screen.
+  bottomCluster: { position: "relative" },
+  askSlot: {
+    position: "absolute",
+    right: 14,
+    // Above the cluster's top edge, so the pulse/activity banner push it up with them
+    // instead of being covered by it.
+    top: -62,
+    alignItems: "flex-end",
+  },
   toast: {
     position: "absolute",
     left: 24,
     right: 24,
-    bottom: 86,
+    // Clears the Ask affordance, which floats just above the bottom cluster.
+    bottom: 150,
     minHeight: 48,
     borderRadius: 10,
     borderWidth: 1,

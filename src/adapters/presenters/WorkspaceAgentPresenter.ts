@@ -1,8 +1,15 @@
+import { Card } from "../../entities/card";
+import { WebCitation } from "../../entities/webCitation";
 import { Workspace } from "../../entities/workspace";
+import { toolIntentItems } from "../../entities/workspaceAgent";
+import { AgentMessageSegment, ParsedAgentTag } from "../../entities/agentTags";
 import {
+  contextCardIds,
+  tagActionKey,
   WorkspaceAgentMessage,
-  WorkspaceAgentProposalViewState,
+  WorkspaceAgentSentContext,
   WorkspaceAgentState,
+  WorkspaceAgentTagAction,
 } from "../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
 import { WorkspacePulseObservation } from "../../usecases/workspaceAgent/observeWorkspace";
 
@@ -62,31 +69,96 @@ export interface WorkspaceAgentMessageViewModel {
   speaker: "user" | "assistant";
   text: string;
   pending: boolean;
+  /**
+   * Receipts: sources the model's provider actually consulted for this reply. Empty
+   * whenever nothing came back, which is the only honest default — the sheet renders the
+   * "sources consulted" strip if and only if this is non-empty, so nothing in the UI can
+   * imply a search happened on the strength of a setting.
+   *
+   * These are *not* saved research candidates. The app's own `SearchGateway` /
+   * `ResearchWorkflow` path produces those, and it stays a separate mechanism.
+   */
+  webCitations: WebCitation[];
+  /**
+   * What actually left the device for this reply, resolved to readable card titles —
+   * the sheet's transparency disclosure. Present on assistant messages only.
+   */
+  sentContext?: WorkspaceAgentSentContextViewModel;
+  /**
+   * The model's own intermediate thinking, when the provider returned any. Absent
+   * whenever it didn't: the sheet renders reasoning if and only if this is set, so no
+   * turn can be made to look like it reasoned.
+   */
+  reasoning?: string;
+  /**
+   * The reply as prose and inline tag chips, in the order the model wrote them. A plain
+   * conversational reply — the common case — is a single text segment and renders as
+   * nothing but a bubble.
+   */
+  segments: WorkspaceAgentSegmentViewModel[];
+  /** True while this reply is still being generated. The sheet shows the partial text. */
+  streaming: boolean;
 }
 
-/** Summary line for the sheet's context chips row. */
-export interface WorkspaceAgentContextViewModel {
-  workspaceName: string;
+/** One inline chip: what the model offered to create, and what has become of it. */
+export interface WorkspaceAgentTagViewModel {
+  id: string;
+  /** The reply the chip belongs to — the other half of the key `+` dispatches with. */
+  messageId: string;
+  /** NOTE / QUESTION / LINK / GROUP. */
+  kindLabel: string;
+  title: string;
+  /**
+   * False when there is nothing to add: an unresolvable card reference, a link that isn't
+   * a URL, a group with nothing in it. The `+` disables and `detail` says why.
+   */
+  canAdd: boolean;
+  /**
+   * The truthful line under the chip: why it can't be added, or what happened when it
+   * was. Absent while a healthy chip is simply waiting to be tapped.
+   */
+  detail?: string;
+  /** "offered" until the user taps `+`. Nothing is created in any other state. */
+  status: "offered" | "pending" | "done" | "failed";
+  /**
+   * For a chip that would touch several cards (a group), the titles it would actually
+   * use — resolved here, because only the adapter layer knows what a card is called.
+   */
+  items: string[];
+}
+
+export type WorkspaceAgentSegmentViewModel =
+  | { kind: "text"; text: string }
+  | { kind: "tag"; tag: WorkspaceAgentTagViewModel };
+
+/** The audit view of one turn's request — see `WorkspaceAgentSentContext`. */
+export interface WorkspaceAgentSentContextViewModel {
+  /** The group the turn was scoped to, or null for the workspace root. */
   groupLabel: string | null;
-  selectedCount: number;
+  /**
+   * Every card that travelled, in send order. `title` falls back to the id when the card
+   * has since been deleted — an id is still the truth about what was sent.
+   */
+  cards: Array<{ id: string; title: string; focus: boolean }>;
+  /** The verbatim briefing text that was sent. */
+  briefing: string;
 }
 
 /**
- * A proposed tool action, projected for display only — inspectable, never something this
- * presenter (or the sheet it feeds) can execute. `toolSummary` is a plain-language render
- * of the closed `AgentToolIntent` union so the chip never has to import model internals.
+ * Summary line for the sheet's context chips row.
+ *
+ * `cardCount` is the number of cards that will actually accompany the next message — the
+ * open card plus the selection, de-duplicated, exactly as `contextCardIds` computes it for
+ * the briefing. The chips therefore cannot over-claim: they are projected from the same
+ * live context the workflow sends.
  */
-export interface WorkspaceAgentProposalViewModel {
-  id: string;
-  label: string;
-  explanation: string;
-  toolSummary: string;
-  /** "proposed" → "pending-dispatch" → "done" | "failed" — see `WorkspaceAgentWorkflow`. */
-  status: "proposed" | "pending-dispatch" | "done" | "failed";
-  /** True once confirmed (any non-"proposed" status) — the confirm control disables. */
-  isPendingDispatch: boolean;
-  /** Truthful outcome text once status is "done" or "failed". */
-  resultMessage?: string;
+export interface WorkspaceAgentContextViewModel {
+  workspaceName: string;
+  groupLabel: string | null;
+  /** Cards accompanying the next message (open card + selection, de-duplicated). */
+  cardCount: number;
+  /** Title of the card open in the detail modal, if any — the "explain this" focus. */
+  focusCardTitle: string | null;
 }
 
 export interface WorkspaceAgentViewModel {
@@ -95,7 +167,6 @@ export interface WorkspaceAgentViewModel {
   messages: WorkspaceAgentMessageViewModel[];
   /** True when there is nothing in the transcript yet. */
   isEmpty: boolean;
-  proposals: WorkspaceAgentProposalViewModel[];
   isThinking: boolean;
   agentError: string | null;
 }
@@ -103,7 +174,8 @@ export interface WorkspaceAgentViewModel {
 const EMPTY_CONTEXT_VIEW: WorkspaceAgentContextViewModel = {
   workspaceName: "",
   groupLabel: null,
-  selectedCount: 0,
+  cardCount: 0,
+  focusCardTitle: null,
 };
 
 /**
@@ -115,77 +187,127 @@ export function presentWorkspaceAgent(
   state: WorkspaceAgentState,
   workspaces: Workspace[],
   groupTitle: string | null,
+  focusCardTitle: string | null = null,
+  cards: Card[] = [],
 ): WorkspaceAgentViewModel {
+  const cardTitles = new Map(cards.map((card) => [card.id, card]));
   const workspace = workspaces.find((ws) => ws.id === state.workspaceId);
 
   const context: WorkspaceAgentContextViewModel = state.isOpen
     ? {
         workspaceName: workspace?.name ?? "",
         groupLabel: groupTitle,
-        selectedCount: state.context.selectedCardIds.length,
+        cardCount: contextCardIds(state.context).length,
+        focusCardTitle: state.context.openCardId ? focusCardTitle : null,
       }
     : EMPTY_CONTEXT_VIEW;
 
-  const messages = state.messages.map(toMessageViewModel);
+  const messages = state.messages.map(message =>
+    toMessageViewModel(message, state.tagActions, cardTitles)
+  );
 
   return {
     isOpen: state.isOpen,
     context,
     messages,
     isEmpty: messages.length === 0,
-    proposals: state.proposals.map(toProposalViewModel),
     isThinking: state.isThinking,
     agentError: state.agentError,
   };
 }
 
-function toMessageViewModel(message: WorkspaceAgentMessage): WorkspaceAgentMessageViewModel {
+function toMessageViewModel(
+  message: WorkspaceAgentMessage,
+  tagActions: Record<string, WorkspaceAgentTagAction>,
+  cardsById: Map<string, Card>,
+): WorkspaceAgentMessageViewModel {
   return {
     id: message.id,
     speaker: message.speaker,
     text: message.text,
     pending: message.pending ?? false,
+    webCitations: message.webCitations ? [...message.webCitations] : [],
+    ...(message.sentContext
+      ? { sentContext: toSentContextViewModel(message.sentContext, cardsById) }
+      : {}),
+    // Copied through verbatim, and omitted entirely when the model returned none.
+    ...(message.reasoning ? { reasoning: message.reasoning } : {}),
+    segments: (message.segments ?? []).map(segment =>
+      toSegmentViewModel(segment, message.id, tagActions, cardsById)
+    ),
+    streaming: message.streaming ?? false,
   };
 }
 
-function toProposalViewModel(
-  proposal: WorkspaceAgentProposalViewState
-): WorkspaceAgentProposalViewModel {
+function toSegmentViewModel(
+  segment: AgentMessageSegment,
+  messageId: string,
+  tagActions: Record<string, WorkspaceAgentTagAction>,
+  cardsById: Map<string, Card>,
+): WorkspaceAgentSegmentViewModel {
+  if (segment.kind === "text") return { kind: "text", text: segment.text };
   return {
-    id: proposal.action.id,
-    label: proposal.action.label,
-    explanation: proposal.action.explanation,
-    toolSummary: summarizeTool(proposal.action.tool),
-    status: proposal.status,
-    isPendingDispatch: proposal.status !== "proposed",
-    resultMessage: proposal.resultMessage,
+    kind: "tag",
+    tag: toTagViewModel(segment.tag, messageId, tagActions[tagActionKey(messageId, segment.tag.id)], cardsById),
   };
 }
 
-/** Plain-language, one-line render of a tool intent for the proposal chip. Never executes it. */
-function summarizeTool(tool: WorkspaceAgentProposalViewState["action"]["tool"]): string {
-  switch (tool.type) {
-    case "suggest_next_actions":
-      return `Suggest: ${tool.suggestions.join("; ")}`;
-    case "create_cards":
-      return `Create ${tool.cards.length} card${tool.cards.length === 1 ? "" : "s"}`;
-    case "create_group":
-      return `Group ${tool.cardIds.length} card${tool.cardIds.length === 1 ? "" : "s"} as "${tool.name}"`;
-    case "link_cards":
-      return `Link two cards${tool.relation ? ` (${tool.relation})` : ""}`;
-    case "chunk_cards":
-      return `Chunk ${tool.cardIds.length} card${tool.cardIds.length === 1 ? "" : "s"} (${tool.mode})`;
-    case "extract_url":
-      return "Extract this source's URL";
-    case "search_web":
-      return `Search the web: ${tool.queries.join("; ")}`;
-    case "make_study_candidates":
-      return `Make ${tool.mode} study candidates from ${tool.cardIds.length} card${tool.cardIds.length === 1 ? "" : "s"}`;
-    case "draft_experiment":
-      return `Draft an experiment from ${tool.cardIds.length} card${tool.cardIds.length === 1 ? "" : "s"}`;
-    case "ask_clarifying_question":
-      return tool.question;
-    default:
-      return "Proposed action";
-  }
+/**
+ * Projects one tag into its chip.
+ *
+ * The chip can only ever *offer*: `status` starts at "offered" and moves only because the
+ * user tapped `+`, and `detail` is either the parser's own reason the tag isn't usable or
+ * the dispatcher's own account of what happened. Neither is written here, so this file
+ * cannot make anything look like it was created.
+ */
+function toTagViewModel(
+  tag: ParsedAgentTag,
+  messageId: string,
+  action: WorkspaceAgentTagAction | undefined,
+  cardsById: Map<string, Card>,
+): WorkspaceAgentTagViewModel {
+  // Multi-card intents (a group) list what they would really touch, by title — the entity
+  // layer only knows ids, and a chip that says "3 cards" without naming them is a chip the
+  // user has to trust rather than check.
+  const items = tag.intent
+    ? (toolIntentItems(tag.intent) ?? [])
+        .map(item => (item.cardId ? (cardsById.get(item.cardId)?.title ?? item.title) : item.title))
+    : [];
+
+  return {
+    id: tag.id,
+    messageId,
+    kindLabel: tag.kindLabel,
+    title: tag.title,
+    canAdd: tag.intent !== null,
+    ...(action?.resultMessage
+      ? { detail: action.resultMessage }
+      : tag.invalidReason
+        ? { detail: tag.invalidReason }
+        : {}),
+    status: action?.status === "pending"
+      ? "pending"
+      : action?.status === "done"
+        ? "done"
+        : action?.status === "failed"
+          ? "failed"
+          : "offered",
+    items,
+  };
+}
+
+function toSentContextViewModel(
+  sent: WorkspaceAgentSentContext,
+  cardsById: Map<string, Card>,
+): WorkspaceAgentSentContextViewModel {
+  const focus = new Set(sent.focusCardIds);
+  return {
+    groupLabel: sent.groupId ? (cardsById.get(sent.groupId)?.title ?? sent.groupId) : null,
+    cards: sent.cardIds.map((id) => ({
+      id,
+      title: cardsById.get(id)?.title ?? id,
+      focus: focus.has(id),
+    })),
+    briefing: sent.briefing,
+  };
 }

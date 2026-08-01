@@ -8,6 +8,7 @@ import { KeyValueStore } from "../KeyValueStore";
 import { PersistenceError } from "../../../usecases/ports/PersistenceError";
 import { Card } from "../../../entities/card";
 import { OperationRecord } from "../../../entities/operationLog";
+import { resolveAppearance } from "../../../entities/appearance";
 
 class FakeStore implements KeyValueStore {
   readonly data = new Map<string, string>();
@@ -118,6 +119,28 @@ describe("AsyncStorageSettingsRepository", () => {
     expect(await repo.getSettings()).toBeNull();
     await repo.saveSettings({ theme: "dark", accent: "teal" } as any);
     expect(await repo.getSettings()).toMatchObject({ theme: "dark" });
+  });
+
+  it("loads a settings blob still carrying the removed surfaceTint key", async () => {
+    // The surface-tint control is gone, but someone who used it still has the key on
+    // disk. Reading must not throw and must not take the rest of their settings — the
+    // palette in particular — down with the field the app no longer knows.
+    const store = new FakeStore();
+    store.data.set(
+      "learnimal_settings_v1",
+      JSON.stringify({
+        theme: "dark",
+        accent: "teal",
+        openRouterKey: "sk-test",
+        appearance: { paletteId: "amber", surfaceTint: "graphite", density: "compact" },
+      }),
+    );
+
+    const loaded = await new AsyncStorageSettingsRepository(store).getSettings();
+
+    expect(loaded?.openRouterKey).toBe("sk-test");
+    expect(resolveAppearance(loaded?.appearance).palette.id).toBe("amber");
+    expect(resolveAppearance(loaded?.appearance).density).toBe("compact");
   });
 
   it("reports a read failure rather than silently reverting to defaults", async () => {

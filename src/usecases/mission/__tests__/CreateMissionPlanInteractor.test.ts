@@ -10,26 +10,27 @@ import { MemoryOperationLogRepository } from "../../../adapters/repositories/Mem
 import { createWorkspace } from "../../../entities/workspace";
 import {
   buildMissionProposal,
-  deriveWorkingMap,
-  GoalAnswer,
-  GoalQuestionId,
+  EMPTY_WORKING_MAP,
   insight,
   mergeIntoWorkingMap,
-} from "../../../entities/goalArchitect";
+  WorkingMap,
+} from "../../../entities/mission";
 
-const answer = (questionId: GoalQuestionId, text: string): GoalAnswer => ({
-  questionId,
-  text,
-  skipped: false,
-  answeredAt: 1_000,
-});
+/**
+ * The question-and-answer flow that used to produce a working map is gone — goal planning
+ * is now a Workspace Agent tool intent. The map is built directly here, which is exactly
+ * how the surviving callers build one.
+ */
+const workingMap = (): WorkingMap =>
+  mergeIntoWorkingMap(EMPTY_WORKING_MAP, {
+    goal: insight("Build a playable puzzle game", "user"),
+    deliverable: insight("A demo with ten levels", "user"),
+    candidateNextActions: [insight("One level that plays start to finish", "user")],
+    prerequisites: [insight("Level generation", "user")],
+    unknowns: [insight("How hard level generation is", "app")],
+  });
 
-const ANSWERS = [
-  answer("outcome", "Build a playable puzzle game."),
-  answer("finished-result", "A demo with ten levels."),
-  answer("smallest-proof", "One level that plays start to finish."),
-  answer("blocker", "Level generation"),
-];
+const ANSWER_IDS = ["outcome", "finished-result", "smallest-proof", "blocker"];
 
 let cardRepo: MemoryCardRepository;
 let workspaceRepo: MemoryWorkspaceRepository;
@@ -49,12 +50,12 @@ beforeEach(async () => {
 });
 
 const run = (overrides: Partial<Parameters<typeof interactor.execute>[0]> = {}) => {
-  const map = deriveWorkingMap(ANSWERS);
+  const map = workingMap();
   return interactor.execute({
     workspaceId: WORKSPACE_ID,
     proposal: buildMissionProposal(map),
     map,
-    answerIds: ANSWERS.map(a => a.questionId),
+    answerIds: ANSWER_IDS,
     modelUsed: false,
     webUsed: false,
     startedAt: 500,
@@ -157,7 +158,7 @@ describe("CreateMissionPlanInteractor", () => {
   });
 
   it("attributes an agent-suggested card to the agent", async () => {
-    const map = mergeIntoWorkingMap(deriveWorkingMap(ANSWERS), {
+    const map = mergeIntoWorkingMap(workingMap(), {
       prerequisites: [insight("Spatial partitioning", "agent")],
     });
 
@@ -180,13 +181,13 @@ describe("CreateMissionPlanInteractor", () => {
     const { operation, cards } = await run();
 
     expect(operation.commandName).toBe("goal");
-    expect(operation.inputCardIds).toEqual(ANSWERS.map(a => a.questionId));
+    expect(operation.inputCardIds).toEqual(ANSWER_IDS);
     expect(operation.createdCardIds.sort()).toEqual(cards.map(c => c.id).sort());
     expect(await operationLogRepo.getRecord(operation.id)).toBeTruthy();
   });
 
   it("refuses a proposal with no goal statement instead of creating an empty mission", async () => {
-    const map = deriveWorkingMap([]);
+    const map = EMPTY_WORKING_MAP;
     const error = await interactor
       .execute({
         workspaceId: WORKSPACE_ID,
@@ -204,7 +205,7 @@ describe("CreateMissionPlanInteractor", () => {
   });
 
   it("refuses when the workspace has gone", async () => {
-    const map = deriveWorkingMap(ANSWERS);
+    const map = workingMap();
     const error = await interactor
       .execute({
         workspaceId: "missing",

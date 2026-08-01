@@ -19,8 +19,6 @@ export type SuggestedActionDispatch =
   | { kind: "pipeline"; text: string }
   /** Opens the mission editor. */
   | { kind: "mission" }
-  /** Opens the goal architect to plan a new goal from scratch. */
-  | { kind: "goal" }
   /** Opens the command palette. */
   | { kind: "palette" }
   /** Opens the deterministic gap/status report. */

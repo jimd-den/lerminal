@@ -4,8 +4,6 @@ import {
   PALETTES,
   SYSTEM_MONO,
   SYSTEM_SANS,
-  SURFACE_TINTS,
-  applySurfaceTint,
   findPalette,
   resolveAppearance,
 } from "../appearance";
@@ -113,68 +111,48 @@ describe("resolveAppearance", () => {
     expect(resolveAppearance({ installedFonts: [font] }).installedFonts).toEqual([font]);
   });
 
-  it("resolves surfaceTint/density/motion/highContrast to today's behaviour when unset", () => {
+  it("resolves density/motion/highContrast to today's behaviour when unset", () => {
     const resolved = resolveAppearance(undefined);
 
-    expect(resolved.surfaceTint).toBe("neutral");
     expect(resolved.density).toBe("standard");
     expect(resolved.motion).toBe("system");
     expect(resolved.highContrast).toBe(false);
   });
 
-  it("round-trips an explicit surface tint, density, motion, and high contrast", () => {
+  it("round-trips an explicit density, motion, and high contrast", () => {
     const resolved = resolveAppearance({
-      surfaceTint: "graphite",
       density: "compact",
       motion: "reduced",
       highContrast: true,
     });
 
-    expect(resolved.surfaceTint).toBe("graphite");
     expect(resolved.density).toBe("compact");
     expect(resolved.motion).toBe("reduced");
     expect(resolved.highContrast).toBe(true);
   });
+
+  it("ignores a stale surfaceTint from the removed second theme system", () => {
+    // Someone who used the old tint control still has the key on disk. It must be
+    // inert — not a crash, and not a reason to lose the palette saved alongside it.
+    const stale = { paletteId: "amber", surfaceTint: "graphite" } as Record<string, unknown>;
+    const amber = PALETTES.find(p => p.id === "amber")!;
+
+    const resolved = resolveAppearance(stale as never);
+
+    expect(resolved.palette).toEqual(amber);
+    expect(resolved.accent).toBe(amber.accent);
+    expect((resolved as Record<string, unknown>).surfaceTint).toBeUndefined();
+  });
 });
 
-describe("applySurfaceTint", () => {
-  const base = PALETTES.find(p => p.id === "proof")!;
-
-  it("leaves the palette untouched for neutral", () => {
-    expect(applySurfaceTint(base, "neutral")).toEqual(base);
-  });
-
-  it("overrides only the neutrals, never the semantic colours", () => {
-    const tinted = applySurfaceTint(base, "graphite");
-
-    expect(tinted.background).not.toBe(base.background);
-    expect(tinted.panel).not.toBe(base.panel);
-    // Every semantic colour must survive a tint unchanged — that's the whole boundary.
-    expect(tinted.accent).toBe(base.accent);
-    expect(tinted.accentInk).toBe(base.accentInk);
-    expect(tinted.danger).toBe(base.danger);
-    expect(tinted.warning).toBe(base.warning);
-    expect(tinted.evidence).toBe(base.evidence);
-    expect(tinted.text).toBe(base.text);
-    expect(tinted.textMuted).toBe(base.textMuted);
-    expect(tinted.textFaint).toBe(base.textFaint);
-  });
-
-  it("applies through resolveAppearance end to end", () => {
-    const resolved = resolveAppearance({ paletteId: "proof", surfaceTint: "blue-black" });
-
-    expect(resolved.palette.background).toBe(SURFACE_TINTS["blue-black"]!.background);
-    expect(resolved.palette.accent).toBe(base.accent);
-  });
-
-  it("keeps every tint's neutrals distinguishable from its own semantic colours", () => {
-    // A tint that happened to land a neutral on top of, say, the warning colour would
-    // silently make a caution card unreadable against its own background.
-    for (const tint of Object.keys(SURFACE_TINTS) as (keyof typeof SURFACE_TINTS)[]) {
-      const tinted = applySurfaceTint(base, tint);
-      const semantics = [tinted.danger, tinted.warning, tinted.evidence, tinted.accent];
-      expect(semantics).not.toContain(tinted.background);
-      expect(semantics).not.toContain(tinted.panelStrong);
+describe("palette surfaces", () => {
+  it("keeps every palette's neutrals distinguishable from its own semantic colours", () => {
+    // A palette that landed a neutral on top of, say, the warning colour would silently
+    // make a caution card unreadable against its own background.
+    for (const palette of PALETTES) {
+      const semantics = [palette.danger, palette.warning, palette.evidence, palette.accent];
+      expect(semantics).not.toContain(palette.background);
+      expect(semantics).not.toContain(palette.panelStrong);
     }
   });
 });

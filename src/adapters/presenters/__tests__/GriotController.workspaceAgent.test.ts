@@ -30,8 +30,11 @@ class StubAgentGateway implements AgentGateway {
   async fetchModels(): Promise<AgentModel[]> {
     return [];
   }
-  async designWorkspaceAgentTurn(): Promise<WorkspaceAgentTurnResult> {
+  briefings: string[] = [];
+
+  async designWorkspaceAgentTurn(input: { briefing: string }): Promise<WorkspaceAgentTurnResult> {
     this.turnCalls += 1;
+    this.briefings.push(input.briefing);
     return { raw: this.nextTurnRaw };
   }
 }
@@ -293,5 +296,510 @@ describe("GriotController — Workspace Agent Phase D dispatch", () => {
     const state = controller.getState();
     expect(state.workspaceAgent.proposals.find((p) => p.id === id)!.status).toBe("done");
     expect(state.cards.length).toBe(0);
+  });
+});
+
+/**
+ * The context bug: the sheet used to capture the selection once, when it opened, and never
+ * knew about the card open in the detail modal — so the commonest flow of all, "tap a card
+ * → Ask GRIOT → explain this", sent the model no card content whatsoever.
+ */
+describe("GriotController — Workspace Agent live card context", () => {
+  const send = async (controller: GriotController) => {
+    controller.sendWorkspaceAgentMessage("explain this");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  it("sends the open card's content even with nothing multi-selected", async () => {
+    const { controller, agentGateway } = await buildController();
+    const note = await controller.createNote({
+      content: "MITOCHONDRIA BODY TEXT",
+      title: "Mitochondria",
+    });
+    agentGateway.nextTurnRaw = { message: "ok", proposedActions: [] };
+    // Capture auto-selects what it just made; start from a clean selection.
+    controller.clearSelection();
+
+    controller.openCard(note.id);
+    controller.openWorkspaceAgent();
+    await send(controller);
+
+    const briefing = agentGateway.briefings.at(-1)!;
+    expect(briefing).toContain("MITOCHONDRIA BODY TEXT");
+    expect(briefing).toContain(`[${note.id}] [focus]`);
+  });
+
+  it("reflects a selection change made while the sheet is already open", async () => {
+    const { controller, agentGateway } = await buildController();
+    const first = await controller.createNote({ content: "FIRST BODY", title: "First" });
+    const second = await controller.createNote({ content: "SECOND BODY", title: "Second" });
+    agentGateway.nextTurnRaw = { message: "ok", proposedActions: [] };
+
+    controller.clearSelection();
+    controller.toggleSelect(first.id);
+    controller.openWorkspaceAgent();
+    // The user changes their mind without closing the sheet.
+    controller.toggleSelect(first.id);
+    controller.toggleSelect(second.id);
+    await send(controller);
+
+    const briefing = agentGateway.briefings.at(-1)!;
+    expect(briefing).toContain(`[${second.id}] [focus]`);
+    expect(briefing).not.toContain(`[${first.id}] [focus]`);
+  });
+
+  it("context chips count exactly the cards being sent — open card plus selection, de-duplicated", async () => {
+    const { controller, agentGateway } = await buildController();
+    const a = await controller.createNote({ content: "A BODY", title: "Alpha" });
+    const b = await controller.createNote({ content: "B BODY", title: "Beta" });
+    agentGateway.nextTurnRaw = { message: "ok", proposedActions: [] };
+
+    controller.clearSelection();
+    controller.openCard(a.id);
+    controller.toggleSelect(a.id);
+    controller.toggleSelect(b.id);
+    controller.openWorkspaceAgent();
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.context.cardCount).toBe(2);
+    expect(view.context.focusCardTitle).toBe("Alpha");
+
+    await send(controller);
+    const briefing = agentGateway.briefings.at(-1)!;
+    expect(briefing).toContain(`[${a.id}] [focus]`);
+    expect(briefing).toContain(`[${b.id}] [focus]`);
+  });
+
+  it("claims no card context when nothing is open or selected", async () => {
+    const { controller } = await buildController();
+    await controller.createNote({ content: "unrelated", title: "Unrelated" });
+    controller.clearSelection();
+
+    controller.openWorkspaceAgent();
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.context.cardCount).toBe(0);
+    expect(view.context.focusCardTitle).toBeNull();
+  });
+});
+
+/**
+ * Per-item selection, driven end-to-end through the controller: what the user unchecks
+ * must never reach a real interactor, and the completion message must describe what was
+ * actually done rather than what was originally proposed.
+ */
+describe("GriotController — Workspace Agent per-item selection", () => {
+  it("projects every proposed item as checked, with card titles resolved", async () => {
+    const { controller, agentGateway } = await buildController();
+    const a = await controller.createNote({ content: "body a", title: "Note A" });
+    const b = await controller.createNote({ content: "body b", title: "Note B" });
+
+    const id = await proposeAndGetId(controller, agentGateway, {
+      type: "create_group",
+      name: "Cluster",
+      cardIds: [a.id, b.id],
+    });
+
+    const proposal = controller.getState().workspaceAgent.proposals.find((p) => p.id === id)!;
+    expect(proposal.items.map((i) => i.title)).toEqual(["Note A", "Note B"]);
+    expect(proposal.items.every((i) => i.selected)).toBe(true);
+    expect(proposal.canConfirm).toBe(true);
+  });
+
+  it("toggling an item changes nothing in the workspace — no group, no cards, no gateway call", async () => {
+    const { controller, cardRepo, agentGateway, extractionGateway, searchGateway } =
+      await buildController();
+    const workspaceId = controller.getState().activeWorkspaceId!;
+    const a = await controller.createNote({ content: "body a", title: "Note A" });
+    const b = await controller.createNote({ content: "body b", title: "Note B" });
+    const before = (await cardRepo.getCardsByWorkspace(workspaceId)).length;
+
+    const id = await proposeAndGetId(controller, agentGateway, {
+      type: "create_group",
+      name: "Cluster",
+      cardIds: [a.id, b.id],
+    });
+    controller.toggleWorkspaceAgentProposalItem(id, b.id);
+
+    expect((await cardRepo.getCardsByWorkspace(workspaceId)).length).toBe(before);
+    expect(extractionGateway.calls).toEqual([]);
+    expect(searchGateway.calls).toEqual([]);
+    const proposal = controller.getState().workspaceAgent.proposals.find((p) => p.id === id)!;
+    expect(proposal.status).toBe("proposed");
+    expect(proposal.items.map((i) => i.selected)).toEqual([true, false]);
+  });
+
+  it("confirming a pruned create_cards creates only the kept cards and says so truthfully", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    const id = await proposeAndGetId(controller, agentGateway, {
+      type: "create_cards",
+      cards: [
+        { type: "note", title: "Keep A", body: "a" },
+        { type: "note", title: "Drop B", body: "b" },
+        { type: "note", title: "Keep C", body: "c" },
+      ],
+    });
+    controller.toggleWorkspaceAgentProposalItem(id, "card-1");
+    await controller.confirmWorkspaceAgentAction(id);
+
+    const state = controller.getState();
+    expect(state.cards.some((c) => c.title === "Keep A")).toBe(true);
+    expect(state.cards.some((c) => c.title === "Keep C")).toBe(true);
+    expect(state.cards.some((c) => c.title === "Drop B")).toBe(false);
+    expect(state.workspaceAgent.proposals.find((p) => p.id === id)!.resultMessage).toBe(
+      "Created 2 cards.",
+    );
+  });
+
+  it("confirming a pruned create_group groups only the kept notes", async () => {
+    const { controller, agentGateway } = await buildController();
+    const a = await controller.createNote({ content: "body a", title: "Note A" });
+    const b = await controller.createNote({ content: "body b", title: "Note B" });
+
+    const id = await proposeAndGetId(controller, agentGateway, {
+      type: "create_group",
+      name: "Cluster",
+      cardIds: [a.id, b.id],
+    });
+    controller.toggleWorkspaceAgentProposalItem(id, b.id);
+    await controller.confirmWorkspaceAgentAction(id);
+
+    const state = controller.getState();
+    const group = state.cards.find((c) => c.type === "group" && c.title === "Cluster")!;
+    expect(state.cards.find((c) => c.id === a.id)!.parentId).toBe(group.id);
+    // The unchecked note was never touched.
+    expect(state.cards.find((c) => c.id === b.id)!.parentId).toBeFalsy();
+    expect(state.workspaceAgent.proposals.find((p) => p.id === id)!.resultMessage).toContain(
+      "1 note",
+    );
+  });
+
+  it("dropping a query means only the kept queries reach the search preflight", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    const id = await proposeAndGetId(controller, agentGateway, {
+      type: "search_web",
+      queries: ["good query", "bad query"],
+      purpose: "find sources",
+    });
+    controller.toggleWorkspaceAgentProposalItem(id, "query-1");
+    await controller.confirmWorkspaceAgentAction(id);
+
+    const state = controller.getState();
+    expect(state.aiQuerySuggestions).toEqual(["good query"]);
+    // Still nothing actually searched — the preflight is only opened.
+    expect(state.workspaceAgent.proposals.find((p) => p.id === id)!.status).toBe("done");
+  });
+
+  it("unchecking everything disables confirm and dispatches nothing", async () => {
+    const { controller, agentGateway } = await buildController();
+    const workspaceId = controller.getState().activeWorkspaceId!;
+    const a = await controller.createNote({ content: "body a", title: "Note A" });
+
+    const id = await proposeAndGetId(controller, agentGateway, {
+      type: "create_group",
+      name: "Cluster",
+      cardIds: [a.id],
+    });
+    controller.toggleWorkspaceAgentProposalItem(id, a.id);
+
+    expect(controller.getState().workspaceAgent.proposals.find((p) => p.id === id)!.canConfirm).toBe(
+      false,
+    );
+
+    await controller.confirmWorkspaceAgentAction(id);
+
+    const state = controller.getState();
+    expect(state.cards.some((c) => c.type === "group")).toBe(false);
+    expect(state.workspaceAgent.proposals.find((p) => p.id === id)!.status).toBe("proposed");
+    void workspaceId;
+  });
+});
+
+describe("GriotController — Workspace Agent plain conversation", () => {
+  it("a turn with no proposals is shown as ordinary conversation, with nothing to confirm", async () => {
+    const { controller, agentGateway } = await buildController();
+    controller.openWorkspaceAgent();
+    agentGateway.nextTurnRaw = { message: "Your notes circle one question.", proposedActions: [] };
+
+    controller.sendWorkspaceAgentMessage("what do you make of these?");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.agentError).toBeNull();
+    expect(view.proposals).toEqual([]);
+    expect(view.messages.at(-1)).toMatchObject({
+      speaker: "assistant",
+      text: "Your notes circle one question.",
+    });
+  });
+
+  it("a turn with the proposedActions key absent is equally valid", async () => {
+    const { controller, agentGateway } = await buildController();
+    controller.openWorkspaceAgent();
+    agentGateway.nextTurnRaw = { message: "Yes — for two reasons." };
+
+    controller.sendWorkspaceAgentMessage("is this a good idea?");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.agentError).toBeNull();
+    expect(view.proposals).toEqual([]);
+    expect(view.messages.at(-1)!.text).toBe("Yes — for two reasons.");
+  });
+});
+
+/**
+ * Mission planning used to be its own sheet (the Goal Architect). It is now a proposal the
+ * one agent makes mid-conversation, dispatched through the surviving
+ * `CreateMissionPlanInteractor` — so these cover the invariants that feature guaranteed:
+ * nothing exists until confirm, the agent's contribution is visibly the agent's, and the
+ * completion message counts what actually ran.
+ */
+describe("GriotController — Workspace Agent create_mission dispatch", () => {
+  const plan = (cardIds?: string[]) => ({
+    type: "create_mission" as const,
+    title: "Ship a synth",
+    goalStatement: "Build and ship a playable synth",
+    targetDeliverable: "A demo anyone can play",
+    successCriteria: ["It makes sound"],
+    steps: [
+      { title: "Get audio out of a speaker", detail: "Any tone at all" },
+      { title: "Add a keyboard" },
+      { title: "Package a demo" },
+    ],
+    ...(cardIds ? { cardIds } : {}),
+  });
+
+  it("creates nothing from the proposal alone", async () => {
+    const { controller, cardRepo, agentGateway } = await buildController();
+    const workspaceId = controller.getState().activeWorkspaceId!;
+
+    await proposeAndGetId(controller, agentGateway, plan());
+
+    expect(await cardRepo.getCardsByWorkspace(workspaceId)).toHaveLength(0);
+    const workspace = controller
+      .getState()
+      .workspaces.find((w) => w.id === workspaceId);
+    expect(workspace?.mission).toBeUndefined();
+  });
+
+  it("creates the mission through the real interactor and reports what it made", async () => {
+    const { controller, agentGateway } = await buildController();
+    const note = await controller.createNote({ content: "synth notes", title: "Synth" });
+
+    const id = await proposeAndGetId(controller, agentGateway, plan([note.id]));
+    await controller.confirmWorkspaceAgentAction(id);
+
+    const state = controller.getState();
+    const proposal = state.workspaceAgent.proposals.find((p) => p.id === id)!;
+    expect(proposal.status).toBe("done");
+    expect(proposal.resultMessage).toBe('Created mission "Ship a synth" with 3 steps.');
+
+    // The mission group, its three steps, and the two standing notes the interactor adds.
+    const group = state.cards.find((c) => c.type === "group" && c.title === "Ship a synth")!;
+    expect(group).toBeTruthy();
+    expect(state.cards.some((c) => c.title === "Get audio out of a speaker")).toBe(true);
+    expect(state.cards.some((c) => c.title === "Known gaps")).toBe(true);
+
+    // The workspace mission itself is set, not just a pile of cards.
+    const workspace = state.workspaces.find((w) => w.id === state.activeWorkspaceId);
+    expect(workspace?.mission?.goalTitle).toBe("Ship a synth");
+    expect(workspace?.mission?.missionGroupId).toBe(group.id);
+
+    // Registered as a real, undoable run like every other dispatch.
+    expect(state.undoableOperationId).not.toBeNull();
+  });
+
+  it("marks the agent's own steps as the agent's work, and never enrols them for review", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    const id = await proposeAndGetId(controller, agentGateway, plan());
+    await controller.confirmWorkspaceAgentAction(id);
+
+    const state = controller.getState();
+    const step = state.cards.find((c) => c.title === "Add a keyboard")!;
+    expect(step.provenance?.mode).toBe("agent");
+    expect(step.provenance?.model).toBe("test/model");
+    // A fresh plan must never arrive as a pile of cards already due.
+    expect(state.cards.every((c) => c.schedule === undefined)).toBe(true);
+  });
+
+  it("drops the steps the user unchecked, and says so truthfully", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    const id = await proposeAndGetId(controller, agentGateway, plan());
+    controller.toggleWorkspaceAgentProposalItem(id, "step-1");
+    await controller.confirmWorkspaceAgentAction(id);
+
+    const state = controller.getState();
+    expect(state.cards.some((c) => c.title === "Add a keyboard")).toBe(false);
+    expect(state.cards.some((c) => c.title === "Package a demo")).toBe(true);
+    expect(state.workspaceAgent.proposals.find((p) => p.id === id)!.resultMessage).toBe(
+      'Created mission "Ship a synth" with 2 steps.',
+    );
+  });
+
+  it("undoes an agent-created mission, removing exactly the cards it created", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    const id = await proposeAndGetId(controller, agentGateway, plan());
+    await controller.confirmWorkspaceAgentAction(id);
+    expect(controller.getState().cards.length).toBeGreaterThan(0);
+
+    const undone = await controller.undoLastOperation();
+
+    expect(undone).toBe(true);
+    expect(controller.getState().cards).toHaveLength(0);
+  });
+});
+
+/**
+ * The assistant used to be reachable only from a Pulse observation, Settings, or a
+ * "define mission" button — so on an ordinary screen there was often no way in at all.
+ * The shell now carries a persistent Ask affordance; these cover the controller entry
+ * point behind it, which is the part that has to work from any primary screen.
+ */
+describe("GriotController — reaching the workspace agent from anywhere", () => {
+  it("opens the conversation scoped to the current screen, with no model call", async () => {
+    const { controller, agentGateway } = await buildController();
+    // A first launch opens the sheet by itself; close it so this covers the deliberate,
+    // from-any-screen entry point rather than that one-off.
+    controller.closeWorkspaceAgent();
+    expect(controller.getState().workspaceAgent.isOpen).toBe(false);
+
+    controller.openWorkspaceAgent();
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.isOpen).toBe(true);
+    expect(view.isEmpty).toBe(true);
+    // Opening the sheet is not asking anything: nothing leaves the device until a send.
+    expect(agentGateway.turnCalls).toBe(0);
+  });
+
+  it("opens with nothing selected, no card open and no group — the bare home screen case", async () => {
+    const { controller } = await buildController();
+    expect(controller.getState().currentGroupId).toBeNull();
+    expect(controller.getState().selection.size).toBe(0);
+
+    controller.openWorkspaceAgent();
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.isOpen).toBe(true);
+    expect(view.context.cardCount).toBe(0);
+    expect(view.agentError).toBeNull();
+  });
+
+  it("opens while a card is open, carrying that card as the focus context", async () => {
+    const { controller } = await buildController();
+    const note = await controller.createNote({ content: "body", title: "Note" });
+    controller.openCard(note.id);
+
+    controller.openWorkspaceAgent();
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.isOpen).toBe(true);
+    expect(view.context.cardCount).toBe(1);
+  });
+
+  it("closing forgets the session, and it can be reopened", async () => {
+    const { controller } = await buildController();
+    controller.openWorkspaceAgent();
+    controller.closeWorkspaceAgent();
+    expect(controller.getState().workspaceAgent.isOpen).toBe(false);
+
+    controller.openWorkspaceAgent();
+    expect(controller.getState().workspaceAgent.isOpen).toBe(true);
+  });
+});
+
+/**
+ * Inline action links are a presentation change only. The chip that now appears inside a
+ * reply must expand the same inspectable proposal — it must never become a shortcut past
+ * confirmation, which is the invariant everything else here rests on.
+ */
+describe("GriotController — inline action links keep confirm-before-execute", () => {
+  it("a proposal is attached to the reply that produced it and still fully inspectable", async () => {
+    const { controller, agentGateway } = await buildController();
+    const note = await controller.createNote({ content: "note body", title: "Note" });
+
+    await proposeAndGetId(controller, agentGateway, {
+      type: "create_group",
+      name: "New group",
+      cardIds: [note.id],
+    });
+
+    const view = controller.getState().workspaceAgent;
+    const reply = view.messages.at(-1)!;
+    expect(reply.speaker).toBe("assistant");
+    expect(reply.proposals.map((p) => p.id)).toEqual(["p1"]);
+    // Inline, not detached — and the checkboxes and confirm state travel with it.
+    expect(view.detachedProposals).toEqual([]);
+    expect(reply.proposals[0].items.length).toBeGreaterThan(0);
+    expect(reply.proposals[0].canConfirm).toBe(true);
+    expect(reply.proposals[0].status).toBe("proposed");
+  });
+
+  it("nothing is created until confirm — reading or expanding the link changes nothing", async () => {
+    const { controller, cardRepo, agentGateway } = await buildController();
+    const workspaceId = controller.getState().activeWorkspaceId!;
+    const note = await controller.createNote({ content: "note body", title: "Note" });
+
+    const id = await proposeAndGetId(controller, agentGateway, {
+      type: "create_group",
+      name: "New group",
+      cardIds: [note.id],
+    });
+
+    // Everything the inline link's own press does is local expand state; the only
+    // controller calls reachable from the expanded card short of CONFIRM are toggles.
+    controller.toggleWorkspaceAgentProposalItem(id, note.id);
+    controller.toggleWorkspaceAgentProposalItem(id, note.id);
+
+    expect((await cardRepo.getCardsByWorkspace(workspaceId)).some((c) => c.type === "group")).toBe(
+      false,
+    );
+
+    await controller.confirmWorkspaceAgentAction(id);
+
+    expect((await cardRepo.getCardsByWorkspace(workspaceId)).some((c) => c.type === "group")).toBe(
+      true,
+    );
+  });
+
+  it("a reply with no proposals carries no inline action chrome at all", async () => {
+    const { controller, agentGateway } = await buildController();
+    controller.openWorkspaceAgent();
+    agentGateway.nextTurnRaw = { message: "Just conversation.", proposedActions: [] };
+
+    controller.sendWorkspaceAgentMessage("hi");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const view = controller.getState().workspaceAgent;
+    expect(view.messages.at(-1)!.proposals).toEqual([]);
+    expect(view.proposals).toEqual([]);
+    expect(view.detachedProposals).toEqual([]);
+  });
+
+  it("surfaces the exact context that was sent, and no reasoning the model didn't give", async () => {
+    const { controller, agentGateway } = await buildController();
+    const note = await controller.createNote({ content: "note body", title: "Note" });
+    controller.toggleSelect(note.id);
+
+    controller.openWorkspaceAgent();
+    agentGateway.nextTurnRaw = { message: "Answer.", proposedActions: [] };
+    controller.sendWorkspaceAgentMessage("explain this");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const reply = controller.getState().workspaceAgent.messages.at(-1)!;
+    const sent = reply.sentContext!;
+    const briefing = agentGateway.briefings.at(-1)!;
+
+    expect(sent.cards.map((c) => c.id)).toContain(note.id);
+    for (const card of sent.cards) expect(briefing).toContain(`[${card.id}]`);
+    expect(sent.briefing).toBe(briefing);
+    // This stub returns no reasoning, so nothing may claim any.
+    expect(reply.reasoning).toBeUndefined();
   });
 });
