@@ -2518,7 +2518,14 @@ export class GriotController {
    *   `agent`-origin insights, so every card it produces records itself as the model's
    *   suggestion rather than the user's own words, and nothing exists until confirm.
    */
-  private async dispatchWorkspaceAgentTool(
+  /**
+   * Public because tags are not the only route in: the grammar deliberately exposes just
+   * four markers to the model, while the rest of this vocabulary (extraction, research,
+   * study candidates, missions) is reached through the app's own affordances. This is the
+   * single entry point either way — everything still lands on the same interactors, with
+   * the same operation records and the same truthful messages.
+   */
+  async dispatchWorkspaceAgentTool(
     tool: AgentToolIntent,
     context: WorkspaceAgentContext,
   ): Promise<string> {

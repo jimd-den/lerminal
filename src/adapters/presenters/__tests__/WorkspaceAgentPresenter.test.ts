@@ -11,7 +11,7 @@ const EMPTY_STATE: WorkspaceAgentState = {
   workspaceId: null,
   context: { selectedCardIds: [], currentGroupId: null },
   messages: [],
-  proposals: [],
+  tagActions: {},
   isThinking: false,
   agentError: null,
 };
@@ -64,7 +64,7 @@ describe("presentWorkspaceAgent", () => {
       messages: [
         { id: "m1", speaker: "user", text: "hi", createdAt: 1, pending: true },
       ],
-      proposals: [],
+      tagActions: {},
       isThinking: false,
       agentError: null,
     };
@@ -81,7 +81,7 @@ describe("presentWorkspaceAgent", () => {
     expect(view.isEmpty).toBe(false);
     expect(view.messages).toEqual([
       // A user message owns no proposals and no sent-context/reasoning disclosure.
-      { id: "m1", speaker: "user", text: "hi", pending: true, webCitations: [], proposals: [] },
+      { id: "m1", speaker: "user", text: "hi", pending: true, webCitations: [], segments: [], streaming: false },
     ]);
   });
 
@@ -91,7 +91,7 @@ describe("presentWorkspaceAgent", () => {
       workspaceId: "w1",
       context: { selectedCardIds: [], currentGroupId: null },
       messages: [],
-      proposals: [],
+      tagActions: {},
       isThinking: false,
       agentError: null,
     };
@@ -101,320 +101,62 @@ describe("presentWorkspaceAgent", () => {
   });
 });
 
-describe("presentWorkspaceAgent proposal items", () => {
-  const cards = [
-    {
-      id: "c1",
-      workspaceId: "w1",
-      type: "note" as const,
-      title: "Note A",
-      body: "body a",
-      createdAt: 0,
-      tags: [],
-    },
-    {
-      id: "c2",
-      workspaceId: "w1",
-      type: "note" as const,
-      title: "Note B",
-      body: "body b",
-      createdAt: 0,
-      tags: [],
-    },
-  ];
-
-  const stateWith = (
-    tool: any,
-    selectedItemKeys?: string[],
-  ): WorkspaceAgentState => ({
-    ...EMPTY_STATE,
-    isOpen: true,
-    workspaceId: "w1",
-    proposals: [
-      {
-        action: { id: "p1", label: "Do it", explanation: "why", requiresConfirmation: true, tool },
-        status: "proposed",
-        ...(selectedItemKeys ? { selectedItemKeys } : {}),
-      },
-    ],
-  });
-
-  it("resolves card ids to real card titles and bodies", () => {
-    const view = presentWorkspaceAgent(
-      stateWith({ type: "create_group", name: "Cluster", cardIds: ["c1", "c2"] }, ["c1", "c2"]),
-      [WORKSPACE],
-      null,
-      null,
-      cards,
-    );
-    expect(view.proposals[0].items).toEqual([
-      { key: "c1", title: "Note A", detail: "body a", selected: true },
-      { key: "c2", title: "Note B", detail: "body b", selected: true },
-    ]);
-  });
-
-  it("reflects deselection in `selected`, the summary, and `canConfirm`", () => {
-    const view = presentWorkspaceAgent(
-      stateWith(
-        {
-          type: "create_cards",
-          cards: [
-            { type: "note", title: "A", body: "a" },
-            { type: "note", title: "B", body: "b" },
-            { type: "note", title: "C", body: "c" },
-          ],
-        },
-        ["card-0", "card-2"],
-      ),
-      [WORKSPACE],
-      null,
-    );
-    expect(view.proposals[0].items.map((i) => i.selected)).toEqual([true, false, true]);
-    // The summary describes what confirming would really do, not the original count.
-    expect(view.proposals[0].toolSummary).toBe("Create 2 cards");
-    expect(view.proposals[0].canConfirm).toBe(true);
-  });
-
-  it("disables confirm when nothing is selected", () => {
-    const view = presentWorkspaceAgent(
-      stateWith({ type: "search_web", queries: ["q1"], purpose: "p" }, []),
-      [WORKSPACE],
-      null,
-    );
-    expect(view.proposals[0].canConfirm).toBe(false);
-    expect(view.proposals[0].items.every((i) => !i.selected)).toBe(true);
-  });
-
-  it("gives single-target intents no items and leaves them confirmable", () => {
-    const view = presentWorkspaceAgent(
-      stateWith({ type: "extract_url", cardId: "c1" }),
-      [WORKSPACE],
-      null,
-      null,
-      cards,
-    );
-    expect(view.proposals[0].items).toEqual([]);
-    expect(view.proposals[0].canConfirm).toBe(true);
-  });
-
-  it("projects real citations as receipts on the message that used them", () => {
-    const state: WorkspaceAgentState = {
-      isOpen: true,
-      workspaceId: "w1",
-      context: { selectedCardIds: [], currentGroupId: null },
-      messages: [
-        { id: "u1", speaker: "user", text: "sources?", createdAt: 1 },
-        {
-          id: "a1",
-          speaker: "assistant",
-          text: "Two of them.",
-          createdAt: 2,
-          webCitations: [{ url: "https://a.example", title: "A paper" }],
-        },
-      ],
-      proposals: [],
-      isThinking: false,
-      agentError: null,
-    };
-
-    const view = presentWorkspaceAgent(state, [WORKSPACE], null);
-
-    expect(view.messages[0].webCitations).toEqual([]);
-    expect(view.messages[1].webCitations).toEqual([
-      { url: "https://a.example", title: "A paper" },
-    ]);
-  });
-
-  it("shows no receipts when nothing was actually consulted", () => {
-    const state: WorkspaceAgentState = {
-      isOpen: true,
-      workspaceId: "w1",
-      context: { selectedCardIds: [], currentGroupId: null },
-      messages: [{ id: "a1", speaker: "assistant", text: "From your notes.", createdAt: 2 }],
-      proposals: [],
-      isThinking: false,
-      agentError: null,
-    };
-
-    expect(presentWorkspaceAgent(state, [WORKSPACE], null).messages[0].webCitations).toEqual([]);
-  });
-});
 
 /**
- * The disclosure and the inline action links are both presentation of things the workflow
- * already decided. These pin that the projection cannot invent either one: no reasoning
- * where the model returned none, and no proposal attached to a message that didn't
- * produce it.
+ * The chip layer. `canAdd` is the gate on the `+`, so an unresolvable tag must project as
+ * un-addable rather than as a button that would quietly do nothing.
  */
-describe("presentWorkspaceAgent turn transparency", () => {
-  const CARDS = [
-    {
-      id: "c1",
-      workspaceId: "w1",
-      type: "note" as const,
-      title: "Spacing effect",
-      body: "b1",
-      createdAt: 0,
-      tags: [],
-    },
-    {
-      id: "c2",
-      workspaceId: "w1",
-      type: "note" as const,
-      title: "Interleaving",
-      body: "b2",
-      createdAt: 0,
-      tags: [],
-    },
-  ];
-
-  const stateWith = (
-    overrides: Partial<WorkspaceAgentState>,
-  ): WorkspaceAgentState => ({
-    ...EMPTY_STATE,
+describe("presentWorkspaceAgent tag chips", () => {
+  const stateWith = (segments: any[], tagActions = {}): WorkspaceAgentState => ({
     isOpen: true,
     workspaceId: "w1",
-    ...overrides,
+    context: { selectedCardIds: [], currentGroupId: null },
+    messages: [
+      { id: "m1", speaker: "assistant", text: "Worth keeping.", createdAt: 1, segments },
+    ],
+    tagActions,
+    isThinking: false,
+    agentError: null,
   });
 
-  const reply = (extras: Record<string, unknown> = {}) => ({
-    id: "m2",
-    speaker: "assistant" as const,
-    text: "Here's what I see.",
-    createdAt: 2,
-    ...extras,
+  const tagSegment = (overrides: any = {}) => ({
+    kind: "tag",
+    tag: {
+      id: "t1",
+      kindLabel: "NOTE",
+      title: "Spaced repetition",
+      intent: { type: "create_cards", cards: [{ type: "note", title: "Spaced repetition", body: "b" }] },
+      ...overrides,
+    },
   });
 
-  const sentContext = {
-    groupId: null,
-    cardIds: ["c1", "c2"],
-    focusCardIds: ["c1"],
-    briefing: "Cards in scope (id, type, title, body):\n- [c1] [focus] ...",
-  };
+  it("offers a resolvable tag as addable, in the 'offered' state", () => {
+    const view = presentWorkspaceAgent(stateWith([tagSegment()]), [WORKSPACE], null);
+    const tag = (view.messages[0].segments[0] as any).tag;
+    expect(tag.canAdd).toBe(true);
+    expect(tag.status).toBe("offered");
+    expect(tag.messageId).toBe("m1");
+  });
 
-  it("projects the sent context with the true ids, resolved titles, and focus marks", () => {
+  it("marks a tag that resolved to nothing as un-addable, with the reason", () => {
     const view = presentWorkspaceAgent(
-      stateWith({ messages: [reply({ sentContext })] }),
+      stateWith([tagSegment({ intent: null, invalidReason: "No card matches that." })]),
       [WORKSPACE],
       null,
-      null,
-      CARDS,
     );
-
-    const sent = view.messages[0].sentContext!;
-    // Exactly the ids that were sent — no additions, no reordering, no omissions.
-    expect(sent.cards.map((card) => card.id)).toEqual(["c1", "c2"]);
-    expect(sent.cards.map((card) => card.title)).toEqual(["Spacing effect", "Interleaving"]);
-    expect(sent.cards.map((card) => card.focus)).toEqual([true, false]);
-    expect(sent.briefing).toBe(sentContext.briefing);
-    expect(sent.groupLabel).toBeNull();
+    const tag = (view.messages[0].segments[0] as any).tag;
+    expect(tag.canAdd).toBe(false);
+    expect(tag.detail).toBe("No card matches that.");
   });
 
-  it("falls back to the raw id for a card that no longer exists, rather than dropping it", () => {
+  it("reflects a settled add, keyed to the right message", () => {
     const view = presentWorkspaceAgent(
-      stateWith({
-        messages: [reply({ sentContext: { ...sentContext, cardIds: ["c1", "gone"] } })],
-      }),
+      stateWith([tagSegment()], { "m1:t1": { status: "done", resultMessage: "Created 1 card." } }),
       [WORKSPACE],
       null,
-      null,
-      CARDS,
     );
-
-    expect(view.messages[0].sentContext!.cards.map((card) => card.id)).toEqual(["c1", "gone"]);
-    expect(view.messages[0].sentContext!.cards[1].title).toBe("gone");
-  });
-
-  it("projects reasoning verbatim when the model returned some", () => {
-    const view = presentWorkspaceAgent(
-      stateWith({ messages: [reply({ sentContext, reasoning: "I compared the two notes." })] }),
-      [WORKSPACE],
-      null,
-      null,
-      CARDS,
-    );
-
-    expect(view.messages[0].reasoning).toBe("I compared the two notes.");
-  });
-
-  it("carries no reasoning field at all when the model returned none", () => {
-    const view = presentWorkspaceAgent(
-      stateWith({ messages: [reply({ sentContext })] }),
-      [WORKSPACE],
-      null,
-      null,
-      CARDS,
-    );
-
-    const message = view.messages[0];
-    expect(message.reasoning).toBeUndefined();
-    expect("reasoning" in message).toBe(false);
-    // Nothing else stands in for it either — the answer is not re-served as "thinking".
-    expect(JSON.stringify(message)).not.toContain("thinking");
-  });
-
-  it("attaches a proposal to the message that produced it, and to no other", () => {
-    const action = {
-      id: "p1",
-      label: "Group these",
-      explanation: "They're about one thing.",
-      requiresConfirmation: true,
-      tool: { type: "create_group" as const, name: "Spacing", cardIds: ["c1", "c2"] },
-    };
-
-    const view = presentWorkspaceAgent(
-      stateWith({
-        messages: [
-          reply({ id: "m1", text: "Older reply." }),
-          reply({ id: "m2", proposalIds: ["p1"] }),
-        ],
-        proposals: [{ action, status: "proposed", messageId: "m2", selectedItemKeys: ["c1", "c2"] }],
-      }),
-      [WORKSPACE],
-      null,
-      null,
-      CARDS,
-    );
-
-    expect(view.messages[0].proposals).toEqual([]);
-    expect(view.messages[1].proposals.map((p) => p.id)).toEqual(["p1"]);
-    // Attached proposals are not also rendered as free-floating cards.
-    expect(view.detachedProposals).toEqual([]);
-    // The full set is still projected, so nothing about inspectability is lost.
-    expect(view.proposals.map((p) => p.id)).toEqual(["p1"]);
-  });
-
-  it("keeps a proposal with no owning message in the detached list", () => {
-    const action = {
-      id: "p9",
-      label: "Search",
-      explanation: "no prose came with it",
-      requiresConfirmation: true,
-      tool: { type: "search_web" as const, queries: ["q"], purpose: "p" },
-    };
-
-    const view = presentWorkspaceAgent(
-      stateWith({ proposals: [{ action, status: "proposed", selectedItemKeys: ["query-0"] }] }),
-      [WORKSPACE],
-      null,
-      null,
-      CARDS,
-    );
-
-    expect(view.detachedProposals.map((p) => p.id)).toEqual(["p9"]);
-  });
-
-  it("renders an empty proposal list as plain conversation — no action chrome", () => {
-    const view = presentWorkspaceAgent(
-      stateWith({ messages: [reply({ sentContext })], proposals: [] }),
-      [WORKSPACE],
-      null,
-      null,
-      CARDS,
-    );
-
-    expect(view.messages[0].proposals).toEqual([]);
-    expect(view.proposals).toEqual([]);
-    expect(view.detachedProposals).toEqual([]);
+    const tag = (view.messages[0].segments[0] as any).tag;
+    expect(tag.status).toBe("done");
+    expect(tag.detail).toBe("Created 1 card.");
   });
 });

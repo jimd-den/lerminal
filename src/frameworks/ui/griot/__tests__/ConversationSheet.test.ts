@@ -48,35 +48,37 @@ describe("conversation sheet — turn disclosure", () => {
   });
 });
 
-describe("conversation sheet — inline action links", () => {
-  const inline = slice("function InlineAction", "function ProposalCard");
+describe("conversation sheet — inline tag chips", () => {
+  const chip = slice("function TagChip", "function SourceReceipts");
 
-  it("expanding is local state only — the link itself dispatches nothing", () => {
-    expect(inline).toContain("setOpen");
-    expect(inline).not.toContain("confirmWorkspaceAgentAction");
-    expect(inline).not.toContain("toggleWorkspaceAgentProposalItem");
+  it("the chip's + is the only thing that can create anything", () => {
+    expect(chip).toContain("controller.addWorkspaceAgentTag(tag.messageId, tag.id)");
+    // Exactly one dispatch call site in the whole sheet: rendering, streaming and
+    // parsing a tag must all remain incapable of changing the workspace.
+    expect(sheet.match(/controller\.addWorkspaceAgentTag\(/g)).toHaveLength(1);
   });
 
-  it("expands into the same inspectable proposal card", () => {
-    expect(inline).toContain("<ProposalCard");
-    expect(inline).toContain("Nothing runs until you confirm it.");
+  it("offers no + for a tag that resolved to nothing", () => {
+    // An unresolvable card reference or a malformed link has no intent to dispatch, so
+    // its + must be disabled rather than presenting an affordance that does nothing.
+    expect(chip).toContain("const disabled = !tag.canAdd");
+    expect(chip).toContain("disabled={disabled}");
   });
 
-  it("keeps CONFIRM as the only path to a dispatch", () => {
-    const card = slice("function ProposalCard", "The receipts strip");
-    expect(card).toContain("controller.confirmWorkspaceAgentAction(proposal.id)");
-    // Exactly one dispatch call site in the whole sheet.
-    expect(sheet.match(/controller\.confirmWorkspaceAgentAction\(/g)).toHaveLength(1);
-  });
-
-  it("renders inline links per message, and free-floating cards only for detached ones", () => {
-    expect(sheet).toContain("message.proposals.map");
-    expect(sheet).toContain("view.detachedProposals.map");
+  it("renders tags inline, in the prose, rather than as a separate proposal slab", () => {
+    expect(sheet).toContain("message.segments.map");
+    expect(sheet).toContain('segment.kind === "text"');
   });
 
   it("keeps the composer's thinking spinner and the citation strip", () => {
     expect(sheet).toContain("view.isThinking");
     expect(sheet).toContain("ActivityIndicator");
     expect(sheet).toContain("SOURCES THE MODEL CONSULTED");
+  });
+
+  it("keeps the scroll fixes that made proposals reachable", () => {
+    // Regressing either of these puts content back under the composer, untappable.
+    expect(sheet).toContain('keyboardShouldPersistTaps="handled"');
+    expect(sheet).toContain("flexShrink: 1");
   });
 });

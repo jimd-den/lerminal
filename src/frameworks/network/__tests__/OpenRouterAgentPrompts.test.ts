@@ -24,6 +24,43 @@ function captureRequest(message: unknown): { bodies: any[]; restore: () => void 
   return { bodies, restore: () => { global.fetch = originalFetch; } };
 }
 
+/**
+ * Captures the request body of the next streamed XHR turn, replying with real SSE frames.
+ *
+ * `designWorkspaceAgentTurn` streams over XHR (React Native's `fetch` exposes no readable
+ * body), so these tests drive the gateway's actual SSE parser rather than a stub — the
+ * frames below are the shape OpenRouter really sends.
+ */
+function captureStream(
+  frames: unknown[],
+  options: { status?: number } = {},
+): { bodies: any[]; restore: () => void } {
+  const bodies: any[] = [];
+  const original = (global as any).XMLHttpRequest;
+
+  (global as any).XMLHttpRequest = class {
+    status = options.status ?? 200;
+    statusText = "OK";
+    responseText = "";
+    onprogress: (() => void) | null = null;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    open() {}
+    setRequestHeader() {}
+    send(body: string) {
+      bodies.push(JSON.parse(body));
+      // Deliver every frame in one drain, then [DONE] — enough to exercise accumulation
+      // and the terminator without pretending to model network chunk boundaries.
+      this.responseText =
+        frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join("") + "data: [DONE]\n\n";
+      this.onprogress?.();
+      this.onload?.();
+    }
+  };
+
+  return { bodies, restore: () => { (global as any).XMLHttpRequest = original; } };
+}
+
 describe("gateway prompts all come from the registry", () => {
   it("leaves no hardcoded prompt const behind in the gateway", () => {
     // The whole point of the registry is that the gateway owns no prompt text. A const
@@ -63,7 +100,7 @@ describe("gateway prompts all come from the registry", () => {
   });
 
   it("sends the parent rules and the contract on a workspace-agent turn", async () => {
-    const capture = captureRequest({ content: JSON.stringify({ message: "hi" }) });
+    const capture = captureStream([{ choices: [{ delta: { content: "hi" } }] }]);
     try {
       await new OpenRouterAgentGateway().designWorkspaceAgentTurn({
         briefing: "b",
@@ -80,7 +117,7 @@ describe("gateway prompts all come from the registry", () => {
   });
 
   it("keeps the contract even when the caller supplies a hostile override", async () => {
-    const capture = captureRequest({ content: JSON.stringify({ message: "hi" }) });
+    const capture = captureStream([{ choices: [{ delta: { content: "hi" } }] }]);
     try {
       await new OpenRouterAgentGateway().designWorkspaceAgentTurn({
         briefing: "b",
@@ -118,7 +155,7 @@ describe("gateway prompts all come from the registry", () => {
 
 describe("provider web search", () => {
   it("includes the web plugin by default on a workspace-agent turn", async () => {
-    const capture = captureRequest({ content: JSON.stringify({ message: "hi" }) });
+    const capture = captureStream([{ choices: [{ delta: { content: "hi" } }] }]);
     try {
       await new OpenRouterAgentGateway().designWorkspaceAgentTurn({
         briefing: "b",
@@ -132,7 +169,7 @@ describe("provider web search", () => {
   });
 
   it("omits the web plugin when the user has turned search off", async () => {
-    const capture = captureRequest({ content: JSON.stringify({ message: "hi" }) });
+    const capture = captureStream([{ choices: [{ delta: { content: "hi" } }] }]);
     try {
       await new OpenRouterAgentGateway().designWorkspaceAgentTurn({
         briefing: "b",
@@ -147,13 +184,21 @@ describe("provider web search", () => {
   });
 
   it("parses citations from an annotated workspace-agent response", async () => {
-    const capture = captureRequest({
-      content: JSON.stringify({ message: "hi" }),
-      annotations: [
-        { type: "url_citation", url_citation: { url: "https://a.example", title: "A" } },
-        { type: "url_citation", url_citation: { url: "https://b.example" } },
-      ],
-    });
+    const capture = captureStream([
+      {
+        choices: [
+          {
+            delta: {
+              content: "hi",
+              annotations: [
+                { type: "url_citation", url_citation: { url: "https://a.example", title: "A" } },
+                { type: "url_citation", url_citation: { url: "https://b.example" } },
+              ],
+            },
+          },
+        ],
+      },
+    ]);
     try {
       const result = await new OpenRouterAgentGateway().designWorkspaceAgentTurn({
         briefing: "b",
@@ -171,7 +216,7 @@ describe("provider web search", () => {
 
   it("returns no citations when the response carries no annotations", async () => {
     // Search being switched on proves nothing: this is the only evidence the app accepts.
-    const capture = captureRequest({ content: JSON.stringify({ message: "hi" }) });
+    const capture = captureStream([{ choices: [{ delta: { content: "hi" } }] }]);
     try {
       const result = await new OpenRouterAgentGateway().designWorkspaceAgentTurn({
         briefing: "b",

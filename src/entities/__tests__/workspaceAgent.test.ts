@@ -1,283 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import {
-  AgentToolIntent,
-  narrowToolIntent,
-  normalizeWorkspaceAgentResponse,
-  toolIntentItems,
-} from "../workspaceAgent";
-
-const VALID_IDS = new Set(["c1", "c2", "c3"]);
-
-describe("normalizeWorkspaceAgentResponse", () => {
-  it("rejects non-object/malformed input", () => {
-    expect(normalizeWorkspaceAgentResponse(null, VALID_IDS)).toBeNull();
-    expect(normalizeWorkspaceAgentResponse(undefined, VALID_IDS)).toBeNull();
-    expect(normalizeWorkspaceAgentResponse("just a string", VALID_IDS)).toBeNull();
-    expect(normalizeWorkspaceAgentResponse(42, VALID_IDS)).toBeNull();
-    expect(normalizeWorkspaceAgentResponse([], VALID_IDS)).toBeNull();
-  });
-
-  it("rejects a turn with no message, no proposals, and no question", () => {
-    expect(normalizeWorkspaceAgentResponse({}, VALID_IDS)).toBeNull();
-    expect(normalizeWorkspaceAgentResponse({ message: "" }, VALID_IDS)).toBeNull();
-  });
-
-  it("passes through a bare message unchanged", () => {
-    const result = normalizeWorkspaceAgentResponse({ message: "Hello there" }, VALID_IDS);
-    expect(result).toEqual({ message: "Hello there", proposedActions: [] });
-  });
-
-  it("passes through a question-only turn", () => {
-    const result = normalizeWorkspaceAgentResponse(
-      { message: "", question: { prompt: "Which group?", rationale: "ambiguous" } },
-      VALID_IDS
-    );
-    expect(result).toEqual({
-      message: "",
-      proposedActions: [],
-      question: { prompt: "Which group?", rationale: "ambiguous" },
-    });
-  });
-
-  it("rejects proposedActions that isn't an array", () => {
-    expect(
-      normalizeWorkspaceAgentResponse({ message: "hi", proposedActions: "nope" }, VALID_IDS)
-    ).toBeNull();
-  });
-
-  /**
-   * A malformed action is *discarded*, never surfaced — but it does not cost the user
-   * the reply it arrived with. The safety property under test is that the bad action
-   * can never reach `proposedActions` (and so can never be dispatched); the usability
-   * property is that a plain answer still gets through.
-   */
-  const expectActionDiscarded = (raw: unknown) => {
-    const result = normalizeWorkspaceAgentResponse(raw, VALID_IDS);
-    expect(result).not.toBeNull();
-    expect(result!.message).toBe("hi");
-    expect(result!.proposedActions).toEqual([]);
-    expect(result!.discardedActions).toBe(1);
-  };
-
-  it("discards an unknown tool type without losing the reply", () => {
-    expectActionDiscarded({
-      message: "hi",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Do something",
-          explanation: "because",
-          tool: { type: "delete_workspace" },
-        },
-      ],
-    });
-  });
-
-  it("discards a tool referencing a card id that isn't in validCardIds", () => {
-    expectActionDiscarded({
-      message: "hi",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Extract",
-          explanation: "has a link",
-          tool: { type: "extract_url", cardId: "does-not-exist" },
-        },
-      ],
-    });
-  });
-
-  it("discards create_cards with a malformed card (bad type, missing title/body)", () => {
-    expectActionDiscarded({
-      message: "hi",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Create",
-          explanation: "worth capturing",
-          tool: { type: "create_cards", cards: [{ type: "not-a-real-type", title: "T", body: "B" }] },
-        },
-      ],
-    });
-
-    expectActionDiscarded({
-      message: "hi",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Create",
-          explanation: "worth capturing",
-          tool: { type: "create_cards", cards: [{ type: "note", title: "T" }] },
-        },
-      ],
-    });
-  });
-
-  it("discards create_group / chunk_cards / make_study_candidates referencing missing card ids", () => {
-    expectActionDiscarded({
-      message: "hi",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Group",
-          explanation: "related",
-          tool: { type: "create_group", name: "New group", cardIds: ["c1", "missing"] },
-        },
-      ],
-    });
-
-    expectActionDiscarded({
-      message: "hi",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Chunk",
-          explanation: "long source",
-          tool: { type: "chunk_cards", cardIds: ["missing"], mode: "deterministic" },
-        },
-      ],
-    });
-
-    expectActionDiscarded({
-      message: "hi",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Study",
-          explanation: "ready to review",
-          tool: { type: "make_study_candidates", cardIds: ["missing"], mode: "recall" },
-        },
-      ],
-    });
-  });
-
-  it("treats a null proposedActions as plain conversation, not a malformed turn", () => {
-    // The `json_object` fallback (models without structured-output support) has no
-    // schema forcing an array here, and a model that is simply answering emits null.
-    const result = normalizeWorkspaceAgentResponse(
-      { message: "Here's the answer.", proposedActions: null },
-      VALID_IDS
-    );
-    expect(result).not.toBeNull();
-    expect(result!.message).toBe("Here's the answer.");
-    expect(result!.proposedActions).toEqual([]);
-    expect(result!.discardedActions).toBeUndefined();
-  });
-
-  it("still rejects a turn whose only content was an unusable action", () => {
-    // Nothing survives: no message, no question, and the one action was malformed.
-    expect(
-      normalizeWorkspaceAgentResponse(
-        {
-          message: "",
-          proposedActions: [
-            { id: "p1", label: "X", explanation: "y", tool: { type: "delete_workspace" } },
-          ],
-        },
-        VALID_IDS
-      )
-    ).toBeNull();
-  });
-
-  it("passes through a valid response with multiple proposals unchanged (modulo generated ids)", () => {
-    const raw = {
-      message: "Here's what I'd do.",
-      observation: "Several notes look related.",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Group these",
-          explanation: "They're all about the same topic",
-          requiresConfirmation: true,
-          tool: { type: "create_group", name: "Topic", cardIds: ["c1", "c2"] },
-        },
-        {
-          id: "p2",
-          label: "Ask a follow-up",
-          explanation: "It's ambiguous",
-          tool: { type: "ask_clarifying_question", question: "What's the deadline?" },
-        },
-      ],
-    };
-
-    const result = normalizeWorkspaceAgentResponse(raw, VALID_IDS);
-
-    expect(result).toEqual({
-      message: "Here's what I'd do.",
-      observation: "Several notes look related.",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Group these",
-          explanation: "They're all about the same topic",
-          requiresConfirmation: true,
-          tool: { type: "create_group", name: "Topic", cardIds: ["c1", "c2"] },
-        },
-        {
-          id: "p2",
-          label: "Ask a follow-up",
-          explanation: "It's ambiguous",
-          requiresConfirmation: true,
-          tool: { type: "ask_clarifying_question", question: "What's the deadline?" },
-        },
-      ],
-    });
-  });
-
-  it("discards every proposal when one of several is malformed, but keeps the reply", () => {
-    // The all-or-nothing rule for *actions* is deliberate: one bad proposal means the
-    // model isn't trusted on the rest, which would otherwise run against real cards.
-    // The reply itself survives, because losing a plain answer over an unusable action
-    // is a worse failure than showing no actions.
-    const raw = {
-      message: "ok",
-      proposedActions: [
-        {
-          id: "p1",
-          label: "Fine",
-          explanation: "fine",
-          tool: { type: "extract_url", cardId: "c1" },
-        },
-        {
-          id: "p2",
-          label: "Bad",
-          explanation: "bad",
-          tool: { type: "extract_url", cardId: "missing" },
-        },
-      ],
-    };
-
-    const result = normalizeWorkspaceAgentResponse(raw, VALID_IDS);
-    expect(result).not.toBeNull();
-    expect(result!.message).toBe("ok");
-    // The well-formed sibling is dropped too — that is the trust rule, not an oversight.
-    expect(result!.proposedActions).toEqual([]);
-    expect(result!.discardedActions).toBe(2);
-  });
-});
+import { AgentToolIntent, narrowToolIntent, toolIntentItems } from "../workspaceAgent";
 
 /**
- * Plain conversation is the baseline: a turn that proposes nothing is a normal, complete
- * turn, not a degraded one.
+ * The JSON-envelope validator these tests used to cover is gone: the model no longer
+ * produces a turn object, it writes prose with tags and `entities/agentTags` builds the
+ * intents. What survives here is the per-item selection layer, which the tag path still
+ * uses — a `[[group: …]]` naming several cards is still pruned before it dispatches.
  */
-describe("normalizeWorkspaceAgentResponse — conversation without proposals", () => {
-  it("accepts an explicitly empty proposedActions array", () => {
-    const turn = normalizeWorkspaceAgentResponse(
-      { message: "Your notes mostly circle one question.", proposedActions: [] },
-      VALID_IDS,
-    );
-    expect(turn).not.toBeNull();
-    expect(turn!.message).toBe("Your notes mostly circle one question.");
-    expect(turn!.proposedActions).toEqual([]);
-  });
-
-  it("accepts a turn with the proposedActions key absent entirely", () => {
-    const turn = normalizeWorkspaceAgentResponse({ message: "Yes — for two reasons." }, VALID_IDS);
-    expect(turn).not.toBeNull();
-    expect(turn!.proposedActions).toEqual([]);
-  });
-});
-
 describe("toolIntentItems", () => {
   it("exposes one item per member for the multi-item intents", () => {
     expect(
@@ -406,74 +135,30 @@ describe("narrowToolIntent", () => {
  * validated exactly like every other intent — closed shape, no partial salvage, and no
  * card id the workspace does not actually contain.
  */
-describe("create_mission", () => {
-  const mission = (overrides: Record<string, unknown> = {}) => ({
-    message: "Here's a plan.",
-    proposedActions: [
-      {
-        id: "p1",
-        label: "Plan it",
-        explanation: "Because you asked",
-        tool: {
-          type: "create_mission",
-          title: "Ship a synth",
-          goalStatement: "Build and ship a playable synth",
-          targetDeliverable: "A demo anyone can play",
-          successCriteria: ["It makes sound", "A stranger can use it"],
-          steps: [
-            { title: "Get audio out of a speaker", detail: "Any tone at all" },
-            { title: "Add a keyboard", role: "task" },
-          ],
-          cardIds: ["c1"],
-          ...overrides,
-        },
-      },
+describe("create_mission — per-item selection", () => {
+  const mission = (): AgentToolIntent => ({
+    type: "create_mission",
+    title: "Ship a synth",
+    goalStatement: "Build and ship a playable synth",
+    targetDeliverable: "A demo anyone can play",
+    successCriteria: ["It makes sound", "A stranger can use it"],
+    steps: [
+      { title: "Get audio out of a speaker", detail: "Any tone at all" },
+      { title: "Add a keyboard", role: "task" },
     ],
+    cardIds: ["c1"],
   });
 
-  const toolFrom = (raw: unknown) =>
-    normalizeWorkspaceAgentResponse(raw, VALID_IDS)?.proposedActions[0]?.tool;
-
-  it("accepts a well-formed plan and keeps every field it was given", () => {
-    expect(toolFrom(mission())).toEqual({
-      type: "create_mission",
-      title: "Ship a synth",
-      goalStatement: "Build and ship a playable synth",
-      targetDeliverable: "A demo anyone can play",
-      successCriteria: ["It makes sound", "A stranger can use it"],
-      steps: [
-        { title: "Get audio out of a speaker", detail: "Any tone at all" },
-        { title: "Add a keyboard", role: "task" },
-      ],
-      cardIds: ["c1"],
-    });
-  });
-
-  it("rejects a plan with no title, no goal, or no steps rather than inventing one", () => {
-    expect(toolFrom(mission({ title: "" }))).toBeUndefined();
-    expect(toolFrom(mission({ goalStatement: "   " }))).toBeUndefined();
-    expect(toolFrom(mission({ steps: [] }))).toBeUndefined();
-    expect(toolFrom(mission({ steps: "two steps" }))).toBeUndefined();
-  });
-
-  it("rejects a malformed step instead of dropping it silently", () => {
-    expect(toolFrom(mission({ steps: [{ title: "" }] }))).toBeUndefined();
-    expect(toolFrom(mission({ steps: ["just a string"] }))).toBeUndefined();
-    expect(toolFrom(mission({ steps: [{ title: "ok", role: "wizard" }] }))).toBeUndefined();
-  });
-
-  it("rejects card ids the workspace does not actually contain", () => {
-    expect(toolFrom(mission({ cardIds: ["c1", "hallucinated"] }))).toBeUndefined();
-  });
+  // The field-level validation these tests used to do (empty title, malformed step,
+  // hallucinated card id) now happens where the intent is actually built, in
+  // `entities/agentTags` — an intent cannot reach this module malformed any more.
 
   it("offers every step and every source card as its own checkbox", () => {
-    const tool = toolFrom(mission()) as AgentToolIntent;
-    expect(toolIntentItems(tool)!.map(item => item.key)).toEqual(["step-0", "step-1", "c1"]);
+    expect(toolIntentItems(mission())!.map(item => item.key)).toEqual(["step-0", "step-1", "c1"]);
   });
 
   it("narrows to the steps and cards left checked", () => {
-    const tool = toolFrom(mission()) as AgentToolIntent;
-    const narrowed = narrowToolIntent(tool, ["step-1"]) as Extract<
+    const narrowed = narrowToolIntent(mission(), ["step-1"]) as Extract<
       AgentToolIntent,
       { type: "create_mission" }
     >;
@@ -482,7 +167,6 @@ describe("create_mission", () => {
   });
 
   it("refuses to dispatch a mission with every step unchecked", () => {
-    const tool = toolFrom(mission()) as AgentToolIntent;
-    expect(narrowToolIntent(tool, ["c1"])).toBeNull();
+    expect(narrowToolIntent(mission(), ["c1"])).toBeNull();
   });
 });
