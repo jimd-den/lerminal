@@ -38,11 +38,11 @@ import {
   AgentPromptId,
   PARENT_SYSTEM_PROMPT,
 } from "../../../entities/agentPrompts";
-import { Chip, CollapsibleSection, SectionLabel, Slab, SystemHeader } from "./components";
-import { ACCENT_OPTIONS, GriotTheme } from "./theme";
+import { Chip, CollapsibleSection, SectionLabel, Slab } from "./components";
+import { ACCENT_OPTIONS, GriotTheme, TypeScale } from "./theme";
 import { AppearanceSettingsSection } from "./AppearanceSettings";
 import { TrashIcon } from "./Icons";
-import { systemLabel } from "../../../entities/brand";
+import { BRAND_NAME } from "../../../entities/brand";
 
 const CAPABILITIES: { id: AssistantCapability; label: string }[] = [
   { id: "generate-cards", label: "CARD GENERATION" },
@@ -151,11 +151,22 @@ export function SettingsScreen({
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
-      <SystemHeader
-        eyebrow={systemLabel("SYSTEM")}
-        title="Machine configuration"
-        theme={theme}
-      />
+      <View style={[localStyles.topBar, { borderBottomColor: theme.line }]}>
+        <View style={{ flex: 1 }}>
+          <View style={localStyles.brandRow}>
+            <View style={[localStyles.brandDot, { backgroundColor: theme.accent }]} />
+            <Text style={[localStyles.brandName, { color: theme.text, fontFamily: theme.fontSans }]}>
+              {BRAND_NAME}
+            </Text>
+          </View>
+          <Text style={[localStyles.brandSub, { color: theme.textMuted }]}>
+            Machine configuration
+          </Text>
+        </View>
+        <Text style={[localStyles.tag, { color: theme.accent, fontFamily: theme.fontMono }]}>
+          SETTINGS
+        </Text>
+      </View>
 
       <CollapsibleSection theme={theme} title="APPEARANCE" defaultOpen>
       <SectionLabel theme={theme}>DISPLAY MODE</SectionLabel>
@@ -1478,6 +1489,21 @@ function ToggleRow({
     </Pressable>
   );
 }
+
+const localStyles = StyleSheet.create({
+  topBar: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  brandDot: { width: 9, height: 9, borderRadius: 3 },
+  brandName: { fontSize: 17, fontWeight: "800", letterSpacing: 0.5 },
+  brandSub: { fontSize: TypeScale.meta, marginTop: 3, lineHeight: 18, marginLeft: 18 },
+  tag: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.3, marginTop: 3 },
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },

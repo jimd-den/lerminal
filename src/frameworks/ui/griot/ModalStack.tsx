@@ -12,6 +12,7 @@ import { ResearchResultsSheet } from "./ResearchResultsSheet";
 import { MissionEditorSheet } from "./MissionEditorSheet";
 import { GapReportSheet } from "./GapReportSheet";
 import { ConversationSheet } from "./ConversationSheet";
+import { CaptureSheet } from "./CaptureSheet";
 
 /**
  * # Modal Stack
@@ -29,12 +30,25 @@ export function ModalStack({
   controller,
   state,
   theme,
+  captureDraft,
+  captureWorking,
+  onCaptureChangeText,
+  onCaptureWorkingChange,
+  onCaptureInputRequired,
+  onCaptureComplete,
   onPendingInputCancel,
   onPendingInputComplete,
 }: {
   controller: GriotController;
   state: AppState;
   theme: GriotTheme;
+  /** The capture draft lives in `MainLayout`, not here — see `CaptureSheet`'s own doc. */
+  captureDraft: string;
+  captureWorking: boolean;
+  onCaptureChangeText: (value: string) => void;
+  onCaptureWorkingChange: (working: boolean) => void;
+  onCaptureInputRequired: () => void;
+  onCaptureComplete: () => void;
   /** The capture screen owns the draft that a pending-input prompt belongs to. */
   onPendingInputCancel: () => void;
   onPendingInputComplete: () => void;
@@ -49,6 +63,17 @@ export function ModalStack({
       <MissionEditorSheet controller={controller} state={state} theme={theme} />
       <GapReportSheet controller={controller} state={state} theme={theme} />
       <ConversationSheet controller={controller} state={state} theme={theme} />
+      <CaptureSheet
+        controller={controller}
+        state={state}
+        theme={theme}
+        draft={captureDraft}
+        working={captureWorking}
+        onChangeText={onCaptureChangeText}
+        onWorkingChange={onCaptureWorkingChange}
+        onInputRequired={onCaptureInputRequired}
+        onComplete={onCaptureComplete}
+      />
       <PendingInputModal
         controller={controller}
         state={state}

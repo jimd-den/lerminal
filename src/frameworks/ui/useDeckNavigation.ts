@@ -5,7 +5,6 @@ import {
   GriotController,
 } from "../../adapters/presenters/GriotController";
 import { CorePlace } from "./griot/components";
-import { CaptureIntent } from "./griot/screens";
 
 /**
  * # Deck Navigation
@@ -31,7 +30,6 @@ export type LibraryLevel = "index" | "space" | "document";
 export interface DeckNavigation {
   place: CorePlace;
   libraryLevel: LibraryLevel;
-  captureIntent: CaptureIntent;
 
   /** Switch a space, reset the drill, and show the library. */
   openSpace: (spaceId: string) => Promise<void>;
@@ -39,8 +37,6 @@ export interface DeckNavigation {
   openDocument: (groupId: string) => void;
   /** Step up one level out of a document, or back to the space index. */
   backFromDocument: () => void;
-  /** Show the capture screen with a given intent, optionally scoped to a group. */
-  openCapture: (intent: CaptureIntent, parentId?: string | null) => void;
   /** Jump to wherever a completed run put its output. */
   openOperationResult: () => Promise<void>;
   /** Show the settings place. */
@@ -65,7 +61,6 @@ export function useDeckNavigation({
 }: DeckNavigationOptions): DeckNavigation {
   const [place, setPlace] = useState<CorePlace>("deck");
   const [libraryLevel, setLibraryLevel] = useState<LibraryLevel>("index");
-  const [captureIntent, setCaptureIntent] = useState<CaptureIntent>("note");
 
   const openSpace = useCallback(
     async (spaceId: string) => {
@@ -104,15 +99,6 @@ export function useDeckNavigation({
       setLibraryLevel("space");
     }
   }, [controller, state.cards, state.currentGroupId]);
-
-  const openCapture = useCallback(
-    (intent: CaptureIntent, parentId: string | null = null) => {
-      controller.navigateToGroup(parentId);
-      setCaptureIntent(intent);
-      setPlace("capture");
-    },
-    [controller]
-  );
 
   const openOperationResult = useCallback(async () => {
     const result = state.operationResult;
@@ -160,22 +146,12 @@ export function useDeckNavigation({
     }
   }, [controller, state.pendingGroupNavigation]);
 
-  // A `capture` dispatch (from the palette or a suggestion) asks for the capture screen.
-  // The controller only records the intent; navigating is the shell's job, so it is
-  // consumed here exactly once and cleared.
-  useEffect(() => {
-    if (!state.captureIntent) return;
-    const intent = controller.consumeCaptureIntent();
-    if (intent) {
-      setCaptureIntent(intent);
-      setPlace("capture");
-    }
-  }, [controller, state.captureIntent]);
-
   /**
    * Android back, resolved in priority order: dismiss a selection first (it's the most
    * recent, most reversible thing the user did), then refuse to interrupt an in-flight
-   * capture, then unwind the library drill one level, and only then leave for the deck.
+   * capture (now a modal — closing it mid-submit would lose the draft), then close an open
+   * capture sheet outright, then unwind the library drill one level, and only then leave
+   * for the deck.
    */
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -183,7 +159,10 @@ export function useDeckNavigation({
         controller.clearSelection();
         return true;
       }
-      if (place === "capture" && captureWorking) return true;
+      if (state.isCaptureSheetOpen) {
+        if (!captureWorking) controller.closeCaptureSheet();
+        return true;
+      }
       if (place === "library" && libraryLevel === "document") {
         backFromDocument();
         return true;
@@ -200,16 +179,14 @@ export function useDeckNavigation({
       return false;
     });
     return () => subscription.remove();
-  }, [backFromDocument, captureWorking, controller, libraryLevel, place, state.selection.size]);
+  }, [backFromDocument, captureWorking, controller, libraryLevel, place, state.isCaptureSheetOpen, state.selection.size]);
 
   return {
     place,
     libraryLevel,
-    captureIntent,
     openSpace,
     openDocument,
     backFromDocument,
-    openCapture,
     openOperationResult,
     openSettings,
     changePlace,

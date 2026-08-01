@@ -16,9 +16,9 @@ import { StyleSheet } from "react-native";
  */
 export const styles = StyleSheet.create({
   screen: { flex: 1 },
-  // The bottom inset clears the floating Ask affordance, so the last item in a list is
-  // never stranded underneath it.
-  content: { paddingHorizontal: 16, paddingBottom: 104 },
+  // The bottom inset clears the floating Ask and Capture affordances, stacked above the
+  // nav, so the last item in a list is never stranded underneath either of them.
+  content: { paddingHorizontal: 16, paddingBottom: 160 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
   intro: { fontSize: 15, lineHeight: 22, marginHorizontal: 3, marginBottom: 4 },
   kicker: {

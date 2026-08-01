@@ -165,6 +165,81 @@ describe("GriotController — Workspace Agent Phase D dispatch", () => {
     expect(created!.provenance?.mode).toBe("agent");
   });
 
+  it("create_cards with no destination group creates a real group containing the new cards", async () => {
+    const { controller } = await buildController();
+
+    const message = await dispatchTool(controller, {
+      type: "create_cards",
+      cards: [
+        { type: "note", title: "Agent note", body: "Body text" },
+        { type: "note", title: "Second note", body: "More text" },
+      ],
+    });
+
+    const state = controller.getState();
+    const group = state.cards.find((c) => c.type === "group");
+    expect(group).toBeDefined();
+    // Not a generic, always-the-same placeholder.
+    expect(group!.title).not.toBe("New group");
+    expect(group!.title.length).toBeGreaterThan(0);
+    // The group carries the same agent provenance every other agent-created thing gets.
+    expect(group!.provenance?.mode).toBe("agent");
+
+    const created = state.cards.filter((c) => c.title === "Agent note" || c.title === "Second note");
+    expect(created).toHaveLength(2);
+    for (const card of created) {
+      expect(card.parentId).toBe(group!.id);
+    }
+
+    expect(message).toContain("2 cards");
+    expect(message).toContain(group!.title);
+  });
+
+  it("create_cards with an existing destination group lands cards there directly, without creating an extra group", async () => {
+    const { controller } = await buildController();
+
+    const existingGroup = await dispatchTool(controller, {
+      type: "create_group",
+      name: "Existing group",
+      cardIds: [(await controller.createNote({ content: "seed", title: "Seed" })).id],
+    });
+    void existingGroup;
+    const groupId = controller.getState().cards.find((c) => c.type === "group")!.id;
+
+    await dispatchTool(controller, {
+      type: "create_cards",
+      cards: [{ type: "note", title: "Nested note", body: "Body", parentId: groupId }],
+    });
+
+    const state = controller.getState();
+    const groups = state.cards.filter((c) => c.type === "group");
+    expect(groups).toHaveLength(1);
+    const nested = state.cards.find((c) => c.title === "Nested note");
+    expect(nested?.parentId).toBe(groupId);
+  });
+
+  it("create_cards inside an open group (context.currentGroupId) lands cards there without an extra group", async () => {
+    const { controller } = await buildController();
+    const note = await controller.createNote({ content: "seed", title: "Seed" });
+    await controller.dispatchWorkspaceAgentTool(
+      { type: "create_group", name: "Open group", cardIds: [note.id] },
+      { selectedCardIds: [], currentGroupId: null } as any,
+    );
+    const groupId = controller.getState().cards.find((c) => c.type === "group")!.id;
+
+    controller.openWorkspaceAgent();
+    await controller.dispatchWorkspaceAgentTool(
+      { type: "create_cards", cards: [{ type: "note", title: "In-group note", body: "Body" }] },
+      { selectedCardIds: [], currentGroupId: groupId } as any,
+    );
+
+    const state = controller.getState();
+    const groups = state.cards.filter((c) => c.type === "group");
+    expect(groups).toHaveLength(1);
+    const nested = state.cards.find((c) => c.title === "In-group note");
+    expect(nested?.parentId).toBe(groupId);
+  });
+
   it("extract_url dispatches to ExtractUrlInteractor for the given cardId", async () => {
     const { controller, agentGateway, extractionGateway } = await buildController();
     // extractUrlToCard is the existing manual path — reuse it to get a real source card

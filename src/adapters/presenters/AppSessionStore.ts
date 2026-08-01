@@ -73,6 +73,8 @@ export interface UiState {
   isModalOpen: boolean;
   isWorkspaceSheetOpen: boolean;
   isSettingsSheetOpen: boolean;
+  /** Capture is a floating modal, not a routed place — see `openCaptureSheet`/`closeCaptureSheet`. */
+  isCaptureSheetOpen: boolean;
   isInputSheetOpen: boolean;
   inputSheetMode: "source" | "ask" | "note";
   activePreflightPresetId: string | null;
@@ -156,6 +158,7 @@ export function createInitialUiState(): UiState {
     isModalOpen: false,
     isWorkspaceSheetOpen: false,
     isSettingsSheetOpen: false,
+    isCaptureSheetOpen: false,
     isInputSheetOpen: false,
     inputSheetMode: "source",
     activePreflightPresetId: null,

@@ -13,15 +13,21 @@ const read = (relative: string) => fs.readFileSync(path.join(uiRoot, relative), 
 describe("MainLayout shell", () => {
   const content = read("MainLayout.tsx");
 
-  it("composes the four places from the screens module", () => {
+  it("composes the three places from the screens module", () => {
     expect(content).toContain("DeckScreen");
     expect(content).toContain("LibraryScreen");
     expect(content).toContain("SpaceScreen");
     expect(content).toContain("DocumentScreen");
-    expect(content).toContain("CaptureScreen");
     expect(content).toContain("SettingsScreen");
     expect(content).toContain("BottomNavigation");
     expect(content).not.toContain("LegacyMainLayout");
+  });
+
+  // Capture moved off the routing union entirely — it is a floating modal (see the
+  // "Capture affordance" describe block below), not a place the shell switches on.
+  it("no longer routes to capture as a place", () => {
+    expect(content).not.toContain('nav.place === "capture"');
+    expect(content).not.toContain("<CaptureScreen");
   });
 
   it("delegates navigation and the modal stack rather than owning them", () => {
@@ -56,6 +62,7 @@ describe("modal stack", () => {
       "ResearchResultsSheet",
       "MissionEditorSheet",
       "GapReportSheet",
+      "CaptureSheet",
       "PendingInputModal",
     ]) {
       expect(content).toContain(modal);
@@ -102,20 +109,20 @@ describe("Ask affordance", () => {
   });
 
   it("is not a fifth navigation place", () => {
-    // The routing union stays four members; nothing routes to the agent.
-    expect(components).toContain('export type CorePlace = "deck" | "library" | "capture" | "more";');
+    // The routing union now has three members; nothing routes to the agent.
+    expect(components).toContain('export type CorePlace = "deck" | "library" | "more";');
     expect(components).not.toContain('id: "agent"');
   });
 
-  it("stands down for the sheet it opens and for the selection tray", () => {
-    expect(shell).toContain("!state.workspaceAgent.isOpen && state.selection.size === 0");
+  it("stands down for the sheet it opens, for the capture sheet, and for the selection tray", () => {
+    expect(shell).toContain("!state.workspaceAgent.isOpen && !state.isCaptureSheetOpen && state.selection.size === 0");
   });
 
   it("is positioned relative to the bottom cluster, not to the nav's items", () => {
     // So the pulse and activity banner push it up rather than being covered by it, and
     // changing how many tabs the bar has cannot strand it.
     expect(shell).toContain("bottomCluster");
-    expect(shell).toContain("askSlot");
+    expect(shell).toContain("floatingSlot");
   });
 
   it("meets the tap-target floor, is labelled, and uses theme tokens", () => {
@@ -134,6 +141,43 @@ describe("Ask affordance", () => {
 
   it("leaves room for itself at the bottom of scrolled screens", () => {
     const screenStyles = read("griot/screens/screenStyles.ts");
-    expect(screenStyles).toMatch(/content: \{[^}]*paddingBottom: 10[0-9]/);
+    expect(screenStyles).toMatch(/content: \{[^}]*paddingBottom: 1[0-9][0-9]/);
+  });
+});
+
+/**
+ * Capture used to be a fourth `CorePlace` tab; it is now a floating action paired with
+ * Ask, stacked above the nav rather than living in a shrinking set of tab slots.
+ */
+describe("Capture affordance", () => {
+  const shell = read("MainLayout.tsx");
+  const components = read("griot/components.tsx");
+
+  it("is mounted in the shell and opens the capture sheet", () => {
+    expect(shell).toContain("CaptureAffordance");
+    expect(shell).toContain("openCapture(\"note\")");
+  });
+
+  it("is not in the bottom nav's items", () => {
+    expect(components).not.toContain('id: "capture"');
+  });
+
+  it("stands down alongside Ask — both float in the same slot", () => {
+    expect(shell).toContain("!state.workspaceAgent.isOpen && !state.isCaptureSheetOpen && state.selection.size === 0");
+    expect(shell).toContain("floatingSlot");
+  });
+
+  it("is stacked with Ask, not laid out side by side", () => {
+    expect(shell).toMatch(/floatingSlot: \{[^}]*alignItems: "flex-end"/);
+  });
+
+  it("meets the tap-target floor, is labelled, and uses theme tokens", () => {
+    expect(components).toContain('accessibilityLabel="Capture"');
+    const captureBlock = components.slice(
+      components.indexOf("export function CaptureAffordance")
+    );
+    expect(captureBlock).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(captureBlock).toContain("theme.accent");
+    expect(captureBlock).toContain("reducedMotion");
   });
 });

@@ -98,6 +98,7 @@ export function presentAppState(input: PresentAppStateInput): AppState {
     isModalOpen: ui.isModalOpen,
     isWorkspaceSheetOpen: ui.isWorkspaceSheetOpen,
     isSettingsSheetOpen: ui.isSettingsSheetOpen,
+    isCaptureSheetOpen: ui.isCaptureSheetOpen,
     isInputSheetOpen: ui.isInputSheetOpen,
     inputSheetMode: ui.inputSheetMode,
     activePreflightPresetId: ui.activePreflightPresetId,

@@ -236,6 +236,8 @@ export interface AppState {
   isModalOpen: boolean;
   isWorkspaceSheetOpen: boolean;
   isSettingsSheetOpen: boolean;
+  /** Capture is a floating modal, not a routed place — see `openCaptureSheet`/`closeCaptureSheet`. */
+  isCaptureSheetOpen: boolean;
   isInputSheetOpen: boolean;
   inputSheetMode: "source" | "ask" | "note";
   /** The operation preset id currently shown in the AI preflight sheet (null = closed). */
@@ -1482,12 +1484,11 @@ export class GriotController {
         this.openGapReport();
         return;
       case "capture":
-        // Capture is a screen, not a sheet, so the controller only clears what's in the
-        // way; MainLayout observes `captureIntent` and does the navigation.
+        // Capture is a floating modal, so the controller opens it directly rather than
+        // leaving MainLayout to observe `captureIntent` and navigate.
         this.operations.dismissResult();
         this.ui.isModalOpen = false;
-        this.ui.captureIntent = dispatch.intent;
-        this.emit();
+        this.openCaptureSheet(dispatch.intent);
         return;
     }
   }
@@ -1510,6 +1511,24 @@ export class GriotController {
       this.emit();
     }
     return intent;
+  }
+
+  /**
+   * Opens the capture sheet — a floating modal, not a routed place (see `CorePlace` and
+   * the `AskAffordance` doc comment in `griot/components.tsx` for why capture moved off
+   * the nav bar to sit alongside it as its own affordance). Mirrors `openWorkspaceAgent`'s
+   * shape: scope first, then flip the visibility flag the sheet itself reads.
+   */
+  openCaptureSheet(intent: "note" | "paste" | "link" | "ask", parentId: string | null = null): void {
+    this.navigateToGroup(parentId);
+    this.ui.captureIntent = intent;
+    this.ui.isCaptureSheetOpen = true;
+    this.emit();
+  }
+
+  closeCaptureSheet(): void {
+    this.ui.isCaptureSheetOpen = false;
+    this.emit();
   }
 
   // --- Custom Commands ---
@@ -2539,6 +2558,11 @@ export class GriotController {
 
     switch (tool.type) {
       case "create_cards": {
+        // Any card whose spec (or the conversation context) already names a destination
+        // keeps using it. Only cards with no destination at all get bundled into a new
+        // group below, so a card explicitly targeted at an existing group is never
+        // re-nested.
+        const hasExplicitDestination = tool.cards.some((spec) => spec.parentId != null) || parentId != null;
         const created: Card[] = [];
         for (const spec of tool.cards) {
           const card = createCard({
@@ -2558,13 +2582,38 @@ export class GriotController {
           await this.cardRepo.saveCard(card);
           created.push(card);
         }
-        const summary = `Created ${created.length} card${created.length === 1 ? "" : "s"}.`;
+
+        let createdCards = created;
+        let destinationLabel = "";
+        if (!hasExplicitDestination) {
+          // No group already exists to hold these — build the same kind of real,
+          // openable container `create_group`/`GroupCardsInteractor` produces, rather
+          // than leaving the cards scattered at the workspace root.
+          const groupName = created[0]?.title
+            ? `New cards: ${created[0].title}`
+            : "New cards";
+          const group = await this.groupCardsInteractor.execute({
+            workspaceId,
+            parentId: parentId ?? null,
+            name: groupName,
+            cards: created,
+          });
+          const provenancedGroup: Card = {
+            ...group,
+            provenance: createProvenance({ mode: "agent", model }),
+          };
+          await this.cardRepo.saveCard(provenancedGroup);
+          createdCards = [provenancedGroup, ...created];
+          destinationLabel = ` in "${provenancedGroup.title}"`;
+        }
+
+        const summary = `Created ${created.length} card${created.length === 1 ? "" : "s"}${destinationLabel}.`;
         await this.finishWorkspaceAgentDispatch({
           commandName: "workspace-agent:create_cards",
           workspaceId,
           parentId,
           inputCardIds: [],
-          createdCards: created,
+          createdCards,
           startedAt,
           summary,
         });

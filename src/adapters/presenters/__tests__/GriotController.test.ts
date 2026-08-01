@@ -522,11 +522,31 @@ describe("GRIOT App Controller", () => {
 
     await controller.dispatchSuggestedAction({ kind: "capture", intent: "link" });
     expect(controller.getState().captureIntent).toBe("link");
+    // Capture is a floating modal: dispatching it opens the sheet directly.
+    expect(controller.getState().isCaptureSheetOpen).toBe(true);
 
     // Consumed exactly once, so re-renders don't re-navigate.
     expect(controller.consumeCaptureIntent()).toBe("link");
     expect(controller.getState().captureIntent).toBeNull();
     expect(controller.consumeCaptureIntent()).toBeNull();
+  });
+
+  it("opens and closes the capture sheet, following the same shape as the workspace agent sheet", async () => {
+    const controller = new GriotController({
+      cardRepo, workspaceRepo, settingsRepo, agentGateway,
+      commandDefinitionRepo, cardTypeRepo, promptPresetRepo, assistantProfileRepo,
+      searchGateway, extractionGateway
+    });
+    await controller.init();
+
+    expect(controller.getState().isCaptureSheetOpen).toBe(false);
+
+    controller.openCaptureSheet("note");
+    expect(controller.getState().isCaptureSheetOpen).toBe(true);
+    expect(controller.getState().captureIntent).toBe("note");
+
+    controller.closeCaptureSheet();
+    expect(controller.getState().isCaptureSheetOpen).toBe(false);
   });
 
   it("turns a failed run into a durable, re-runnable card instead of a transient banner", async () => {

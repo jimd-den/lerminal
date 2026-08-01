@@ -68,17 +68,22 @@ export function SpaceScreen({
         showsVerticalScrollIndicator={false}
       >
         <View style={[localStyles.topBar, { borderBottomColor: theme.line }]}>
-          <Pressable accessibilityRole="button" onPress={onBack} hitSlop={8}>
-            <Text style={[localStyles.backLink, { color: theme.accent, fontFamily: theme.fontMono }]}>
-              ‹ LIBRARY
-            </Text>
-          </Pressable>
-          <Text
-            numberOfLines={1}
-            style={[localStyles.spaceName, { color: theme.text, fontFamily: theme.fontSans }]}
-          >
-            {model.activeSpace?.name ?? "Learning space"}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Pressable accessibilityRole="button" onPress={onBack} hitSlop={8}>
+              <Text style={[localStyles.backLink, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                ‹ LIBRARY
+              </Text>
+            </Pressable>
+            <View style={localStyles.brandRow}>
+              <View style={[localStyles.brandDot, { backgroundColor: theme.accent }]} />
+              <Text
+                numberOfLines={1}
+                style={[localStyles.brandName, { color: theme.text, fontFamily: theme.fontSans }]}
+              >
+                {model.activeSpace?.name ?? "Learning space"}
+              </Text>
+            </View>
+          </View>
           <Pressable accessibilityRole="button" onPress={() => onCapture("note")} hitSlop={8}>
             <Text style={[localStyles.addLink, { color: theme.accent, fontFamily: theme.fontMono }]}>
               + ADD
@@ -153,14 +158,15 @@ export function SpaceScreen({
 const localStyles = StyleSheet.create({
   topBar: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    alignItems: "flex-start",
     gap: 10,
     paddingTop: 14,
     paddingBottom: 14,
     borderBottomWidth: 1,
   },
-  backLink: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6 },
-  spaceName: { flex: 1, fontSize: 16, fontWeight: "800", textAlign: "center" },
-  addLink: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 0.6 },
+  backLink: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6, marginBottom: 6 },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  brandDot: { width: 9, height: 9, borderRadius: 3 },
+  brandName: { fontSize: 17, fontWeight: "800", letterSpacing: 0.5 },
+  addLink: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 0.6, marginTop: 3 },
 });

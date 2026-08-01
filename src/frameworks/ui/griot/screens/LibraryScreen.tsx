@@ -12,9 +12,10 @@ import { BRAND_NAME } from "../../../../entities/brand";
  *
  * ## Business Value & Purpose
  * The index of every workspace — each one a bounded system for its own sources, notes,
- * transformations, and practice. Restyled to the same compact brand header the other
- * primary screens use (Capture, Deck), rather than the earlier LCARS-style
- * `SystemHeader`, so switching between them reads as one instrument.
+ * transformations, and practice. Uses the same compact brand header every other screen
+ * (Capture, Deck, Settings, Document, Space) uses now that the earlier LCARS-style
+ * header component has been retired entirely, so switching between them reads as one
+ * instrument.
  */
 export function LibraryScreen({
   theme,

@@ -2,43 +2,13 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { GriotTheme } from "./theme";
 
-export type CorePlace = "deck" | "library" | "capture" | "more";
-
-export function SystemHeader({
-  eyebrow,
-  title,
-  theme,
-  leftAction,
-  rightAction,
-}: {
-  eyebrow: string;
-  title: string;
-  theme: GriotTheme;
-  leftAction?: { label: string; onPress: () => void };
-  rightAction?: { label: string; onPress: () => void };
-}) {
-  return (
-    <View style={styles.header}>
-      <View style={[styles.headerRail, { backgroundColor: theme.accent }]}>
-        <View style={[styles.headerRailCut, { backgroundColor: theme.background }]} />
-      </View>
-      <View style={styles.headerBody}>
-        <View style={styles.headerActions}>
-          {leftAction ? <TextButton {...leftAction} theme={theme} /> : <Text style={[styles.systemId, { color: theme.textFaint, fontFamily: theme.fontMono }]}>SYS // 01</Text>}
-          {rightAction ? <TextButton {...rightAction} theme={theme} /> : <Text style={[styles.readyText, { color: theme.accent, fontFamily: theme.fontMono }]}>READY</Text>}
-        </View>
-        <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>{eyebrow}</Text>
-        <Text numberOfLines={2} style={[styles.title, { color: theme.text, fontFamily: theme.fontMono }]}>{title}</Text>
-        <View style={styles.headerBus}>
-          <View style={[styles.headerBusLine, { backgroundColor: theme.line }]} />
-          <View style={[styles.busBlockWide, { backgroundColor: theme.accent }]} />
-          <View style={[styles.busBlock, { backgroundColor: theme.textFaint }]} />
-          <View style={[styles.busBlock, { backgroundColor: theme.line }]} />
-        </View>
-      </View>
-    </View>
-  );
-}
+/**
+ * Capture used to be a fourth member of this union; it is now a floating modal (see
+ * `CaptureAffordance` below), for the same reason the assistant is not a fifth one — a
+ * modal is scoped to whatever screen it was opened from, and routing to it would mean
+ * leaving that scope behind.
+ */
+export type CorePlace = "deck" | "library" | "more";
 
 export function TextButton({ label, onPress, theme }: { label: string; onPress: () => void; theme: GriotTheme }) {
   return (
@@ -234,7 +204,6 @@ export function BottomNavigation({ place, theme, onChange }: { place: CorePlace;
   const items: { id: CorePlace; label: string; glyph: string }[] = [
     { id: "deck", label: "Deck", glyph: ">_" },
     { id: "library", label: "Library", glyph: "[]" },
-    { id: "capture", label: "Capture", glyph: "+" },
     { id: "more", label: "More", glyph: "::" },
   ];
   return (
@@ -243,7 +212,7 @@ export function BottomNavigation({ place, theme, onChange }: { place: CorePlace;
         const active = item.id === place;
         return (
           <Pressable key={item.id} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => onChange(item.id)} style={({ pressed }) => [styles.navItem, active && { backgroundColor: theme.accentSoft }, pressed && styles.pressed]}>
-            <View style={[styles.navGlyphBox, { borderColor: active ? theme.accent : theme.line, backgroundColor: item.id === "capture" ? theme.accentSoft : "transparent" }]}>
+            <View style={[styles.navGlyphBox, { borderColor: active ? theme.accent : theme.line }]}>
               <Text style={[styles.navGlyph, { color: active ? theme.accent : theme.textFaint, fontFamily: theme.fontMono }]}>{item.glyph}</Text>
             </View>
             <Text style={[styles.navLabel, { color: active ? theme.text : theme.textMuted, fontFamily: theme.fontMono }]}>{item.label}</Text>
@@ -255,21 +224,52 @@ export function BottomNavigation({ place, theme, onChange }: { place: CorePlace;
   );
 }
 
+/**
+ * # Capture affordance — the "+" that used to live in the nav bar
+ *
+ * ## Business Value & Purpose
+ * Capture moved off the bottom nav because it isn't a place you navigate to and stay
+ * in — it is a single, disposable action (write this down) that returns you to wherever
+ * you were. That is the same shape as `AskAffordance`, so it gets the same treatment:
+ * a floating button, not a tab, stacked with Ask above the nav rather than competing
+ * with it for one of a shrinking set of slots.
+ *
+ * Sized and gated exactly like `AskAffordance` — 52pt circle, theme tokens only, opacity
+ * only under reduced motion — and hidden by the same parent-owned logic in `MainLayout`
+ * (its own sheet, another modal, or an active selection), so the two floating controls
+ * always appear and disappear together.
+ */
+export function CaptureAffordance({
+  theme,
+  onPress,
+  reducedMotion,
+}: {
+  theme: GriotTheme;
+  onPress: () => void;
+  /** When true the press feedback is opacity only — no scale. */
+  reducedMotion?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Capture"
+      accessibilityHint="Opens a place to write down a note, question, or source."
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.ask,
+        { backgroundColor: theme.panel, borderColor: theme.accent },
+        pressed && (reducedMotion ? { opacity: 0.7 } : styles.pressed),
+      ]}
+    >
+      <Text style={[styles.askText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+        +
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   pressed: { opacity: 0.7, transform: [{ scale: 0.99 }] },
-  header: { flexDirection: "row", minHeight: 128, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12 },
-  headerRail: { width: 10, borderTopLeftRadius: 5, borderTopRightRadius: 5, borderBottomLeftRadius: 24, borderBottomRightRadius: 3, marginRight: 12, overflow: "hidden" },
-  headerRailCut: { position: "absolute", top: 37, right: 0, width: 5, height: 27, borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-  headerBody: { flex: 1 },
-  headerActions: { minHeight: 30, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  systemId: { fontSize: 12, fontWeight: "800", letterSpacing: 1.2 },
-  readyText: { fontSize: 12, fontWeight: "900", letterSpacing: 1.4 },
-  eyebrow: { fontSize: 12, lineHeight: 15, fontWeight: "900", letterSpacing: 1.6, marginTop: 2 },
-  title: { fontSize: 25, lineHeight: 31, fontWeight: "700", letterSpacing: -0.7, marginTop: 1, textTransform: "uppercase" },
-  headerBus: { height: 6, flexDirection: "row", alignItems: "center", gap: 4, marginTop: 9 },
-  headerBusLine: { height: 1, flex: 1 },
-  busBlockWide: { width: 29, height: 5, borderRadius: 2 },
-  busBlock: { width: 8, height: 5, borderRadius: 2 },
   textButton: { minHeight: 38, justifyContent: "center" },
   textButtonText: { fontSize: 12, fontWeight: "800", letterSpacing: 1 },
   sectionLabelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 24, marginBottom: 9 },

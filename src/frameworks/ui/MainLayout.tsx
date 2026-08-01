@@ -9,14 +9,14 @@ import {
 } from "../../adapters/presenters/GriotDeckPresenter";
 import { useControllerState } from "./useControllerState";
 import { useDeckNavigation } from "./useDeckNavigation";
-import { AskAffordance, BottomNavigation } from "./griot/components";
+import { AskAffordance, BottomNavigation, CaptureAffordance } from "./griot/components";
 import { SelectionTray } from "./griot/SelectionTray";
 import { ActivityBanner } from "./griot/ActivityBanner";
 import { WorkspacePulse } from "./griot/WorkspacePulse";
 import { PlaceTransition } from "./motion/communicative";
 import { ModalStack } from "./griot/ModalStack";
 import {
-  CaptureScreen,
+  CaptureIntent,
   DeckScreen,
   DocumentScreen,
   LibraryScreen,
@@ -98,8 +98,11 @@ export function MainLayout({ controller }: { controller: GriotController }) {
   const finishCapture = () => {
     setCaptureDraft("");
     setCaptureAwaitingInput(false);
-    controller.navigateToGroup(null);
-    nav.changePlace("deck");
+    controller.closeCaptureSheet();
+  };
+
+  const openCapture = (intent: CaptureIntent, parentId: string | null = null) => {
+    controller.openCaptureSheet(intent, parentId);
   };
 
   const screen = renderScreen();
@@ -114,25 +117,9 @@ export function MainLayout({ controller }: { controller: GriotController }) {
           model={deck}
           onOpenSpace={spaceId => void nav.openSpace(spaceId)}
           onOpenDocument={nav.openDocument}
-          onCapture={nav.openCapture}
+          onCapture={openCapture}
           onOpenResult={() => void nav.openOperationResult()}
           onOpenSettings={nav.openSettings}
-        />
-      );
-    }
-
-    if (nav.place === "capture") {
-      return (
-        <CaptureScreen
-          controller={controller}
-          theme={theme}
-          initialIntent={nav.captureIntent}
-          value={captureDraft}
-          working={captureWorking}
-          onChangeText={setCaptureDraft}
-          onWorkingChange={setCaptureWorking}
-          onInputRequired={() => setCaptureAwaitingInput(true)}
-          onComplete={finishCapture}
         />
       );
     }
@@ -163,7 +150,7 @@ export function MainLayout({ controller }: { controller: GriotController }) {
           onBack={nav.backFromDocument}
           onOpenGroup={nav.openDocument}
           onOpenCard={controller.openCard.bind(controller)}
-          onCapture={intent => nav.openCapture(intent, document.group.id)}
+          onCapture={intent => openCapture(intent, document.group.id)}
         />
       );
     }
@@ -177,7 +164,7 @@ export function MainLayout({ controller }: { controller: GriotController }) {
         onBack={nav.showLibraryIndex}
         onOpenDocument={nav.openDocument}
         onOpenCard={controller.openCard.bind(controller)}
-        onCapture={nav.openCapture}
+        onCapture={openCapture}
       />
     );
   }
@@ -223,20 +210,25 @@ export function MainLayout({ controller }: { controller: GriotController }) {
           ) : null}
 
           {/* The bottom cluster: banners, then either the selection tray or the nav.
-              The Ask affordance floats above whatever the cluster currently is, anchored
+              Ask and Capture float above whatever the cluster currently is, anchored
               to the cluster's own top edge rather than to a fixed offset from the bar —
-              so it can never land on top of the pulse or the activity banner, and it is
-              unaffected by how many items the nav has. */}
+              so neither can ever land on top of the pulse or the activity banner, and
+              both are unaffected by how many items the nav has. */}
           <View style={styles.bottomCluster}>
             {/* Always mounted: in-flight work outlives the screen that started it, so the
                 shell reports it rather than each screen owning its own indicator. */}
             <ActivityBanner controller={controller} state={state} theme={theme} />
             <WorkspacePulse controller={controller} state={state} theme={theme} />
 
-            {/* Hidden while the sheet is up (it would be stranded under the modal) and
-                while cards are selected, where the tray owns the bottom of the screen. */}
-            {!state.workspaceAgent.isOpen && state.selection.size === 0 ? (
-              <View style={styles.askSlot} pointerEvents="box-none">
+            {/* Hidden while either sheet is up (they would be stranded under the modal)
+                and while cards are selected, where the tray owns the bottom of the screen. */}
+            {!state.workspaceAgent.isOpen && !state.isCaptureSheetOpen && state.selection.size === 0 ? (
+              <View style={styles.floatingSlot} pointerEvents="box-none">
+                <CaptureAffordance
+                  theme={theme}
+                  reducedMotion={reducedMotion}
+                  onPress={() => openCapture("note")}
+                />
                 <AskAffordance
                   theme={theme}
                   reducedMotion={reducedMotion}
@@ -263,6 +255,12 @@ export function MainLayout({ controller }: { controller: GriotController }) {
         controller={controller}
         state={state}
         theme={theme}
+        captureDraft={captureDraft}
+        captureWorking={captureWorking}
+        onCaptureChangeText={setCaptureDraft}
+        onCaptureWorkingChange={setCaptureWorking}
+        onCaptureInputRequired={() => setCaptureAwaitingInput(true)}
+        onCaptureComplete={finishCapture}
         onPendingInputCancel={() => setCaptureAwaitingInput(false)}
         onPendingInputComplete={() => {
           if (!captureAwaitingInput) return;
@@ -288,20 +286,23 @@ const styles = StyleSheet.create({
   // `relative` so the Ask affordance can hang off the cluster's top edge; the cluster
   // itself stays in normal flow beneath the screen.
   bottomCluster: { position: "relative" },
-  askSlot: {
+  // Ask and Capture stacked in one column, Capture above Ask — the user's chosen layout
+  // rather than two buttons side by side. Height is two 52pt circles plus the gap between
+  // them, so the offset above the cluster's top edge is derived from that, not from the
+  // nav's width or item count.
+  floatingSlot: {
     position: "absolute",
     right: 14,
-    // Above the cluster's top edge, so the pulse/activity banner push it up with them
-    // instead of being covered by it.
-    top: -62,
+    top: -140,
     alignItems: "flex-end",
+    gap: 12,
   },
   toast: {
     position: "absolute",
     left: 24,
     right: 24,
-    // Clears the Ask affordance, which floats just above the bottom cluster.
-    bottom: 150,
+    // Clears Ask and Capture, stacked just above the bottom cluster.
+    bottom: 210,
     minHeight: 48,
     borderRadius: 10,
     borderWidth: 1,

@@ -1,16 +1,18 @@
 import React, { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   DocumentModel,
   MaterialFilter,
   filterMaterials,
 } from "../../../../adapters/presenters/GriotDeckPresenter";
 import { Card } from "../../../../entities/card";
-import { Chip, SectionLabel, Slab, SystemHeader } from "../components";
+import { Chip, SectionLabel, Slab } from "../components";
 import { ContextCardRow } from "../ContextCards";
 import { CaptureIntent, SharedProps } from "./types";
 import { CommandSlab, ContextPanel, EmptyReadout } from "./shared";
 import { styles } from "./screenStyles";
+import { TypeScale } from "../theme";
+import { BRAND_NAME } from "../../../../entities/brand";
 
 export function DocumentScreen({
   controller,
@@ -64,16 +66,36 @@ export function DocumentScreen({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      <SystemHeader
-        eyebrow="SPACE // DOCUMENT"
-        title={document.group.title}
-        theme={theme}
-        leftAction={{ label: "< SPACE", onPress: onBack }}
-        rightAction={{
-          label: actionsOpen ? "CLOSE" : "+ ACTION",
-          onPress: () => setActionsOpen((open) => !open),
-        }}
-      />
+      <View style={[localStyles.topBar, { borderBottomColor: theme.line }]}>
+        <View style={{ flex: 1 }}>
+          <Pressable accessibilityRole="button" onPress={onBack} hitSlop={8}>
+            <Text style={[localStyles.backLink, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              ‹ SPACE
+            </Text>
+          </Pressable>
+          <View style={localStyles.brandRow}>
+            <View style={[localStyles.brandDot, { backgroundColor: theme.accent }]} />
+            <Text
+              numberOfLines={1}
+              style={[localStyles.brandName, { color: theme.text, fontFamily: theme.fontSans }]}
+            >
+              {document.group.title}
+            </Text>
+          </View>
+          <Text style={[localStyles.brandSub, { color: theme.textMuted }]}>
+            {BRAND_NAME} // Document
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setActionsOpen((open) => !open)}
+          hitSlop={8}
+        >
+          <Text style={[localStyles.tag, { color: theme.accent, fontFamily: theme.fontMono }]}>
+            {actionsOpen ? "CLOSE" : "+ ACTION"}
+          </Text>
+        </Pressable>
+      </View>
 
       {actionsOpen ? (
         <ContextPanel theme={theme} title="DOCUMENT ACTIONS">
@@ -228,4 +250,20 @@ export function DocumentScreen({
     </ScrollView>
   );
 }
+
+const localStyles = StyleSheet.create({
+  topBar: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingTop: 14,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  backLink: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6, marginBottom: 6 },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  brandDot: { width: 9, height: 9, borderRadius: 3 },
+  brandName: { fontSize: 17, fontWeight: "800", letterSpacing: 0.5 },
+  brandSub: { fontSize: TypeScale.meta, marginTop: 3, lineHeight: 18, marginLeft: 18 },
+  tag: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.3, marginTop: 3 },
+});
 
