@@ -1,4 +1,4 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { MissingArgumentError, WorkspaceNotFoundError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 

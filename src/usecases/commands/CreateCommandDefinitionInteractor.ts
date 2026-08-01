@@ -6,7 +6,7 @@ import {
   normalizeCommandName,
   RESERVED_COMMAND_NAMES,
 } from "../../entities/commandDefinition";
-import { CommandDefinitionRepository } from "../../adapters/repositories/CommandDefinitionRepository";
+import { CommandDefinitionRepository } from "../ports/repositories/CommandDefinitionRepository";
 import {
   DuplicateCommandNameError,
   InvalidCommandNameError,

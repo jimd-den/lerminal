@@ -1,7 +1,8 @@
 import { createCard } from "../../entities/card";
+import { createProvenance } from "../../entities/provenance";
 import { AgentCommandDefinition } from "../../entities/commandDefinition";
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { AgentRequestError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
@@ -29,9 +30,9 @@ export class CustomAgentCommand implements PipelineCommand {
       return { kind: "needsInput", mode: "ask" };
     }
 
-    let agentCards;
+    let result;
     try {
-      agentCards = await this.agentGateway.ask(
+      result = await this.agentGateway.ask(
         arg,
         ctx.inputCards,
         ctx.apiKey,
@@ -42,7 +43,7 @@ export class CustomAgentCommand implements PipelineCommand {
       throw new AgentRequestError(err?.message);
     }
 
-    const cards = agentCards.map(item =>
+    const cards = result.cards.map(item =>
       createCard({
         workspaceId: ctx.workspaceId,
         type: "chunk",
@@ -50,6 +51,12 @@ export class CustomAgentCommand implements PipelineCommand {
         body: item.body,
         cite: arg.substring(0, 16),
         parentId: ctx.parentId ?? undefined,
+        provenance: createProvenance({
+          mode: "agent",
+          sourceCardIds: ctx.inputCards.map(card => card.id),
+          model: ctx.model,
+          isLocalFallback: result.isLocalFallback || undefined,
+        }),
       })
     );
 

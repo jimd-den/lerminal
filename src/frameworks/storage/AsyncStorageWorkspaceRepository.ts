@@ -1,60 +1,46 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Workspace } from "../../entities/workspace";
-import { WorkspaceRepository } from "../../adapters/repositories/WorkspaceRepository";
+import { WorkspaceRepository } from "../../usecases/ports/repositories/WorkspaceRepository";
+import { KeyValueStore } from "./KeyValueStore";
+import { JsonCollectionStore, JsonStoreOptions, removeById, upsert } from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const WORKSPACES_STORAGE_KEY = "learnimal_workspaces_v1";
+
+const workspaceId = (workspace: Workspace) => workspace.id;
 
 /**
  * # AsyncStorage Workspace Repository
- * 
+ *
  * ## Business Value & Purpose
- * Manages the persistence of workspaces using AsyncStorage. Swapping workspaces changes
- * the user's focus. Saving this metadata persistently ensures users retain their study folders.
+ * Persists the user's study folders. Workspaces gate which cards are visible, so a read
+ * that silently resolved to empty would look exactly like "all your work is gone" —
+ * failures therefore surface instead of returning `[]`.
  */
 export class AsyncStorageWorkspaceRepository implements WorkspaceRepository {
+  private readonly workspaces: JsonCollectionStore<Workspace>;
+
+  constructor(store: KeyValueStore, options?: JsonStoreOptions) {
+    this.workspaces = new JsonCollectionStore(
+      WORKSPACES_STORAGE_KEY,
+      store,
+      "workspaces",
+      options,
+    );
+  }
+
   async getWorkspaces(): Promise<Workspace[]> {
-    const logTimestamp = new Date().toISOString();
-    try {
-      const data = await AsyncStorage.getItem(WORKSPACES_STORAGE_KEY);
-      if (!data) return [];
-      const list = JSON.parse(data) as Workspace[];
-      console.log(`[${logTimestamp}] [AsyncStorageWorkspaceRepository.getWorkspaces] -> retrieved ${list.length} workspaces`);
-      return list;
-    } catch (err: any) {
-      console.error("[AsyncStorageWorkspaceRepository] Failed to read workspaces from disk:", err.message);
-      return [];
-    }
+    return this.workspaces.readAll();
   }
 
   async saveWorkspace(workspace: Workspace): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    try {
-      const workspaces = await this.getWorkspaces();
-      const index = workspaces.findIndex(w => w.id === workspace.id);
-      
-      if (index >= 0) {
-        workspaces[index] = workspace;
-      } else {
-        workspaces.push(workspace);
-      }
-      
-      await AsyncStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(workspaces));
-      console.log(`[${logTimestamp}] [AsyncStorageWorkspaceRepository.saveWorkspace] workspaceId=${workspace.id}`);
-    } catch (err: any) {
-      console.error("[AsyncStorageWorkspaceRepository] Failed to write workspace to disk:", err.message);
-    }
+    await this.workspaces.mutate((all) => upsert(all, workspace, workspaceId));
   }
 
-  async deleteWorkspace(workspaceId: string): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    try {
-      const workspaces = await this.getWorkspaces();
-      const filtered = workspaces.filter(w => w.id !== workspaceId);
-      
-      await AsyncStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(filtered));
-      console.log(`[${logTimestamp}] [AsyncStorageWorkspaceRepository.deleteWorkspace] workspaceId=${workspaceId}`);
-    } catch (err: any) {
-      console.error("[AsyncStorageWorkspaceRepository] Failed to delete workspace on disk:", err.message);
-    }
+  async deleteWorkspace(id: string): Promise<void> {
+    await this.workspaces.mutate((all) => removeById(all, id, workspaceId));
   }
 }

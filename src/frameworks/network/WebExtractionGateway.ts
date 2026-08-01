@@ -1,4 +1,4 @@
-import { ExtractionGateway } from "../../adapters/gateways/ExtractionGateway";
+import { ExtractionGateway } from "../../usecases/ports/gateways/ExtractionGateway";
 import { NodeHtmlMarkdown } from "node-html-markdown";
 import * as punycode from "punycode";
 

@@ -4,7 +4,7 @@ import { createInitialSchedule } from "../../entities/schedule";
 import { MemoryCardRepository } from "../../adapters/repositories/MemoryCardRepository";
 import { MemoryWorkspaceRepository } from "../../adapters/repositories/MemoryWorkspaceRepository";
 import { MemorySettingsRepository } from "../../adapters/repositories/MemorySettingsRepository";
-import { AgentCardResponse, AgentGateway, AgentModel } from "../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../ports/gateways/AgentGateway";
 import { Card } from "../../entities/card";
 import { NothingDueError } from "../errors";
 import { StartReviewInteractor } from "../review/StartReviewInteractor";
@@ -14,8 +14,8 @@ import { SwitchWorkspaceInteractor } from "../workspace/SwitchWorkspaceInteracto
 import { DeleteWorkspaceInteractor } from "../workspace/DeleteWorkspaceInteractor";
 
 class MockAgentGateway implements AgentGateway {
-  async ask(query: string): Promise<AgentCardResponse[]> {
-    return [{ title: "Seed", body: `for ${query}` }];
+  async ask(query: string): Promise<AgentAskResult> {
+    return { cards: [{ title: "Seed", body: `for ${query}` }], isLocalFallback: false };
   }
   async fetchModels(): Promise<AgentModel[]> {
     return [];
@@ -45,10 +45,11 @@ describe("StartReviewInteractor", () => {
     expect(queue.map(c => c.id)).toEqual([due.id]);
   });
 
-  it("falls back to all scheduled when nothing is due", () => {
+  it("throws NothingDueError when nothing is due (unless cramming)", () => {
     const future = createCard({ workspaceId: "w", type: "question", title: "Q", body: "" });
     future.schedule = { dueAt: now + 10_000, interval: 1, reps: 0 };
-    expect(interactor.execute([future], now).length).toBe(1);
+    expect(() => interactor.execute([future], now)).toThrow(NothingDueError);
+    expect(interactor.execute([future], now, true, true).length).toBe(1);
   });
 
   it("throws NothingDueError with no scheduled cards", () => {

@@ -1,91 +1,58 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Card } from "../../entities/card";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { CardRepository } from "../../usecases/ports/repositories/CardRepository";
+import { KeyValueStore } from "./KeyValueStore";
+import {
+  JsonCollectionStore,
+  JsonStoreOptions,
+  removeById,
+  upsert,
+  upsertAll,
+} from "./JsonStore";
 
+/**
+ * Storage key. The `learnimal_` prefix is deliberate and must not be renamed with the
+ * rest of the app: it is the on-disk contract, and changing it would orphan every
+ * workspace, card, and setting a user already has.
+ */
 const CARDS_STORAGE_KEY = "learnimal_cards_v1";
+
+const cardId = (card: Card) => card.id;
 
 /**
  * # AsyncStorage Card Repository
- * 
+ *
  * ## Business Value & Purpose
- * Implements persistent card storage using React Native's standard asynchronous,
- * local key-value store. This ensures user notes, sources, chunk cards, and schedules
- * are durable across app restarts and updates.
+ * Durable local storage for the user's cards. Every method goes through
+ * {@link JsonCollectionStore}, so a failed read surfaces as a `PersistenceError` rather
+ * than an empty deck — and no save can overwrite the user's cards with the result of a
+ * read that didn't work.
  */
 export class AsyncStorageCardRepository implements CardRepository {
-  private async getAllCards(): Promise<Card[]> {
-    try {
-      const data = await AsyncStorage.getItem(CARDS_STORAGE_KEY);
-      if (!data) return [];
-      return JSON.parse(data) as Card[];
-    } catch (err: any) {
-      console.error("[AsyncStorageCardRepository] Failed to read cards from disk:", err.message);
-      return [];
-    }
-  }
+  private readonly cards: JsonCollectionStore<Card>;
 
-  private async saveAllCards(cards: Card[]): Promise<void> {
-    try {
-      await AsyncStorage.setItem(CARDS_STORAGE_KEY, JSON.stringify(cards));
-    } catch (err: any) {
-      console.error("[AsyncStorageCardRepository] Failed to write cards to disk:", err.message);
-    }
+  constructor(store: KeyValueStore, options?: JsonStoreOptions) {
+    this.cards = new JsonCollectionStore(CARDS_STORAGE_KEY, store, "cards", options);
   }
 
   async getCardsByWorkspace(workspaceId: string): Promise<Card[]> {
-    const logTimestamp = new Date().toISOString();
-    const all = await this.getAllCards();
-    const filtered = all.filter(card => card.workspaceId === workspaceId);
-    console.log(`[${logTimestamp}] [AsyncStorageCardRepository.getCardsByWorkspace] workspaceId=${workspaceId} -> retrieved ${filtered.length} cards`);
-    return filtered;
+    const all = await this.cards.readAll();
+    return all.filter((card) => card.workspaceId === workspaceId);
   }
 
   async saveCard(card: Card): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    const all = await this.getAllCards();
-    const index = all.findIndex(c => c.id === card.id);
-    
-    if (index >= 0) {
-      all[index] = card;
-    } else {
-      all.push(card);
-    }
-    
-    await this.saveAllCards(all);
-    console.log(`[${logTimestamp}] [AsyncStorageCardRepository.saveCard] cardId=${card.id}`);
+    await this.cards.mutate((all) => upsert(all, card, cardId));
   }
 
   async saveCards(cards: Card[]): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    const all = await this.getAllCards();
-    
-    for (const card of cards) {
-      const index = all.findIndex(c => c.id === card.id);
-      if (index >= 0) {
-        all[index] = card;
-      } else {
-        all.push(card);
-      }
-    }
-    
-    await this.saveAllCards(all);
-    console.log(`[${logTimestamp}] [AsyncStorageCardRepository.saveCards] saved ${cards.length} cards`);
+    await this.cards.mutate((all) => upsertAll(all, cards, cardId));
   }
 
-  async deleteCard(cardId: string): Promise<void> {
-    const logTimestamp = new Date().toISOString();
-    const all = await this.getAllCards();
-    const filtered = all.filter(card => card.id !== cardId);
-    
-    await this.saveAllCards(filtered);
-    console.log(`[${logTimestamp}] [AsyncStorageCardRepository.deleteCard] cardId=${cardId}`);
+  async deleteCard(id: string): Promise<void> {
+    await this.cards.mutate((all) => removeById(all, id, cardId));
   }
 
-  async getCard(cardId: string): Promise<Card | null> {
-    const logTimestamp = new Date().toISOString();
-    const all = await this.getAllCards();
-    const card = all.find(c => c.id === cardId) || null;
-    console.log(`[${logTimestamp}] [AsyncStorageCardRepository.getCard] cardId=${cardId} -> found=${!!card}`);
-    return card;
+  async getCard(id: string): Promise<Card | null> {
+    const all = await this.cards.readAll();
+    return all.find((card) => card.id === id) ?? null;
   }
 }

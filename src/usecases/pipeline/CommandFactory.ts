@@ -1,6 +1,6 @@
 import { CommandDefinition } from "../../entities/commandDefinition";
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
-import { CardRepository } from "../../adapters/repositories/CardRepository";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
+import { CardRepository } from "../ports/repositories/CardRepository";
 import { CustomAgentCommand } from "./CustomAgentCommand";
 import { PipelineMacroCommand } from "./PipelineMacroCommand";
 import { PipelineCommand } from "./Command";

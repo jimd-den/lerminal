@@ -1,3 +1,5 @@
+import { Card } from "./card";
+
 /**
  * # Card Type Definition Entity
  *
@@ -5,7 +7,7 @@
  * Lerminal's modularity comes from treating the *type* of a card as data, not as a
  * hardcoded enum. A {@link CardTypeDefinition} describes how a family of cards looks
  * (color, icon), what extra structured data it carries (`fields`), and how it should
- * be studied (`learning`). The six original card kinds ship as built-in definitions,
+ * be studied (`learning`). The original card kinds ship as built-in definitions,
  * and users can author their own — a new type needs no code change.
  *
  * ## Relationship to {@link Card}
@@ -15,8 +17,7 @@
  */
 
 /**
- * How cards of a type are practiced in a review session. The review flow dispatches
- * on this discriminator (see Phase 3 study modes).
+ * How cards of a type are practiced in a review session.
  * - `none`: not studied (sources, notes, groups, search results).
  * - `flashcard`: active recall — title is the prompt, `answer` is hidden.
  * - `cloze`: fill-in-the-blank — `body` contains `{{...}}` deletions.
@@ -30,9 +31,7 @@ export type FieldKind = "text" | "markdown" | "hidden";
 /**
  * How a card's body is rendered.
  * - `markdown` (default): rich text via the markdown renderer.
- * - `html`: the body is treated as a full HTML document and rendered in a sandboxed
- *   WebView, so the AI or the user can embed real interactivity (inputs, sliders,
- *   canvases, small scripts) — a card can be a tiny interactive widget.
+ * - `html`: the body is treated as a full HTML document and rendered in a sandboxed WebView.
  */
 export type RenderMode = "markdown" | "html";
 
@@ -66,9 +65,7 @@ export interface CardTypeDefinition {
 }
 
 /**
- * The seeded definitions for the original card kinds. Ids match the legacy
- * `CardType` strings so existing cards resolve to these without migration. Colors
- * mirror the prototype's `CARD_COLORS` palette.
+ * Seeded definitions for card kinds. Ids match the legacy `CardType` strings.
  */
 export const BUILTIN_CARD_TYPES: CardTypeDefinition[] = [
   { id: "source", name: "Source", color: "#B49CE6", icon: "▤", builtin: true, learning: "none", fields: [] },
@@ -79,6 +76,8 @@ export const BUILTIN_CARD_TYPES: CardTypeDefinition[] = [
   { id: "search", name: "Search", color: "#E0A45E", icon: "⌕", builtin: true, learning: "none", fields: [] },
   { id: "cloze", name: "Cloze", color: "#5BC8A8", icon: "▭", builtin: true, learning: "cloze", fields: [] },
   { id: "interactive", name: "Interactive", color: "#8FD16A", icon: "◧", builtin: true, learning: "none", render: "html", fields: [] },
+  // Never studied: a failure is a record of something that didn't happen, not material.
+  { id: "failure", name: "Failed run", color: "#FF5F69", icon: "!", builtin: true, learning: "none", fields: [] },
   { id: "chat", name: "Chat", color: "#6FA8FF", icon: "💬", builtin: true, learning: "none", fields: [] },
   {
     id: "elaboration",
@@ -109,11 +108,9 @@ export interface CreateCardTypeParams {
 }
 
 /**
- * Factory for a valid user-authored {@link CardTypeDefinition}. Always `builtin:false`;
- * callers validate uniqueness against existing ids (built-in and custom).
+ * Factory for a valid user-authored {@link CardTypeDefinition}.
  */
 export function createCardTypeDefinition(params: CreateCardTypeParams): CardTypeDefinition {
-  const logTimestamp = new Date().toISOString();
   const definition: CardTypeDefinition = {
     id: normalizeCardTypeId(params.id || params.name),
     name: params.name.trim(),
@@ -124,20 +121,36 @@ export function createCardTypeDefinition(params: CreateCardTypeParams): CardType
     fields: params.fields || [],
   };
 
-  console.log(`[${logTimestamp}] [createCardTypeDefinition] OUTPUT: ${JSON.stringify(definition)}`);
   return definition;
 }
 
 /**
  * Resolves the definition governing a card, given its `typeId`/legacy `type` and the
- * full registry. Falls back to a synthetic neutral definition so an unknown type id
- * (e.g. a deleted custom type still referenced by old cards) never crashes rendering.
+ * full registry. Falls back to a synthetic neutral definition.
  */
 export function resolveCardType(
   typeKey: string | undefined,
-  registry: CardTypeDefinition[]
+  registry: CardTypeDefinition[] = BUILTIN_CARD_TYPES
 ): CardTypeDefinition {
   const found = typeKey ? registry.find(t => t.id === typeKey) : undefined;
   if (found) return found;
   return { id: typeKey || "unknown", name: typeKey || "Card", color: "#9AA7B5", icon: "◆", builtin: false, learning: "none", fields: [] };
+}
+
+/**
+ * Determines whether a card is eligible for FSRS study scheduling based on its
+ * type's learning behavior. Notes, sources, groups, and search results have learning
+ * behavior "none" and are never scheduled merely by existing in a study space.
+ * Flashcards, cloze cards, and elaboration cards return true.
+ *
+ * @param card The card entity to evaluate.
+ * @param registry Full card type registry (defaults to BUILTIN_CARD_TYPES).
+ * @returns True if the card can receive an FSRS schedule.
+ */
+export function isSchedulable(
+  card: Card,
+  registry: CardTypeDefinition[] = BUILTIN_CARD_TYPES
+): boolean {
+  const typeDef = resolveCardType(card.typeId ?? card.type, registry);
+  return typeDef.learning !== "none";
 }

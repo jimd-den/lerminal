@@ -1,13 +1,16 @@
 import { Card } from "../../entities/card";
 import { Workspace } from "../../entities/workspace";
-import { RESERVED_COMMAND_NAMES } from "../../entities/commandDefinition";
+import {
+  AssistantProfile,
+  AssistantCapability,
+} from "../../entities/assistantProfile";
+import { CardTypeDefinition } from "../../entities/cardTypeDefinition";
+import { Logger, silentLogger } from "../ports/Logger";
 import { UnknownCommandError } from "../errors";
 import { CommandContext, PipelineCommand } from "./Command";
 
 /**
- * Settings/context shared by every stage of a pipeline run, supplied by the
- * presenter. `inputCards` seeds the first stage; later stages receive the cards
- * produced by the previous stage.
+ * Shared execution context supplied to each stage of a pipeline run.
  */
 export interface PipelineEnvironment {
   workspaceId: string;
@@ -19,21 +22,16 @@ export interface PipelineEnvironment {
   model: string;
   systemPrompt: string;
   chunkSystemPrompt: string;
-  /**
-   * When true, a content-producing pipeline auto-organizes its output by composing
-   * a trailing `group "<command>"` stage — keeping grouping a matter of command
-   * composition rather than special-casing each command.
-   */
-  autoGroup: boolean;
+  assistantProfiles?: AssistantProfile[];
+  activeProfileIds?: Partial<Record<AssistantCapability, string>>;
+  cardTypes?: CardTypeDefinition[];
+  /** Controller-level output grouping preference. */
+  autoGroup?: boolean;
   /**
    * Names of pipeline-macro commands already being expanded (for recursion guarding).
-   * Top-level callers omit this; macro expansion threads it down.
    */
   expansionStack?: string[];
 }
-
-/** Commands whose fresh output is worth auto-grouping by command name. */
-const AUTO_GROUP_PRODUCERS = new Set(["ask", "source", "chunk", "recall"]);
 
 interface ParsedStage {
   cmd: string;
@@ -41,45 +39,58 @@ interface ParsedStage {
 }
 
 /**
- * The outcome of running a whole pipeline — the runner's output boundary.
- * - `completed`: all stages ran; `cards` are the final stage's output.
- * - `needsInput` / `review`: a stage halted the pipeline for UI interaction.
+ * Outcome of running a pipeline — the runner's output boundary.
  */
 export type PipelineOutcome =
   | { kind: "completed"; cards: Card[] }
-  | { kind: "needsInput"; mode: "ask" | "source"; command: string }
+  | {
+      kind: "needsInput";
+      mode: "ask" | "source";
+      command: string;
+      resume?: {
+        command: string;
+        inputCards: Card[];
+        remainingPipeline: string;
+      };
+    }
   | { kind: "review" };
 
 /**
- * # Pipeline Runner
+ * # Pipeline Runner (Clean Architecture Application Use Case)
  *
  * ## Business Value & Purpose
- * Executes a Unix-like pipeline (`ask "X" | chunk | recall | space`) by dispatching
- * each stage to its registered {@link PipelineCommand} and threading the cards
- * produced by one stage in as the input of the next. The runner owns parsing and
- * sequencing only; all domain work lives in the individual commands.
+ * Executes a Unix-like pipeline of transformations (e.g. `import <url> | ask "summarize" | group "Topic"`).
+ * Threads AssistantProfiles into CommandContext so individual pipeline stages resolve goal-specific AI prompts.
+ *
+ * ## Applied Design Patterns
+ * - **Pipeline / Chain of Responsibility Pattern**: Chains modular transform commands, threading output -> input.
+ * - **Command Pattern**: Executes stages via the `PipelineCommand` interface abstraction.
  */
 export class PipelineRunner {
   private readonly commands: Map<string, PipelineCommand>;
+  private readonly logger: Logger;
 
-  constructor(commands: PipelineCommand[]) {
-    this.commands = new Map(commands.map(c => [c.name, c]));
+  constructor(commands: PipelineCommand[], logger: Logger = silentLogger) {
+    this.commands = new Map(commands.map((c) => [c.name, c]));
+    this.logger = logger;
   }
 
   /**
-   * Parses and runs the pipeline.
+   * Parses and executes a pipeline string sequentially.
    *
-   * @param pipelineText e.g. `ask "React hooks" | chunk | recall`.
-   * @param env Shared execution context for the run.
-   * @throws {UseCaseError} when a stage rejects the request (the presenter maps it
-   *   to user feedback).
+   * @param pipelineText e.g. `note "idea" | ask "expand" | group "Ideas"`.
+   * @param env Execution environment containing workspace, parent group, and settings.
    */
-  async run(pipelineText: string, env: PipelineEnvironment): Promise<PipelineOutcome> {
-    const stages = this.withAutoGroup(this.parse(pipelineText), env.autoGroup);
+  async run(
+    pipelineText: string,
+    env: PipelineEnvironment,
+  ): Promise<PipelineOutcome> {
+    const stages = this.parse(pipelineText);
 
     let cards = env.initialInputCards;
 
-    for (const { cmd, arg } of stages) {
+    for (let index = 0; index < stages.length; index += 1) {
+      const { cmd, arg } = stages[index];
       const command = this.commands.get(cmd);
       if (!command) {
         throw new UnknownCommandError(cmd);
@@ -94,49 +105,110 @@ export class PipelineRunner {
         model: env.model,
         systemPrompt: env.systemPrompt,
         chunkSystemPrompt: env.chunkSystemPrompt,
+        assistantProfiles: env.assistantProfiles,
+        activeProfileIds: env.activeProfileIds,
+        cardTypes: env.cardTypes,
         expansionStack: env.expansionStack ?? [],
       };
 
       const result = await command.execute(arg, ctx);
+
       if (result.kind === "needsInput") {
-        return { kind: "needsInput", mode: result.mode, command: cmd };
+        this.logger.debug("pipeline.halted", { reason: "needsInput", stage: cmd });
+        const outerRemainder = stages
+          .slice(index + 1)
+          .map(formatPipelineStage)
+          .join(" | ");
+        const resume = result.resume ?? {
+          command: cmd,
+          inputCards: cards,
+          remainingPipeline: "",
+        };
+        const remainingPipeline = [resume.remainingPipeline, outerRemainder]
+          .filter(Boolean)
+          .join(" | ");
+        const needsContinuation = Boolean(
+          remainingPipeline || resume.inputCards.length || result.resume,
+        );
+        return {
+          kind: "needsInput",
+          mode: result.mode,
+          command: needsContinuation ? resume.command : cmd,
+          ...(needsContinuation
+            ? { resume: { ...resume, remainingPipeline } }
+            : {}),
+        };
       }
       if (result.kind === "review") {
+        this.logger.debug("pipeline.halted", { reason: "review" });
         return { kind: "review" };
       }
       cards = result.kind === "cards" ? result.cards : [];
     }
+
+    this.logger.debug("pipeline.completed", { outputCards: cards.length });
 
     return { kind: "completed", cards };
   }
 
   private parse(pipelineText: string): ParsedStage[] {
     const stages: ParsedStage[] = [];
-    for (const raw of pipelineText.split("|").map(s => s.trim()).filter(Boolean)) {
+    for (const raw of splitPipelineStages(pipelineText)) {
       const match = raw.match(/^([a-zA-Z0-9_-]+)\s*([\s\S]*)$/);
       if (!match) continue;
+      const rawArg = match[2].trim();
       stages.push({
         cmd: match[1].toLowerCase(),
-        arg: match[2].trim().replace(/^["']|["']$/g, ""),
+        arg: unquotePipelineArg(rawArg),
       });
     }
     return stages;
   }
+}
 
-  /**
-   * Auto-grouping is implemented as pure composition: when enabled and the pipeline
-   * ends in a content-producing command (and isn't already a grouping command), a
-   * trailing `group "<command>"` stage is appended so the run's output is organized
-   * under a group named after the command that produced it.
-   */
-  private withAutoGroup(stages: ParsedStage[], autoGroup: boolean): ParsedStage[] {
-    if (!autoGroup || stages.length === 0) return stages;
-    const last = stages[stages.length - 1];
-    
-    // Auto-group if it's a known producer OR if it's a custom command (which are always producers)
-    const isCustomCommand = !RESERVED_COMMAND_NAMES.includes(last.cmd);
-    if (!AUTO_GROUP_PRODUCERS.has(last.cmd) && !isCustomCommand) return stages;
-    
-    return [...stages, { cmd: "group", arg: last.cmd }];
+function formatPipelineStage(stage: ParsedStage): string {
+  if (!stage.arg) return stage.cmd;
+  return `${stage.cmd} "${stage.arg.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function splitPipelineStages(input: string): string[] {
+  const stages: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+
+  for (const char of input) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      current += char;
+      escaped = true;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = quote === char ? null : (quote ?? char);
+      current += char;
+      continue;
+    }
+    if (char === "|" && !quote) {
+      if (current.trim()) stages.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
   }
+
+  if (current.trim()) stages.push(current.trim());
+  return stages;
+}
+
+function unquotePipelineArg(arg: string): string {
+  const quote = arg[0];
+  const quoted =
+    (quote === '"' || quote === "'") && arg[arg.length - 1] === quote;
+  const value = quoted ? arg.slice(1, -1) : arg;
+  return value.replace(/\\([\\"'])/g, "$1");
 }

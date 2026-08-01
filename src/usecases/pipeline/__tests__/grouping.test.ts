@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { createCard } from "../../../entities/card";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentCardResponse, AgentGateway, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../ports/gateways/AgentGateway";
 import { GroupCardsInteractor } from "../../grouping/GroupCardsInteractor";
 import { PipelineEnvironment, PipelineRunner } from "../PipelineRunner";
 import { AskCommand } from "../AskCommand";
@@ -15,8 +15,8 @@ import { GroupCommand } from "../GroupCommand";
 import { UngroupCommand } from "../UngroupCommand";
 
 class MockAgentGateway implements AgentGateway {
-  async ask(): Promise<AgentCardResponse[]> {
-    return [{ title: "A", body: "alpha" }];
+  async ask(): Promise<AgentAskResult> {
+    return { cards: [{ title: "A", body: "alpha" }], isLocalFallback: false };
   }
   async fetchModels(): Promise<AgentModel[]> {
     return [];
@@ -49,7 +49,7 @@ function env(overrides: Partial<PipelineEnvironment> = {}): PipelineEnvironment 
     apiKey: "k",
     model: "m",
     systemPrompt: "p",
-    autoGroup: false,
+    chunkSystemPrompt: "cp",
     ...overrides,
   };
 }
@@ -73,19 +73,19 @@ describe("grouping", () => {
     expect((await repo.getCard(c2.id))?.parentId).toBe(group.id);
   });
 
-  it("auto-group composes a trailing group named after the command", async () => {
+  it("explicit grouping in pipeline creates group explicitly", async () => {
     const repo = new MemoryCardRepository();
     const runner = buildRunner(repo);
     const source = createCard({ workspaceId: WS, type: "source", title: "S", body: "One. Two. Three things here." });
     await repo.saveCard(source);
 
-    const outcome = await runner.run("chunk", env({ initialInputCards: [source], autoGroup: true }));
+    const outcome = await runner.run('chunk | group "chunks"', env({ initialInputCards: [source] }));
 
     expect(outcome.kind).toBe("completed");
     if (outcome.kind !== "completed") return;
     expect(outcome.cards.length).toBe(1);
     expect(outcome.cards[0].type).toBe("group");
-    expect(outcome.cards[0].title).toBe("chunk");
+    expect(outcome.cards[0].title).toBe("chunks");
 
     const all = await repo.getCardsByWorkspace(WS);
     const chunks = all.filter(c => c.type === "chunk");
@@ -93,44 +93,26 @@ describe("grouping", () => {
     expect(chunks.every(c => c.parentId === outcome.cards[0].id)).toBe(true);
   });
 
-  it("auto-group triggers for custom commands that are not in the reserved list", async () => {
-    const repo = new MemoryCardRepository();
-    const customCommand = {
-      name: "explain-simply",
-      execute: async () => ({
-        kind: "cards",
-        cards: [createCard({ workspaceId: WS, type: "chunk", title: "A", body: "a" })]
-      })
-    } as any;
-    const runner = new PipelineRunner([customCommand, new GroupCommand(new GroupCardsInteractor(repo))]);
-
-    const outcome = await runner.run("explain-simply", env({ autoGroup: true }));
-
-    expect(outcome.kind).toBe("completed");
-    if (outcome.kind !== "completed") return;
-    expect(outcome.cards.length).toBe(1);
-    expect(outcome.cards[0].type).toBe("group");
-    expect(outcome.cards[0].title).toBe("explain-simply");
-  });
-
-  it("auto-group off leaves output ungrouped", async () => {
+  it("chunking creates a document container group for the source and its chunks", async () => {
     const repo = new MemoryCardRepository();
     const runner = buildRunner(repo);
     const source = createCard({ workspaceId: WS, type: "source", title: "S", body: "One. Two." });
 
-    const outcome = await runner.run("chunk", env({ initialInputCards: [source], autoGroup: false }));
+    const outcome = await runner.run("chunk", env({ initialInputCards: [source] }));
 
     expect(outcome.kind).toBe("completed");
     if (outcome.kind !== "completed") return;
-    expect(outcome.cards.every(c => c.type === "chunk")).toBe(true);
-    expect((await repo.getCardsByWorkspace(WS)).some(c => c.type === "group")).toBe(false);
+    const all = await repo.getCardsByWorkspace(WS);
+    const docGroup = all.find(c => c.type === "group" && c.documentGroupFor === source.id);
+    expect(docGroup).toBeDefined();
+    expect(docGroup?.title).toBe("S");
   });
 
   it("new cards are created under the current group (parentId)", async () => {
     const repo = new MemoryCardRepository();
     const runner = buildRunner(repo);
 
-    const outcome = await runner.run('source "https://example.com"', env({ parentId: "g-current", autoGroup: false }));
+    const outcome = await runner.run('source "https://example.com"', env({ parentId: "g-current" }));
 
     expect(outcome.kind).toBe("completed");
     if (outcome.kind !== "completed") return;

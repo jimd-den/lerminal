@@ -1,16 +1,49 @@
 import { Card } from "../../entities/card";
-import { AgentCardResponse, AgentGateway, AgentModel, ChatMessage } from "../../adapters/gateways/AgentGateway";
-import { composeCardPrompt, DEFAULT_CARD_INSTRUCTION } from "../../entities/promptPreset";
+import {
+  AgentAskResult,
+  AgentCardResponse,
+  AgentGateway,
+  AgentModel,
+  ChatMessage,
+  PromptDesignResponse,
+  WorkspaceAgentTurnResult,
+} from "../../usecases/ports/gateways/AgentGateway";
+import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
+import { composeSystemPrompt } from "../../entities/agentPrompts";
+import { WebCitation } from "../../entities/webCitation";
+
+/**
+ * Whether OpenRouter's own `web` plugin rides along with a request.
+ *
+ * Web search is **on by default**: an assistant that can check its facts is the better
+ * default for a study app, and the honesty guarantee never came from withholding search
+ * — it comes from `extractWebCitations`, which reports only sources the provider
+ * actually returned. Callers opt *out* (globally, from Settings), and only an explicit
+ * `false` suppresses the plugin, so a caller that says nothing gets search.
+ */
+function webPlugins(enabled: boolean | undefined): { plugins: { id: string }[] } | {} {
+  return enabled === false ? {} : { plugins: [{ id: "web" }] };
+}
+
+/**
+ * OpenRouter's unified reasoning request for the workspace agent turn.
+ *
+ * `exclude: false` is explicit rather than implied: the whole point of asking is to be
+ * able to *show* the trace, so a future default flip on the provider's side must not
+ * silently strip it.
+ */
+const REASONING_REQUEST = { enabled: true, exclude: false } as const;
 
 /**
  * # OpenRouter Agent Gateway Implementation
  * 
  * ## Business Value & Purpose
- * Connects the application to modern LLMs via the OpenRouter service.
- * Learnimal follows a 'bring-your-own-key' policy to empower users and avoid model lock-in.
- * This class translates user prompts and active source text cards into structured prompt payloads,
- * requests cards from LLMs, parses the JSON response, and handles network or authentication failures
- * gracefully by falling back to localized chunk generation.
+ * Connects the application to modern LLMs via OpenRouter.
+ * Supports card generation requests, streaming chat, live model retrieval, and AI Prompt Architect
+ * profile design.
+ *
+ * ## Applied Design Patterns
+ * - **Gateway Pattern**: Encapsulates external LLM API communication and fallback logic.
  */
 export class OpenRouterAgentGateway implements AgentGateway {
   async ask(
@@ -18,8 +51,9 @@ export class OpenRouterAgentGateway implements AgentGateway {
     contextCards: Card[],
     apiKey: string,
     model: string,
-    systemPrompt?: string
-  ): Promise<AgentCardResponse[]> {
+    systemPrompt?: string,
+    outputContract: OutputContractKind = "cards-v1"
+  ): Promise<AgentAskResult> {
     const logTimestamp = new Date().toISOString();
     const modelToUse = model;
     const cleanKey = apiKey?.trim() || "";
@@ -36,7 +70,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
     // Fall back to local card generation if API key is not set
     if (!cleanKey) {
       console.warn(`[${logTimestamp}] [OpenRouterAgentGateway] API Key is missing. Falling back to local generation.`);
-      return this.generateLocalFallback(query);
+      return this.localFallback(query, "No OpenRouter API key is configured");
     }
 
     // Assemble source context
@@ -46,14 +80,13 @@ export class OpenRouterAgentGateway implements AgentGateway {
       .substring(0, 3000); // Restrict length for token budgets
 
     // The incoming systemPrompt is treated purely as an *instruction* (what kind of
-    // cards to make); the strict JSON format contract is always appended by
-    // composeCardPrompt, so any instruction yields parseable output.
-    const instruction = systemPrompt?.trim() || DEFAULT_CARD_INSTRUCTION;
-    const activeSystemPrompt = composeCardPrompt(instruction);
+    // output to make). `composeSystemPrompt` wraps it in the non-editable parent layer:
+    // the truthfulness rules ahead of it and the strict format contract for the caller's
+    // outputContract after it, so any instruction — including one a user wrote — yields
+    // parseable output in the shape its capability actually expects.
+    const activeSystemPrompt = composeSystemPrompt("card-generation", systemPrompt, outputContract);
 
-    const prompt = `${activeSystemPrompt}
-
-${contextText ? `Use this source context to extract and base your facts on:\n${contextText}\n\n` : ""}Query: ${query}`;
+    const userPrompt = `${contextText ? `Use this source context to extract and base your facts on:\n${contextText}\n\n` : ""}Query: ${query}`;
 
     try {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -62,14 +95,18 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
           "Content-Type": "application/json",
           "Authorization": `Bearer ${cleanKey}`,
           "HTTP-Referer": "https://github.com/dbslim/lerminal",
-          "X-Title": "Learnimal",
+          "X-Title": "GRIOT",
         },
         body: JSON.stringify({
           model: modelToUse,
           messages: [
             {
+              role: "system",
+              content: activeSystemPrompt,
+            },
+            {
               role: "user",
-              content: prompt,
+              content: userPrompt,
             },
           ],
         }),
@@ -109,20 +146,307 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       const cards: AgentCardResponse[] = parsed.map((item: any) => ({
         title: String(item.title || "Concept").substring(0, 100),
         body: String(item.body || "").substring(0, 1000),
+        ...(item.sourceCardId ? { sourceCardId: String(item.sourceCardId) } : {}),
+        ...(item.sourceExcerpt ? { sourceExcerpt: String(item.sourceExcerpt).substring(0, 300) } : {}),
       }));
 
+      if (cards.length === 0) {
+        console.warn(`[${logTimestamp}] [OpenRouterAgentGateway] Model returned no cards. Using local fallback.`);
+        return this.localFallback(query, "The model returned no usable cards");
+      }
+
       console.log(`[${logTimestamp}] [OpenRouterAgentGateway] OpenRouter SUCCESS: model=${modelToUse} | generated ${cards.length} cards`);
-      return cards;
+      // The only path that may claim a model answered.
+      return { cards, isLocalFallback: false };
     } catch (err: any) {
       console.error(`[${logTimestamp}] [OpenRouterAgentGateway] request failed: ${err.message}. Falling back to local generation.`);
-      return this.generateLocalFallback(query);
+      return this.localFallback(query, `The model request failed: ${err?.message ?? "unknown error"}`);
     }
   }
 
   /**
-   * Streams a chat completion using SSE. React Native's `fetch` can't read a
-   * streaming body, so this uses `XMLHttpRequest` and parses the incremental
-   * `responseText` for `data:` lines, emitting each content delta as it arrives.
+   * Prompts the AI Prompt Architect to design or refine an AssistantProfile system instruction
+   * based on the user's stated learning goal.
+   */
+  /**
+   * Asks the model to choose one next action for a card from the caller-supplied menu.
+   *
+   * The user message, built by `SuggestNextActionInteractor`, carries the card and the
+   * candidate ids; the system message comes from the prompt registry, whose non-editable
+   * layer restates the exact `id:`/`reason:` shape. The interactor — not this gateway —
+   * still validates the chosen id against the menu it sent, so a hallucinated id can
+   * never reach a dispatch even if the contract is ignored.
+   */
+  async suggestNextAction(input: {
+    prompt: string;
+    apiKey: string;
+    model: string;
+    /** The user's edited "next-action suggestion" prompt body, if they have one. */
+    systemPrompt?: string;
+  }): Promise<string> {
+    const cleanKey = input.apiKey?.trim();
+    if (!cleanKey) {
+      throw new Error("API key is required to suggest a next action");
+    }
+
+    console.log(
+      `[${new Date().toISOString()}] [OpenRouterAgentGateway.suggestNextAction] model="${input.model}"`
+    );
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cleanKey}`,
+        "HTTP-Referer": "https://github.com/dbslim/lerminal",
+        "X-Title": "GRIOT",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [
+          {
+            role: "system",
+            content: composeSystemPrompt("next-action-suggestion", input.systemPrompt),
+          },
+          { role: "user", content: input.prompt },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
+      try {
+        const errData = await response.json();
+        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error("The model returned an empty response");
+    }
+    return content;
+  }
+
+  /**
+   * Streams one Workspace Agent turn.
+   *
+   * Plain text, not JSON. The model writes prose and embeds `[[note: …]]`-style tags; the
+   * app parses them (`entities/agentTags`). There is no `response_format` on this path at
+   * all — a small local model can't be held to a JSON schema, and the schema was buying us
+   * a rejected turn rather than a usable one.
+   *
+   * Streamed over XHR + SSE, the same mechanism `streamChat` already uses (React Native's
+   * `fetch` has no readable body stream), so text *and* reasoning appear as they are
+   * generated rather than after the turn completes. `onDelta` receives increments only —
+   * the caller accumulates, because the caller owns the message.
+   *
+   * Throws rather than falling back: there is no honest local substitute for a model turn.
+   */
+  designWorkspaceAgentTurn(input: {
+    briefing: string;
+    apiKey: string;
+    model: string;
+    systemPrompt?: string;
+    webSearchEnabled?: boolean;
+    onDelta?: (delta: { text?: string; reasoning?: string }) => void;
+  }): Promise<WorkspaceAgentTurnResult> {
+    return new Promise((resolve, reject) => {
+      const cleanKey = input.apiKey?.trim();
+      if (!cleanKey) {
+        reject(new Error("API key is required for the workspace agent"));
+        return;
+      }
+
+      console.log(
+        `[${new Date().toISOString()}] [OpenRouterAgentGateway.designWorkspaceAgentTurn] model="${input.model}" | briefingChars=${input.briefing.length} | streaming`
+      );
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "https://openrouter.ai/api/v1/chat/completions");
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.setRequestHeader("Authorization", `Bearer ${cleanKey}`);
+      xhr.setRequestHeader("HTTP-Referer", "https://github.com/dbslim/lerminal");
+      xhr.setRequestHeader("X-Title", "GRIOT");
+
+      let processed = 0;
+      let text = "";
+      let reasoning = "";
+      const citations: WebCitation[] = [];
+      const seenCitations = new Set<string>();
+
+      /** Citations arrive with or after the final chunk; collected wherever they appear. */
+      const collectCitations = (carrier: any): void => {
+        for (const citation of extractWebCitations(carrier)) {
+          if (seenCitations.has(citation.url)) continue;
+          seenCitations.add(citation.url);
+          citations.push(citation);
+        }
+      };
+
+      const drain = () => {
+        const data = xhr.responseText ?? "";
+        let nl: number;
+        while ((nl = data.indexOf("\n", processed)) !== -1) {
+          const line = data.substring(processed, nl).trim();
+          processed = nl + 1;
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (payload === "" || payload === "[DONE]") continue;
+
+          let json: any;
+          try {
+            json = JSON.parse(payload);
+          } catch {
+            // Keep-alive comment or a fragment that hasn't finished arriving.
+            continue;
+          }
+
+          const choice = json.choices?.[0];
+          const delta = choice?.delta ?? choice?.message;
+          collectCitations(delta);
+          collectCitations(choice?.message);
+
+          const contentDelta = typeof delta?.content === "string" ? delta.content : "";
+          // The streaming equivalent of `message.reasoning`: OpenRouter puts the same
+          // fields on the delta. Read through the same extractor so an encrypted block is
+          // skipped here exactly as it is on a non-streamed reply.
+          const reasoningDelta = extractReasoning(delta) ?? "";
+
+          if (contentDelta) text += contentDelta;
+          if (reasoningDelta) reasoning += reasoningDelta;
+          if (contentDelta || reasoningDelta) {
+            input.onDelta?.({
+              ...(contentDelta ? { text: contentDelta } : {}),
+              ...(reasoningDelta ? { reasoning: reasoningDelta } : {}),
+            });
+          }
+        }
+      };
+
+      xhr.onprogress = drain;
+      xhr.onload = () => {
+        drain();
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(
+            new Error(
+              `HTTP ${xhr.status}: ${xhr.responseText?.substring(0, 200) || xhr.statusText}`
+            )
+          );
+          return;
+        }
+        if (!text.trim()) {
+          reject(new Error("The model returned an empty response"));
+          return;
+        }
+        resolve({
+          text,
+          webCitations: citations,
+          // Never synthesized from the answer: no reasoning returned, no reasoning field.
+          ...(reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
+        });
+      };
+      xhr.onerror = () => reject(new Error("Network error while streaming"));
+
+      xhr.send(
+        JSON.stringify({
+          model: input.model,
+          stream: true,
+          messages: [
+            { role: "system", content: composeSystemPrompt("workspace-agent", input.systemPrompt) },
+            { role: "user", content: input.briefing },
+          ],
+          // Ask for the model's own reasoning alongside the answer. OpenRouter drops the
+          // parameter for models that cannot reason — those simply stream none, and no
+          // reasoning UI appears at all.
+          reasoning: REASONING_REQUEST,
+          // On unless the user turned it off globally — see `webPlugins`. Whether it
+          // actually ran is never inferred from this flag; only real citations say so.
+          ...webPlugins(input.webSearchEnabled),
+        })
+      );
+    });
+  }
+
+  async designAssistantProfile(input: {
+    messages: ChatMessage[];
+    capability: AssistantCapability;
+    apiKey: string;
+    model: string;
+    /** The user's edited "prompt architect" body, if they have one. */
+    systemPrompt?: string;
+  }): Promise<PromptDesignResponse> {
+    const logTimestamp = new Date().toISOString();
+    const cleanKey = input.apiKey?.trim();
+    if (!cleanKey) {
+      throw new Error("API key is required to design assistant profiles");
+    }
+
+    console.log(`[${logTimestamp}] [OpenRouterAgentGateway.designAssistantProfile] capability=${input.capability} | messagesCount=${input.messages.length}`);
+
+    const payloadMessages: ChatMessage[] = [
+      {
+        role: "system",
+        content: `${composeSystemPrompt("prompt-architect", input.systemPrompt)}\n\nTarget capability: ${input.capability}`,
+      },
+      ...input.messages,
+    ];
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cleanKey}`,
+        "HTTP-Referer": "https://github.com/dbslim/lerminal",
+        "X-Title": "GRIOT",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: payloadMessages,
+      }),
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
+      try {
+        const errData = await response.json();
+        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+    const cleanJson = content
+      .replace(/^```json/i, "")
+      .replace(/^```/, "")
+      .replace(/```$/, "")
+      .trim();
+
+    try {
+      const parsed = JSON.parse(cleanJson);
+      return {
+        needsClarification: Boolean(parsed.needsClarification),
+        question: parsed.question || null,
+        nameSuggestion: parsed.nameSuggestion || "Custom Assistant",
+        description: parsed.description || "Custom AI assistance profile",
+        systemPrompt: parsed.systemPrompt || null,
+      };
+    } catch {
+      return {
+        needsClarification: false,
+        question: null,
+        nameSuggestion: "Custom Assistant",
+        description: "Custom AI assistance profile",
+        systemPrompt: content,
+      };
+    }
+  }
+
+  /**
+   * Streams a chat completion using SSE.
    */
   streamChat(
     messages: ChatMessage[],
@@ -142,9 +466,9 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       xhr.setRequestHeader("Content-Type", "application/json");
       xhr.setRequestHeader("Authorization", `Bearer ${cleanKey}`);
       xhr.setRequestHeader("HTTP-Referer", "https://github.com/dbslim/lerminal");
-      xhr.setRequestHeader("X-Title", "Learnimal");
+      xhr.setRequestHeader("X-Title", "GRIOT");
 
-      let processed = 0;   // index in responseText up to which lines are consumed
+      let processed = 0;
       let full = "";
 
       const drain = () => {
@@ -224,16 +548,24 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       console.log(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Retrieved ${models.length} models dynamically`);
       return models;
     } catch (err: any) {
-      // No hardcoded model fallback — models are always sourced live from OpenRouter.
-      // On failure return an empty list; the UI still allows entering a custom model id.
       console.warn(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Warning: ${err.message}. Returning empty model list.`);
       return [];
     }
   }
 
   /**
-   * Generates a template set of learning cards based on the query topic when API calls fail or are unconfigured.
+   * Wraps the local template in its tag. Every fallback path goes through here, so it is
+   * structurally impossible for template content to escape this class claiming a model
+   * wrote it — which is precisely the bug this replaced.
    */
+  private localFallback(query: string, reason: string): AgentAskResult {
+    return {
+      cards: this.generateLocalFallback(query),
+      isLocalFallback: true,
+      fallbackReason: reason,
+    };
+  }
+
   private generateLocalFallback(query: string): AgentCardResponse[] {
     const topic = query
       .replace(/^(how|what|why|explain|tell me about|the)\s+/i, "")
@@ -260,4 +592,57 @@ ${contextText ? `Use this source context to extract and base your facts on:\n${c
       },
     ];
   }
+}
+
+/**
+ * Reads real web citations back out of an OpenRouter response message.
+ *
+ * OpenRouter's `web` plugin attaches `annotations: [{ type: "url_citation",
+ * url_citation: { url, title } }, ...]` to the assistant message when its search
+ * actually ran. Parsed defensively — this is provider response shape, not a contract
+ * this app controls — so an unexpected or missing shape degrades to no citations rather
+ * than throwing and losing the turn the model otherwise answered correctly.
+ */
+/**
+ * The model's own reasoning text for one turn, or `undefined` when the provider returned
+ * none.
+ *
+ * OpenRouter exposes reasoning two ways: a plain `reasoning` string, and a
+ * `reasoning_details` array whose entries may be plaintext (`reasoning.text`), a
+ * provider-written summary (`reasoning.summary`), or an opaque encrypted blob
+ * (`reasoning.encrypted`). Only readable text is taken; encrypted blocks are skipped
+ * rather than shown as gibberish, and nothing here ever falls back to the answer itself.
+ * A model that did not reason produces `undefined`, which is what keeps the UI honest.
+ */
+export function extractReasoning(message: any): string | undefined {
+  const direct = message?.reasoning;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+
+  const details = message?.reasoning_details;
+  if (!Array.isArray(details)) return undefined;
+
+  const parts: string[] = [];
+  for (const detail of details) {
+    const text = detail?.text ?? detail?.summary;
+    if (typeof text === "string" && text.trim()) parts.push(text.trim());
+  }
+  const joined = parts.join("\n\n").trim();
+  return joined ? joined : undefined;
+}
+
+export function extractWebCitations(message: any): WebCitation[] {
+  const annotations = message?.annotations;
+  if (!Array.isArray(annotations)) return [];
+
+  const citations: WebCitation[] = [];
+  for (const item of annotations) {
+    const citation = item?.url_citation;
+    const url = citation?.url;
+    if (typeof url !== "string" || !url) continue;
+    citations.push({
+      url,
+      title: typeof citation?.title === "string" && citation.title ? citation.title : url,
+    });
+  }
+  return citations;
 }

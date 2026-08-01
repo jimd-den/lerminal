@@ -1,23 +1,26 @@
+import type { OutputContractKind } from "./assistantProfile";
+
 /**
- * # Prompt Presets & the Strict Card-Generation Contract
+ * # Prompt Presets & the Strict Output Contracts
  *
  * ## Business Value & Purpose
- * Card generation is split into two layers so the user can "request almost anything"
- * without ever breaking parsing:
+ * Every agent-backed generation request is split into two layers so a user (or the
+ * AI Prompt Architect) can "request almost anything" without ever breaking parsing:
  *
- * 1. **Instruction** (user-controllable): *what* kind of cards to make — informative,
- *    ELI5, exam Q&A, definitions, etc. Presets are named, reusable instructions, and
- *    the set is extendable (users add their own).
- * 2. **Format contract** ({@link RESPONSE_FORMAT_PROMPT}, strict + always enforced):
- *    *how* to respond — a JSON array of `{title, body}`. The gateway appends this to
- *    every request, so an instruction never has to mention JSON and can't accidentally
- *    produce unparseable output.
+ * 1. **Instruction** (user-controllable, per {@link AssistantProfile} or preset): *what*
+ *    kind of output to make — informative, ELI5, exam Q&A, semantic chunks, etc.
+ * 2. **Format contract** (strict + always enforced): *how* to respond. Each
+ *    {@link OutputContractKind} has its own contract text (e.g. cards-v1 is a JSON array
+ *    of `{title, body}`; chunks-v1 adds `{sourceCardId, sourceExcerpt}`). The gateway
+ *    appends the contract matching the resolved profile's capability, so an instruction
+ *    never has to mention JSON and can't accidentally produce unparseable output — and a
+ *    chunk-document profile's instruction is never silently coerced into the cards-v1 shape.
  *
- * {@link composeCardPrompt} combines the two.
+ * {@link composeCardPrompt} combines an instruction with the contract for a given kind.
  */
 
 /**
- * The strict, overarching output contract appended to every card-generation request.
+ * The strict output contract for the `cards-v1` capability (plain generate/ask cards).
  * Kept deliberately rigid so any instruction yields parseable cards. Must contain the
  * phrase "Respond ONLY with a valid JSON array" (relied on downstream).
  */
@@ -26,7 +29,28 @@ Respond ONLY with a valid JSON array of objects. Output nothing else — no pros
 Each object MUST have exactly these keys:
 - "title": string — a specific, descriptive heading (max 8 words; never a generic label like "Card 1")
 - "body": string — the card's content as plain text or light markdown
-Return one object per card. If you cannot comply, return [].`;
+For every non-empty query, return at least one useful card. Return [] only when both the query and source context are empty.`;
+
+/**
+ * The strict output contract for the `chunks-v1` capability (`chunk` semantic restructuring).
+ * Adds provenance fields so each chunk can be traced back to its source card.
+ */
+export const CHUNK_RESPONSE_FORMAT_PROMPT = `OUTPUT FORMAT (STRICT — this overrides any conflicting instruction above):
+Respond ONLY with a valid JSON array of objects. Output nothing else — no prose, no explanation, no markdown, no code fences, nothing before or after the array.
+Each object MUST have exactly these keys:
+- "title": string — a specific, descriptive heading for this chunk (max 8 words)
+- "body": string — a clear, self-contained explanation of this chunk as plain text or light markdown
+- "sourceCardId": string — the exact id of the source card this chunk was drawn from
+- "sourceExcerpt": string — a short supporting quote copied from that source card
+For every non-empty query, return at least one useful chunk. Return [] only when both the query and source context are empty.`;
+
+/** Maps each output contract kind to its strict format text. Empty string = no contract appended (e.g. free-text chat). */
+const FORMAT_PROMPTS_BY_CONTRACT: Record<OutputContractKind, string> = {
+  "cards-v1": RESPONSE_FORMAT_PROMPT,
+  "chunks-v1": CHUNK_RESPONSE_FORMAT_PROMPT,
+  "cloze-v1": RESPONSE_FORMAT_PROMPT,
+  "conversation-v1": "",
+};
 
 /** Default instruction for a direct single-answer card (the `ask` flow). */
 export const DEFAULT_CARD_INSTRUCTION = `You are a precise, knowledgeable tutor. Answer the user's query directly and accurately in a single card. Name the key idea in the title, then in the body explain it clearly and state why it matters or give a concrete example. When source context is provided, ground the answer strictly in it. Never invent facts.`;
@@ -35,13 +59,20 @@ export const DEFAULT_CARD_INSTRUCTION = `You are a precise, knowledgeable tutor.
 export const DEFAULT_CHUNK_INSTRUCTION = `You are an expert learning designer. Break the provided material into the smallest set of distinct, self-contained, recall-ready cards — one idea per card, ordered so earlier cards scaffold later ones. For each idea: state it precisely, give the reason or mechanism behind it, and add a concrete example or contrast where it aids memory. Cover the material faithfully without inventing facts; prefer fewer, sharper cards over many vague ones.`;
 
 /**
- * Combines a user/preset instruction with the strict format contract. The instruction
+ * Combines a custom/preset instruction with the strict format contract for the given
+ * output kind (defaults to `cards-v1`, the plain generate/ask shape). The instruction
  * leads (it's what the model should do); the format contract trails and is marked as
- * overriding, so format compliance is guaranteed regardless of the instruction.
+ * overriding, so format compliance is guaranteed regardless of the instruction, and each
+ * capability's own contract (e.g. `chunks-v1`'s provenance fields) is never dropped in
+ * favor of the generic card shape.
  */
-export function composeCardPrompt(instruction: string): string {
+export function composeCardPrompt(
+  instruction: string,
+  contract: OutputContractKind = "cards-v1"
+): string {
   const trimmed = (instruction || "").trim() || DEFAULT_CARD_INSTRUCTION;
-  return `${trimmed}\n\n${RESPONSE_FORMAT_PROMPT}`;
+  const formatPrompt = FORMAT_PROMPTS_BY_CONTRACT[contract] ?? RESPONSE_FORMAT_PROMPT;
+  return formatPrompt ? `${trimmed}\n\n${formatPrompt}` : trimmed;
 }
 
 export interface PromptPreset {

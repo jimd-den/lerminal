@@ -2,10 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { createInitialSchedule, gradeSchedule } from "../../../entities/schedule";
 import { StartReviewInteractor } from "../StartReviewInteractor";
 import { ClozeCommand } from "../../pipeline/ClozeCommand";
-import { makeCloze } from "../../commands";
+import { makeCloze } from "../../../entities/cloze";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
 import { createCard } from "../../../entities/card";
 import { CommandContext } from "../../pipeline/Command";
+import { NothingDueError } from "../../errors";
 
 const DAY = 86400000;
 const NOW = 1718582400000;
@@ -40,9 +41,9 @@ describe("Four-level spaced repetition", () => {
   });
 });
 
-describe("Interleaved review queue", () => {
+describe("Interleaved review queue & Due filtering", () => {
   it("alternates cards across topics (parent groups)", () => {
-    const sched = createInitialSchedule(0); // due in the past relative to NOW
+    const sched = { ...createInitialSchedule(0), dueAt: NOW - 1000 }; // due in the past relative to NOW
     const q = (id: string, parentId: string) =>
       createCard({ id, workspaceId: "w", type: "question", title: id, body: "", answer: "a", parentId, schedule: sched });
     const cards = [q("a1", "A"), q("a2", "A"), q("b1", "B"), q("b2", "B")];
@@ -54,17 +55,36 @@ describe("Interleaved review queue", () => {
       expect(queue[i].parentId).not.toBe(queue[i - 1].parentId);
     }
   });
+
+  it("throws NothingDueError when no cards are due in standard review mode", () => {
+    const futureSched = { ...createInitialSchedule(NOW), dueAt: NOW + 86400000 };
+    const notDueCard = createCard({ workspaceId: "w", type: "question", title: "Future Q", body: "", schedule: futureSched });
+
+    const interactor = new StartReviewInteractor();
+    expect(() => interactor.execute([notDueCard], NOW, true, false)).toThrow(NothingDueError);
+  });
+
+  it("returns non-due cards when cramming is explicitly requested", () => {
+    const futureSched = { ...createInitialSchedule(NOW), dueAt: NOW + 86400000 };
+    const notDueCard = createCard({ workspaceId: "w", type: "question", title: "Future Q", body: "", schedule: futureSched });
+
+    const interactor = new StartReviewInteractor();
+    const queue = interactor.execute([notDueCard], NOW, true, true); // cram = true
+    expect(queue).toHaveLength(1);
+    expect(queue[0].id).toBe(notDueCard.id);
+  });
 });
 
 describe("Cloze generation", () => {
-  it("blanks salient terms and records the answer", () => {
+  it("blanks salient terms into template placeholders and records blanks", () => {
     const cloze = makeCloze("Photosynthesis converts sunlight into chemical energy in chloroplasts.");
     expect(cloze).not.toBeNull();
-    expect(cloze!.prompt).toContain("_____");
-    expect(cloze!.answer.length).toBeGreaterThan(0);
+    expect(cloze!.template).toContain("{{c1}}");
+    expect(cloze!.blanks.length).toBeGreaterThan(0);
+    expect(cloze!.fullAnswer).toBe("Photosynthesis converts sunlight into chemical energy in chloroplasts.");
   });
 
-  it("cloze command produces reviewable cloze cards", async () => {
+  it("cloze command produces reviewable cloze cards with fields.template and fields.blanks", async () => {
     const repo = new MemoryCardRepository();
     const cmd = new ClozeCommand(repo);
     const chunk = createCard({ workspaceId: "ws-1", type: "chunk", title: "Mitochondria", body: "Mitochondria are the powerhouse of the eukaryotic cell." });
@@ -75,6 +95,7 @@ describe("Cloze generation", () => {
     if (result.kind !== "cards") return;
     expect(result.cards[0].type).toBe("question");
     expect(result.cards[0].typeId).toBe("cloze");
-    expect(result.cards[0].title).toContain("_____");
+    expect(result.cards[0].fields?.template).toContain("{{c1}}");
+    expect(result.cards[0].fields?.blanks).toBeDefined();
   });
 });

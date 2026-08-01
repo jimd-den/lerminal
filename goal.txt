@@ -1,0 +1,631 @@
+You are the lead product engineer for this repository. Implement a major but disciplined evolution of this Expo / React Native app, Learnimal (currently branded “Chunk Buddy” in app metadata), into a goal-driven, local-first learning and capstone workspace.
+
+Before changing code, read and follow:
+- AGENTS.md
+- CLAUDE.md
+- README.md
+- terminal-learn-prd.md
+- the existing entities, use cases, controller/presenter, React Native screens/components, and tests
+- the exact Expo SDK documentation version mandated by AGENTS.md
+
+Do not replace the clean architecture. Preserve the current layers:
+- entities
+- adapters / gateways / repositories
+- use cases
+- frameworks / UI
+- controller/presenter state
+
+Do not introduce a large state-management library, backend, authentication system, cloud sync, or a web-only UI. Keep the product local-first and Expo-compatible.
+
+The current app already has:
+- workspaces
+- cards, groups, parent-child organization, and selection
+- a Unix-style pipeline runner
+- built-in commands including ask, source, chunk, recall, space, review, move, group, ungroup, delete, search, cloze, elaborate, chat, note, split
+- OpenRouter/BYOK model support
+- assistant profiles and output contracts
+- URL extraction
+- DuckDuckGo-backed search
+- FSRS-style review scheduling
+- AsyncStorage repositories
+- a terminal / command-palette visual direction
+- custom command definitions and pipeline macros
+
+The product problem is not primarily missing infrastructure. It is that users cannot tell:
+1. what the AI will read,
+2. whether it will use the web,
+3. what it will create or alter,
+4. where outputs will land,
+5. whether a result was actually based on selected notes, web evidence, or a model-only answer,
+6. what to do after adding a note,
+7. how their current cards relate to a larger goal/capstone.
+
+Your job is to make the existing system legible, trustworthy, touch-first, and goal-directed.
+
+============================================================
+PRODUCT NORTH STAR
+============================================================
+
+The app’s core promise is:
+
+“Turn a goal into an evidence-backed capstone by capturing, organizing, investigating, practicing, and building from small units of knowledge.”
+
+The app should feel like:
+- Unix composability for mobile
+- a focused Star Trek / AVP-inspired mission console
+- not a noisy sci-fi skin
+- Vim-like in conceptual simplicity and keyboard/command acceleration
+- touch-first, discoverable, and accessible for normal mobile use
+
+The design must use the HUD aesthetic to communicate state, provenance, context, and progress. Do not use it as decorative visual clutter.
+
+The app must preserve the powerful pipeline model:
+- Cards are the universal stream.
+- Selection is stdin.
+- New results are stdout.
+- Commands remain composable.
+- The agent is a visible, inspectable command stage—not an invisible magical force.
+
+============================================================
+NON-NEGOTIABLE UX RULES
+============================================================
+
+1. Every AI operation must have explicit scope.
+Before the user runs it, the UI must state:
+- what context will be read,
+- whether web search is enabled,
+- what kind of output will be created,
+- where the output will be created.
+
+2. Every AI operation must have a run receipt.
+After it completes, show:
+- operation name
+- number/types of selected input cards
+- whether web search was used
+- number of search results and sources actually retained/opened, when applicable
+- number/types of cards created
+- destination group/workspace
+- provenance/citations where available
+- direct actions: View output, Undo, Inspect run
+
+3. Never imply that “Ask” browsed the web if it did not.
+The current `search` command is separate from `ask`; preserve that truth in the UI and implementation.
+
+4. Make web research a deliberate first-class workflow.
+It must be visibly distinct from “explain selected notes.”
+
+5. Capture must lead somewhere.
+After adding a note, source, question, or experiment, present obvious next actions rather than silently returning the user to the deck.
+
+6. Use touch-friendly controls:
+- minimum roughly 44x44 point targets
+- text labels on important actions
+- visible selection count
+- one dominant primary action per state
+- no reliance on swipe gestures or icons alone
+- readable contrast in dark and light themes
+- respect reduced-motion settings
+
+7. Keep command-line power users happy without requiring terminal literacy.
+All important commands must be reachable with labeled touch actions and also expressible through the command palette.
+
+============================================================
+IMPLEMENTATION PLAN
+============================================================
+
+Work in phases. At the end of each phase:
+- run typecheck/lint/tests using the repo’s actual scripts,
+- fix failures,
+- summarize modified files and behavior,
+- do not proceed to the next phase until the current phase is coherent.
+
+Prefer small, reviewable commits if git is available.
+
+============================================================
+PHASE 0 — RECONNAISSANCE AND IMPLEMENTATION PLAN
+============================================================
+
+First:
+1. Inspect the project tree and identify:
+   - root app/screen entry points
+   - controller/presenter state and actions
+   - card entity and card type registry
+   - pipeline runner, command interfaces, and operation-result handling
+   - agent gateway behavior, including no-key/failure behavior
+   - search gateway and extraction gateway behavior
+   - current tests and test commands
+2. Identify exact files/components responsible for:
+   - canvas/deck screen
+   - selection UI
+   - command palette
+   - note/source capture
+   - pipeline execution
+   - operation result feedback
+   - settings and assistant profiles
+3. Produce a concise implementation plan in `docs/goal-workspace-implementation-plan.md`.
+
+The plan must map each requested user-facing feature to existing architecture and files. It must explicitly call out:
+- current ask behavior vs current search behavior
+- where false-positive “AI worked” behavior may occur during gateway failures/fallbacks
+- how undo can be implemented safely with existing repositories
+- a backwards-compatible migration strategy for persisted cards/workspaces/settings
+
+Do not make broad code changes before this document exists.
+
+============================================================
+PHASE 1 — DOMAIN MODEL FOR GOALS, PROJECTS, AND PROVENANCE
+============================================================
+
+Extend the data model carefully and backwards compatibly.
+
+A. Add a workspace-level mission/goal model.
+
+A workspace should optionally support:
+- goalTitle
+- goalDescription
+- successCriteria: string[]
+- targetDeliverable
+- currentPhase or status
+- createdAt / updatedAt as appropriate
+
+Do not break existing persisted workspaces. Missing mission fields must gracefully resolve to empty/default state.
+
+B. Add user-facing semantic knowledge roles.
+
+Do not necessarily replace internal `Card.type` values immediately. Instead add a compatible semantic role/category field or mapping suitable for:
+- goal
+- question
+- concept
+- source
+- experiment
+- claim
+- task
+- deliverable
+
+Requirements:
+- Existing cards must remain readable.
+- Existing card type registry and learning behavior must continue to work.
+- A semantic role should be optional, editable, and displayed in the UI.
+- Keep study mechanics separate: a semantic role does not automatically make a card reviewable.
+
+C. Add structured provenance.
+
+Create domain types sufficient to explain how a card was created. At minimum capture:
+- creation mode: manual | agent | search | extraction | command
+- operation/run ID
+- source card IDs read
+- search query, if used
+- source URLs used or retained
+- active assistant profile/model if available
+- timestamps
+- citation/excerpt links when available
+
+Keep provenance compact and persistable in AsyncStorage. Existing cards without provenance must work.
+
+D. Add an operation/run receipt entity.
+
+Create a persisted or safely reconstructable operation log entry, with:
+- id
+- command/action name
+- workspaceId
+- parentId/destination
+- inputCardIds
+- createdCardIds
+- updatedCardIds if applicable
+- deletedCard snapshots or IDs if needed for undo
+- web/search metadata
+- model/profile metadata
+- startedAt/completedAt
+- concise human-readable summary
+
+Use a repository interface plus AsyncStorage implementation if persistence is practical. If not, maintain a robust session-level history and explain why in the documentation. Prefer persistence.
+
+E. Tests.
+
+Add entity/use-case tests for:
+- backwards-compatible workspace/card defaults
+- provenance creation
+- run receipt creation
+- serialization/deserialization
+- semantic role behavior
+- no accidental scheduling behavior changes
+
+============================================================
+PHASE 2 — EXPLICIT AI ACTIONS AND PREFLIGHT
+============================================================
+
+Replace ambiguous generic entry points with explicit user-facing actions while preserving underlying pipeline commands.
+
+Add a unified `AgentRunRequest` / `AgentScope` concept in the domain/use-case layer.
+
+Scope must distinguish:
+- `selected-only`: read exactly selected cards
+- `workspace`: read selected cards plus a bounded relevant workspace context
+- `web`: conduct web research from a query
+- `selected-plus-web`: selected cards plus research
+
+Do not silently send the entire workspace to a model. For workspace scope, implement a deterministic bounded strategy and expose it in the receipt:
+- selected cards first
+- active parent/group breadcrumb/context
+- recent or explicitly linked related cards
+- strict max-card and max-character budget
+- clearly report truncation
+
+Create clear operation presets/actions:
+
+1. Explain selected notes
+- Inputs: selected note/source/chunk/concept cards
+- Web: off by default
+- Output: one or more grounded explanation/concept cards
+- Clearly label that only selected content is used unless the user changes scope
+
+2. Research on the web
+- Inputs: optional selected cards plus user query
+- Web: on
+- Output: source assessment cards and optionally extracted/cited source cards
+- Never claim a source was opened/extracted if it was not
+
+3. Find prerequisites
+- Inputs: selected cards and/or workspace mission
+- Output: prerequisite concept/question cards and/or a gap assessment
+- If no model is available, fail clearly rather than fabricating a “successful” result
+
+4. Plan experiment
+- Inputs: selected notes/questions plus optional goal
+- Output: experiment card with hypothesis, method, required materials/tools, measurement, expected result, and next action
+
+5. Make study cards
+- Inputs: selected learning content
+- Output: recall/cloze cards and optionally enroll in FSRS only after explicit confirmation or a clearly named pipeline step
+
+6. Plan capstone
+- Inputs: workspace mission, selected cards, and optionally web evidence
+- Output: milestone/task/deliverable cards or a structured plan group
+
+Keep existing terminal commands valid. Add aliases/macros only where helpful. Do not remove `ask`, but reframe it in the UI as “Ask / custom” and show scope explicitly.
+
+Build an AI preflight bottom sheet/modal for each explicit action.
+
+The preflight must show:
+- action name and plain-English purpose
+- selected item count and a short list/preview
+- context scope selector
+- web state
+- output types
+- destination
+- model/profile when applicable
+- warning if no API key/model is configured
+- estimated behavior, not invented token/cost data unless actual provider metadata exists
+- Run button with exact language, e.g. “Research 3 selected notes on the web”
+
+Ensure every AI action has a deterministic testable request object before it reaches a gateway.
+
+============================================================
+PHASE 3 — REAL WEB RESEARCH WORKFLOW
+============================================================
+
+Implement a composable research flow using existing search and extraction architecture.
+
+Do not make the LLM claim it searched. The orchestration layer must perform actual search via `SearchGateway`.
+
+A. Search result normalization.
+
+Define normalized research result/source types including:
+- title
+- canonical URL
+- snippet
+- domain
+- query
+- access timestamp
+- rank
+- source kind / evidence type when determinable
+- relevance assessment
+- credibility signals
+- limitations/cautions
+- keep/reject state
+- extracted text state
+- citation metadata
+
+B. Research pipeline.
+
+The explicit “Research on the web” action should:
+1. obtain/refine the query
+2. execute actual search through SearchGateway
+3. save a search/run artifact with provenance
+4. display search results as inspectable source candidates
+5. allow user to keep, reject, open, and extract source candidates
+6. optionally use the model to synthesize a cited research brief only from selected/retained results and extracted text
+7. create source/claim/concept cards with citations and provenance
+8. generate a run receipt
+
+If automatic source scoring is implemented, it must be transparent and advisory. Use simple explainable heuristics where possible:
+- first-party docs / official domains
+- academic or peer-reviewed signals
+- author/date availability
+- domain repetition/deduplication
+- alignment with query
+- limitation/caution labels
+
+Do not present opaque credibility scores as factual truth. Use labels such as “High relevance,” “Official documentation,” “Tutorial; verify against specification,” or “Limited provenance.”
+
+C. UI.
+
+Create an inspectable research results screen/sheet integrated with the existing canvas model:
+- source candidate cards
+- relevance/evidence-role/caution metadata
+- large actions: Keep, Extract, Reject, Open
+- “Create cited brief” only enabled when retained evidence exists
+- full provenance visible on source/derived cards
+
+D. Error behavior.
+
+Handle:
+- no network
+- no results
+- malformed DuckDuckGo results
+- blocked extraction
+- missing API key
+- model errors
+- partial success
+
+Partial success must still create truthful receipts. Never silently replace a failed external model call with generic local content unless the UI clearly labels it as a local fallback and the user opted into that behavior.
+
+============================================================
+PHASE 4 — MISSION HOME AND GAP REPORT
+============================================================
+
+Shift the default workspace experience from a generic deck to a mission-oriented workbench while preserving the one-canvas philosophy.
+
+Add a compact top-of-canvas “Mission Control” module that appears when a workspace has a goal:
+- mission title
+- success criterion / target deliverable
+- counts for blockers, prerequisites, active experiments, and next tasks
+- one high-confidence next action
+- concise status language
+
+Do not build a complicated dashboard. This should be a compact module that feeds the same card canvas.
+
+Implement a “Status / Gap Report” action that answers:
+
+“What do I have, what do I want, what is missing, and what should I do next?”
+
+The report must include:
+- Mission/desired outcome
+- Current evidence: sources, concepts, claims, experiments, tasks, deliverables
+- Known blockers/questions
+- Missing prerequisites
+- Evidence gaps
+- Recommended next actions
+- Completion/maturity indicators that are explicitly heuristic, not falsely precise
+
+Implement this first as:
+- a structured report card/group generated deterministically from the card graph where possible
+- optional agent enrichment with clearly declared scope
+- provenance showing whether each portion was deterministic, model-generated, or web-grounded
+
+If the workspace has no mission:
+- show an elegant empty-state prompt to define one
+- allow users to continue using the workspace as before
+
+============================================================
+PHASE 5 — CAPTURE AND SELECTION FLOWS
+============================================================
+
+Improve capture and selection feedback.
+
+A. Capture flow.
+
+After a user creates a note/source/question/experiment:
+- show a compact success confirmation
+- state exactly where it was added
+- keep context/selection if appropriate
+- present 2–3 context-sensitive next actions
+
+Examples:
+After adding a note:
+- Attach to mission
+- Find prerequisites
+- Ask about this note
+
+After adding a source:
+- Extract key ideas
+- Assess source quality
+- Turn into study cards
+
+After adding an experiment:
+- Add measurement
+- Identify required prerequisites
+- Create next task
+
+B. Selection tray.
+
+When items are selected, use a visible bottom action tray with:
+- selection count
+- clear selection action
+- Explain
+- Research
+- Connect
+- Study
+- More
+
+These must open preflight, not execute hidden AI behavior.
+
+Keep command palette access available. Buttons may populate/launch equivalent commands, but the touch workflow must expose scope before execution.
+
+C. Output behavior.
+
+For pipeline continuity:
+- newly created result cards should be visibly highlighted
+- optionally selected for the next pipeline step, but this must be communicated
+- do not silently replace the user’s selection without a visible result state
+- show the parent/destination clearly
+
+============================================================
+PHASE 6 — COMMAND PALETTE EVOLUTION
+============================================================
+
+Preserve the Unix terminal philosophy but make commands human-readable.
+
+Update command presentation so each command has:
+- terminal name
+- plain-language label
+- one-line purpose
+- input requirement
+- output behavior
+- web indicator if relevant
+
+Canonical user-facing actions:
+- Capture
+- Explain
+- Research web
+- Find prerequisites
+- Connect
+- Plan experiment
+- Make study cards
+- Review
+- Status
+- Plan capstone
+
+Suggested command aliases/macros:
+- `/research`
+- `/prereqs`
+- `/experiment`
+- `/study`
+- `/status`
+- `/build`
+
+The command palette should:
+- retain custom command definitions and pipelines
+- support typed pipelines
+- show selected input context
+- differentiate commands that require a selection from commands that start fresh
+- reveal actual side effects before execution where possible
+- preserve current pinned-command behavior
+
+Do not make every action a separate screen. Use the canvas, bottom sheets, and the existing modal model appropriately.
+
+============================================================
+PHASE 7 — VISUAL SYSTEM
+============================================================
+
+Evolve the existing terminal/HUD theme rather than replacing it.
+
+Design requirements:
+- Current dark/light theme support must continue.
+- Keep the mono typography selectively for commands, metadata, telemetry, IDs, and structured system labels.
+- Use a readable system sans for body content if already available or safely add one only if appropriate.
+- Accent colors should communicate semantic categories or state, not decoration.
+- Preserve reduced-motion behavior.
+- Avoid excessive borders, tiny text, low contrast, overly dense panels, or ambiguous icon-only controls.
+- Keep large touch targets and clear labels.
+
+Use HUD language sparingly and meaningfully:
+- MISSION
+- CONTEXT
+- WEB EVIDENCE
+- OUTPUT
+- RUN COMPLETE
+- BLOCKER
+- NEXT ACTION
+- PROVENANCE
+
+No fake telemetry, random percentages, decorative crosshairs, or animations that imply capability.
+
+============================================================
+PHASE 8 — UNDO, ERROR STATES, AND TRUST
+============================================================
+
+Implement reliable undo for the immediately completed operation.
+
+Minimum:
+- Undo creates: remove cards created by the operation if they have not been materially edited since creation
+- Undo grouping: restore children’s prior parent IDs and remove created group when safe
+- Undo move: restore previous workspace/parent when snapshots exist
+- Do not claim undo succeeded if it only partially succeeded
+- If undo cannot safely apply, explain why
+
+For destructive actions, preserve or add confirmation where appropriate.
+
+Add visible and actionable error UI for:
+- missing API key
+- no selected cards when action requires selection
+- failed search
+- failed extraction
+- failed model call
+- unsupported pipeline state
+- no results
+- offline/network errors
+
+Use errors that tell the user what to do next.
+
+============================================================
+PHASE 9 — TESTS, DOCUMENTATION, AND QUALITY GATES
+============================================================
+
+Add and update tests at the appropriate layers.
+
+Must test:
+- existing pipeline behavior remains intact
+- old workspace/card storage remains readable
+- selection scope is correctly passed to agent/search flows
+- `ask` without web does not invoke SearchGateway
+- research action does invoke SearchGateway
+- agent synthesis only receives retained/selected evidence as designed
+- run receipts accurately record inputs, outputs, and web usage
+- undo behavior for created cards and group/move where implemented
+- missing key and gateway failures produce explicit failure states
+- semantic roles do not accidentally affect FSRS scheduling
+- gap report deterministic portions work without an API key
+
+Update:
+- README.md: revised product description and major user flows
+- terminal-learn-prd.md: add an implementation-status section or revise carefully without deleting useful original product principles
+- docs/goal-workspace-implementation-plan.md: final implementation notes, migration notes, known limitations
+- any relevant architecture documentation
+
+Use concise comments only where necessary. Do not add noisy logging, API keys, secrets, hardcoded remote endpoints beyond existing gateway patterns, or unbounded context uploads.
+
+============================================================
+ACCEPTANCE CRITERIA
+============================================================
+
+A user can:
+1. Create/select a workspace mission and success criteria.
+2. Add a note and immediately see meaningful next actions.
+3. Select multiple notes and tap Explain; before execution they can see exactly what will be read and what will be created.
+4. Select notes and tap Research web; before execution they can see web is enabled.
+5. Inspect actual web results, keep/reject/extract candidates, and see warnings/quality labels.
+6. Create a cited research brief only from retained evidence.
+7. Inspect any generated card’s provenance.
+8. See a run receipt after every AI/web operation.
+9. Undo the last operation when safe.
+10. View a useful status/gap report for a mission.
+11. Still run original commands and typed pipelines.
+12. Still use chunking, recall, spaced repetition, review, grouping, custom commands, assistant profiles, and local persistence.
+13. Understand from the UI that “Ask” and “Research web” are different operations.
+14. Use the app comfortably one-handed on a phone without needing terminal knowledge.
+
+============================================================
+EXECUTION RULES
+============================================================
+
+- Work directly in the repository.
+- Do not ask me broad product questions; make reasonable, documented decisions based on this specification and existing code.
+- If a requirement conflicts with the current architecture, choose the smallest clean change and document the tradeoff.
+- Maintain TypeScript strictness and existing coding conventions.
+- Reuse existing entities/use cases/gateways where appropriate.
+- Prefer adapter interfaces over framework imports in use cases.
+- Do not call network APIs from UI components.
+- Do not hide failures with fake success states.
+- Do not remove working existing capabilities merely to simplify the implementation.
+- Avoid massive rewrites. Refactor incrementally.
+- Test after each phase and fix regressions before proceeding.
+- At the end, provide:
+  1. a concise feature summary,
+  2. architecture changes,
+  3. list of changed files,
+  4. test commands run and results,
+  5. migration/storage notes,
+  6. remaining limitations and recommended next steps.
+
+Start with Phase 0 now.

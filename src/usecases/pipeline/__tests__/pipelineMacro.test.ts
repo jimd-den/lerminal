@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
-import { AgentCardResponse, AgentGateway, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../ports/gateways/AgentGateway";
 import { createCommandDefinition, PipelineCommandDefinition } from "../../../entities/commandDefinition";
 import { PipelineCycleError } from "../../errors";
 import { PipelineEnvironment, PipelineRunner } from "../PipelineRunner";
@@ -11,11 +11,11 @@ import { RecallCommand } from "../RecallCommand";
 import { SpaceCommand } from "../SpaceCommand";
 
 class MockAgentGateway implements AgentGateway {
-  async ask(query: string): Promise<AgentCardResponse[]> {
-    return [
+  async ask(query: string): Promise<AgentAskResult> {
+    return { cards: [
       { title: "A", body: `Answer for ${query}` },
       { title: "B", body: "More detail" },
-    ];
+    ], isLocalFallback: false };
   }
   async fetchModels(): Promise<AgentModel[]> {
     return [];

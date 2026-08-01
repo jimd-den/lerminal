@@ -2,19 +2,33 @@
  * # Command Definition Entity
  *
  * ## Business Value & Purpose
- * Learnimal's power comes from composable, Unix-style commands. This entity lets a
+ * GRIOT's power comes from composable, Unix-style commands. This entity lets a
  * user define their *own* commands that slot into pipelines alongside the built-ins
  * — for example a command that asks the agent with a specialized prompt.
  *
  * ## Extensibility
  * `kind` is a discriminator so new command sources can be added without touching the
- * pipeline. Today the only kind is `"agent"` (runs the agent with a custom prompt);
- * a future `"wikipedia"` kind would add its own fields (e.g. a language) and a
- * matching branch in the command factory — nothing else changes.
+ * pipeline. Today the only kinds are `"agent"` (runs the agent with a custom prompt) and
+ * `"pipeline"` (expands into a saved pipeline string). Guided/research/hybrid command
+ * kinds are deliberately *not* declared here yet: a discriminated-union variant nothing
+ * can create or run is dead weight, not a type-level promise — they arrive together with
+ * the Command Workshop that gives them an execution path.
  */
+
+import { SemanticRole } from "./card";
 
 /** The source a custom command draws its cards from. */
 export type CommandKind = "agent" | "pipeline";
+
+/**
+ * Who a command belongs to and where it's visible.
+ *
+ * Mirrors `ProfileScope` on `AssistantProfile` — the same three-way split, for the same
+ * reason: `workspace`-scoped commands must not appear in an unrelated workspace, and
+ * `session`-scoped ones (never persisted — see the repository layer) vanish on restart by
+ * construction. Absent means `"global"`, every command's behavior before this existed.
+ */
+export type CommandScope = "session" | "workspace" | "global";
 
 interface BaseCommandDefinition {
   /** Unique identifier. */
@@ -25,6 +39,22 @@ interface BaseCommandDefinition {
   description: string;
   /** Epoch timestamp of creation. */
   createdAt: number;
+  /** Undefined means `"global"` — every command's behavior before this field existed. */
+  scope?: CommandScope;
+  /** Required when `scope === "workspace"`; ignored otherwise. */
+  workspaceId?: string;
+  /**
+   * Declared, not inferred: whether running this command may reach the network. An
+   * agent-kind command that calls a model is *not* automatically web use — this is
+   * specifically about search/fetch, which no command kind performs today. Exists so a
+   * future kind that does can declare it truthfully rather than the app having to guess.
+   */
+  webUse?: boolean;
+  /** What kind of card this command expects as input, when it's meaningful to state. */
+  requiredInputRoles?: SemanticRole[];
+  requiredInputCount?: "none" | "one-or-more";
+  /** What kind of card this command tends to produce, when it's meaningful to state. */
+  outputRoles?: SemanticRole[];
 }
 
 /** A custom command that queries the agent with a user-supplied system prompt. */
@@ -67,7 +97,8 @@ export const RESERVED_COMMAND_NAMES: readonly string[] = [
   "search",
   "cloze",
   "elaborate",
-  "chat",
+  "note",
+  "split",
 ];
 
 /** A command name must be a single lowercase token (letters, digits, hyphens). */
@@ -88,6 +119,12 @@ export interface CreateCommandDefinitionParams {
   /** Required for `pipeline` kind: the pipeline string to expand into. */
   body?: string;
   createdAt?: number;
+  scope?: CommandScope;
+  workspaceId?: string;
+  webUse?: boolean;
+  requiredInputRoles?: SemanticRole[];
+  requiredInputCount?: "none" | "one-or-more";
+  outputRoles?: SemanticRole[];
 }
 
 /**
@@ -96,11 +133,16 @@ export interface CreateCommandDefinitionParams {
  * reserved words / required fields (see the create interactor).
  */
 export function createCommandDefinition(params: CreateCommandDefinitionParams): CommandDefinition {
-  const logTimestamp = new Date().toISOString();
   const base = {
     id: params.id || Math.random().toString(36).substring(2, 10),
     name: normalizeCommandName(params.name),
     createdAt: params.createdAt || Date.now(),
+    scope: params.scope,
+    workspaceId: params.workspaceId,
+    webUse: params.webUse,
+    requiredInputRoles: params.requiredInputRoles,
+    requiredInputCount: params.requiredInputCount,
+    outputRoles: params.outputRoles,
   };
 
   const definition: CommandDefinition =
@@ -118,6 +160,26 @@ export function createCommandDefinition(params: CreateCommandDefinitionParams): 
           systemPrompt: params.systemPrompt || "",
         };
 
-  console.log(`[${logTimestamp}] [createCommandDefinition] OUTPUT: ${JSON.stringify({ ...definition, kind: definition.kind })}`);
   return definition;
+}
+
+/** A command's scope, defaulted to `"global"` — every command's behavior before this field existed. */
+export function resolveCommandScope(definition: CommandDefinition): CommandScope {
+  return definition.scope ?? "global";
+}
+
+/**
+ * Whether a command should be usable from the given workspace.
+ *
+ * Global and session-scoped commands are visible everywhere (session-scoped ones are
+ * simply never persisted past the session, which is what actually bounds them — see the
+ * repository layer). A workspace-scoped command is visible only in the workspace it
+ * belongs to, the isolation the custom-command system otherwise has no way to express.
+ */
+export function isCommandVisibleInWorkspace(
+  definition: CommandDefinition,
+  activeWorkspaceId: string | null | undefined
+): boolean {
+  if (resolveCommandScope(definition) !== "workspace") return true;
+  return definition.workspaceId === activeWorkspaceId;
 }

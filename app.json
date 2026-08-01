@@ -1,28 +1,34 @@
 {
   "expo": {
-    "name": "Chunk Buddy",
+    "name": "GRIOT",
     "slug": "chunk_buddy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ddsrv.x-chunk-buddy"
+      "bundleIdentifier": "com.ddsrv.griot"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0a0d0c",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ddsrv.x_chunk_buddy"
+      "package": "com.ddsrv.griot",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [
+      "expo-font"
+    ],
+    "backgroundColor": "#0a0d0c",
+    "owner": "ddsrv",
     "extra": {
       "eas": {
         "projectId": "60754f0d-760d-44ee-8f4b-a68f7edc1fb1"

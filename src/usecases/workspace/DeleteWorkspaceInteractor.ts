@@ -1,5 +1,5 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { WorkspaceRepository } from "../../adapters/repositories/WorkspaceRepository";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { WorkspaceRepository } from "../ports/repositories/WorkspaceRepository";
 
 /**
  * # Delete Workspace Interactor

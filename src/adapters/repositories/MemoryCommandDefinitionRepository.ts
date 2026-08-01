@@ -1,5 +1,5 @@
 import { CommandDefinition } from "../../entities/commandDefinition";
-import { CommandDefinitionRepository } from "./CommandDefinitionRepository";
+import { CommandDefinitionRepository } from "../../usecases/ports/repositories/CommandDefinitionRepository";
 
 /**
  * # Memory Command Definition Repository

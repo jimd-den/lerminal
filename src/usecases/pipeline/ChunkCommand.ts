@@ -1,82 +1,237 @@
-import { CardRepository } from "../../adapters/repositories/CardRepository";
-import { AgentGateway } from "../../adapters/gateways/AgentGateway";
+import { Logger, silentLogger } from "../ports/Logger";
+import { CardRepository } from "../ports/repositories/CardRepository";
+import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { Card, createCard } from "../../entities/card";
-import { chunkCard } from "../commands";
+import { createProvenance } from "../../entities/provenance";
+import { resolveAssistantProfile } from "../../entities/assistantProfile";
+import { chunkCard } from "../../entities/chunking";
 import { MarkdownChunkerService, MarkdownNode } from "../card/MarkdownChunkerService";
 import { EmptySelectionError } from "../errors";
 import { CommandContext, CommandResult, PipelineCommand } from "./Command";
 
-/** System prompt used only by the opt-in `--rewrite` refinement pass. */
-const REFINE_SYSTEM_PROMPT = `You rewrite a single passage into one clear, faithful study card WITHOUT adding facts that are not in the passage. Respond ONLY with a valid JSON array containing EXACTLY ONE object (no prose, no code fences) with:
-- "title": string (max 8 words)
-- "body": string (a faithful, tightened explanation of the passage)`;
+/**
+ * Default AI instruction for semantic restructuring (formatting-free — the
+ * `chunks-v1` output contract is appended by the gateway, not embedded here).
+ */
+const DEFAULT_AI_CHUNK_SYSTEM_PROMPT = `You are a collaborative information architect.
+Your task is to semantically restructure the provided material into distinct, high-value study chunk cards according to the user's specific learning goal or instruction.
+
+Each chunk must:
+- Cover one coherent concept or actionable topic unit.
+- Be strictly grounded in the supplied source material without inventing facts.
+- Include a specific descriptive title (max 8 words).
+- Provide a clear, self-contained body explanation.
+- Identify its exact source card ID ("sourceCardId") and supporting source quote ("sourceExcerpt").`;
 
 /**
- * `chunk` — splits selected source/note/chunk cards into cards that mirror the
- * source's own structure.
+ * # ChunkCommand (`chunk`) — AI-Assisted Semantic Chunking
  *
- * Default behavior is **faithful and deterministic**: it parses the card's markdown
- * into its real heading hierarchy (chapters → subheadings via H1–H3) and creates a
- * `group` per heading-with-subsections and a `chunk` per leaf section, each anchored
- * to the origin via `sourceRef`/`cite`. Text without headings falls back to
- * paragraph-level chunking. No API key is required.
+ * ## Business Value & Purpose
+ * `chunk` semantically restructures selected material (sources, notes, chunks) according to a
+ * user's learning goal. When multiple cards are selected, it performs focused AI semantic chunking
+ * per card and places each card's focused chunks inside its dedicated Document Container Group.
  *
- * The `--rewrite` flag opts into an LLM refinement pass that tightens each leaf
- * chunk's wording without inventing new facts (requires an API key).
+ * - `chunk "goal"`: Runs AI-assisted semantic chunking with the specified goal.
+ * - `chunk`: Uses default semantic goal ("Chunk into key study concepts").
+ * - `chunk --faithful` or `chunk -f`: Runs deterministic structural splitting.
+ * - Fallback: If no API key is provided or AI call fails, gracefully falls back to structural splitting.
+ *
+ * ## Applied Design Patterns
+ * - **Command Pattern**: Encapsulates AI-assisted semantic chunking in a pipeline stage.
+ * - **Container / Aggregate Root Pattern**: Wraps source and derived chunks inside a document group.
  */
 export class ChunkCommand implements PipelineCommand {
   readonly name = "chunk";
 
   constructor(
     private readonly agentGateway: AgentGateway,
-    private readonly cardRepo: CardRepository
+    private readonly cardRepo: CardRepository,
+    private readonly logger: Logger = silentLogger
   ) {}
 
   async execute(arg: string, ctx: CommandContext): Promise<CommandResult> {
+    const logTimestamp = new Date().toISOString();
+
     const chunkable = ctx.inputCards.filter(
       c => c.type === "source" || c.type === "note" || c.type === "chunk"
     );
     if (chunkable.length === 0) {
-      throw new EmptySelectionError("Select source or note to chunk");
+      throw new EmptySelectionError("Select source, note, or chunk to chunk");
     }
 
-    const rewrite = /(^|\s)--?rewrite\b/.test(arg);
+    const trimmedArg = arg.trim();
+    const isFaithful = /(^|\s)--?(faithful|f)\b/.test(trimmedArg);
+
+    // Path 1: Explicit --faithful flag or missing API key -> deterministic structural split
+    if (isFaithful || !ctx.apiKey?.trim()) {
+      return this.executeFaithfulSplit(chunkable, ctx);
+    }
+
+    const goal = trimmedArg.replace(/(^|\s)--?(faithful|f)\b/g, "").trim() || "Chunk the material into clear, self-contained study units.";
+    const profile = resolveAssistantProfile(
+      "chunk-document",
+      ctx.activeProfileIds,
+      ctx.assistantProfiles,
+      undefined
+    );
+    const settingsInstruction = ctx.chunkSystemPrompt?.trim();
+    const systemPrompt = [
+      profile.systemPrompt || DEFAULT_AI_CHUNK_SYSTEM_PROMPT,
+      settingsInstruction
+        ? `USER-CONFIGURED CHUNK INSTRUCTION (this has priority for content, depth, and style):\n${settingsInstruction}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
     const created: Card[] = [];
 
-    for (const card of chunkable) {
-      const sourceRef = card.sourceRef || card.id;
-      const sections = MarkdownChunkerService.chunk(card.body, card.title);
-
-      if (sections.length <= 1) {
-        // No real heading structure — chunk by paragraph (faithful to the text).
-        const generated = chunkCard(card).map(c => ({ ...c, parentId: ctx.parentId ?? undefined }));
-        created.push(...generated);
+    for (const source of chunkable) {
+      let responseCards: any[] = [];
+      let usedLocalFallback = false;
+      try {
+        const result = await this.agentGateway.ask(
+          goal,
+          [source],
+          ctx.apiKey,
+          ctx.model,
+          systemPrompt,
+          profile.outputContract ?? "chunks-v1"
+        );
+        responseCards = result.cards;
+        usedLocalFallback = result.isLocalFallback;
+      } catch (err: any) {
+        // The user still gets chunks, but from a structural split rather than the model —
+        // worth recording, because silently degraded output is easy to misread as normal.
+        this.logger.warn("chunk.aiFailed.fallbackToSplit", {
+          source: source.title,
+          reason: err?.message,
+        });
+        const fallbackResult = await this.executeFaithfulSplit([source], ctx);
+        if (fallbackResult.kind === "cards") {
+          created.push(...fallbackResult.cards);
+        }
         continue;
       }
 
-      const tree = MarkdownChunkerService.chunkTree(card.body, card.title);
-      this.materialize(tree, ctx.parentId ?? undefined, card, sourceRef, ctx.workspaceId, created);
+      if (!Array.isArray(responseCards) || responseCards.length === 0) {
+        const fallbackResult = await this.executeFaithfulSplit([source], ctx);
+        if (fallbackResult.kind === "cards") {
+          created.push(...fallbackResult.cards);
+        }
+        continue;
+      }
+
+      const docGroup = await this.ensureDocumentGroup(source, ctx);
+      const fallbackSourceId = source.id;
+      const fallbackCite = source.cite;
+
+      const sourceChunks = responseCards
+        .filter(item => item && typeof item.title === "string" && typeof item.body === "string" && item.body.trim())
+        .map(item =>
+          createCard({
+            workspaceId: ctx.workspaceId,
+            type: "chunk",
+            title: item.title.trim(),
+            body: item.body.trim(),
+            sourceRef: item.sourceCardId?.trim() || fallbackSourceId,
+            cite: item.sourceExcerpt?.trim() || fallbackCite,
+            parentId: docGroup.id,
+            provenance: createProvenance({
+              mode: "agent",
+              sourceCardIds: [source.id],
+              assistantProfileId: profile.id,
+              model: ctx.model,
+              isLocalFallback: usedLocalFallback || undefined,
+            }),
+          })
+        );
+
+      if (sourceChunks.length === 0) {
+        const fallbackResult = await this.executeFaithfulSplit([source], ctx);
+        if (fallbackResult.kind === "cards") {
+          created.push(...fallbackResult.cards);
+        }
+        continue;
+      }
+
+      created.push(...sourceChunks);
     }
 
     if (created.length === 0) {
       throw new EmptySelectionError("Nothing to chunk");
     }
 
-    if (rewrite && ctx.apiKey?.trim()) {
-      await this.refineLeaves(created, ctx);
+    await this.cardRepo.saveCards(created);
+    this.logger.debug("chunk.completed", {
+      created: created.length,
+      sources: chunkable.length,
+    });
+
+    return { kind: "cards", cards: created };
+  }
+
+  private async ensureDocumentGroup(
+    source: Card,
+    ctx: CommandContext
+  ): Promise<Card> {
+    const allWorkspaceCards = await this.cardRepo.getCardsByWorkspace(ctx.workspaceId);
+    const existingGroup = allWorkspaceCards.find(
+      c => c.type === "group" && c.documentGroupFor === source.id
+    );
+
+    if (existingGroup) {
+      return existingGroup;
+    }
+
+    const documentGroup = createCard({
+      workspaceId: ctx.workspaceId,
+      type: "group",
+      title: source.title,
+      body: "",
+      parentId: source.parentId ?? ctx.parentId ?? undefined,
+      sourceRef: source.sourceRef ?? source.id,
+      cite: source.cite,
+      documentGroupFor: source.id,
+    });
+
+    await this.cardRepo.saveCard(documentGroup);
+
+    if (source.parentId !== documentGroup.id) {
+      const updatedSource = { ...source, parentId: documentGroup.id };
+      await this.cardRepo.saveCard(updatedSource);
+    }
+
+    return documentGroup;
+  }
+
+  private async executeFaithfulSplit(chunkable: Card[], ctx: CommandContext): Promise<CommandResult> {
+    const created: Card[] = [];
+
+    for (const source of chunkable) {
+      const docGroup = await this.ensureDocumentGroup(source, ctx);
+      const sourceRef = source.sourceRef || source.id;
+      const sections = MarkdownChunkerService.chunk(source.body, source.title);
+
+      if (sections.length <= 1) {
+        const generated = chunkCard(source).map(c => ({ ...c, parentId: docGroup.id }));
+        created.push(...generated);
+        continue;
+      }
+
+      const tree = MarkdownChunkerService.chunkTree(source.body, source.title);
+      this.materializeTree(tree, docGroup.id, source, sourceRef, ctx.workspaceId, created);
+    }
+
+    if (created.length === 0) {
+      throw new EmptySelectionError("Nothing to chunk");
     }
 
     await this.cardRepo.saveCards(created);
     return { kind: "cards", cards: created };
   }
 
-  /**
-   * Walks the heading tree, emitting a `group` card for each node with subsections
-   * (recursing into its children) and a `chunk` card for each leaf. A parent node's
-   * own lead-in text (between its heading and the first subheading) becomes an
-   * `Overview` chunk so no source content is dropped.
-   */
-  private materialize(
+  private materializeTree(
     nodes: MarkdownNode[],
     parentId: string | undefined,
     source: Card,
@@ -122,43 +277,11 @@ export class ChunkCommand implements PipelineCommand {
         }));
       }
 
-      this.materialize(node.children, group.id, source, sourceRef, workspaceId, out);
-    }
-  }
-
-  /**
-   * Opt-in refinement: tightens each leaf chunk's body via the agent without adding
-   * facts. Failures are swallowed per-card so a partial outage never loses the
-   * faithfully-chunked content.
-   */
-  private async refineLeaves(cards: Card[], ctx: CommandContext): Promise<void> {
-    for (const card of cards) {
-      if (card.type !== "chunk") continue;
-      try {
-        const [refined] = await this.agentGateway.ask(
-          "Rewrite the provided passage faithfully.",
-          [card],
-          ctx.apiKey,
-          ctx.model,
-          REFINE_SYSTEM_PROMPT
-        );
-        if (refined?.body?.trim()) {
-          card.body = refined.body;
-          if (refined.title?.trim()) card.title = refined.title;
-        }
-      } catch (err: any) {
-        // Keep the faithful original on refinement failure.
-        console.warn(`[ChunkCommand.refineLeaves] skipped ${card.id}: ${err?.message}`);
-      }
+      this.materializeTree(node.children, group.id, source, sourceRef, workspaceId, out);
     }
   }
 }
 
-/**
- * Removes a single leading markdown heading line from a section body, returning the
- * remaining lead-in prose (trimmed). Used to surface a parent section's own content
- * as an Overview chunk without repeating its heading.
- */
 function stripLeadingHeading(body: string): string {
   return body.replace(/^\s*#{1,6}\s.*(?:\r?\n|$)/, "").trim();
 }

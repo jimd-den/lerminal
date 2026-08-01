@@ -3,7 +3,7 @@ import { Card } from "../../../entities/card";
 import { AgentCommandDefinition } from "../../../entities/commandDefinition";
 import { MemoryCardRepository } from "../../../adapters/repositories/MemoryCardRepository";
 import { MemoryCommandDefinitionRepository } from "../../../adapters/repositories/MemoryCommandDefinitionRepository";
-import { AgentCardResponse, AgentGateway, AgentModel } from "../../../adapters/gateways/AgentGateway";
+import { AgentAskResult, AgentCardResponse, AgentGateway, AgentModel } from "../../ports/gateways/AgentGateway";
 import {
   DuplicateCommandNameError,
   InvalidCommandNameError,
@@ -16,9 +16,9 @@ import { CommandContext } from "../../pipeline/Command";
 
 class CapturingAgentGateway implements AgentGateway {
   lastSystemPrompt?: string;
-  async ask(_q: string, _c: Card[], _k: string, _m: string, systemPrompt?: string): Promise<AgentCardResponse[]> {
+  async ask(_q: string, _c: Card[], _k: string, _m: string, systemPrompt?: string): Promise<AgentAskResult> {
     this.lastSystemPrompt = systemPrompt;
-    return [{ title: "T", body: "B" }];
+    return { cards: [{ title: "T", body: "B" }], isLocalFallback: false };
   }
   async fetchModels(): Promise<AgentModel[]> {
     return [];
