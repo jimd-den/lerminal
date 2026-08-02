@@ -2843,6 +2843,35 @@ export class GriotController {
         return summary;
       }
 
+      case "generate_syllabus": {
+        if (!this.domain.openRouterKey?.trim()) {
+          throw new Error("Add your OpenRouter key in Settings first. Nothing was changed.");
+        }
+        // Not persisted as the workspace's mission — the user never opened Mission
+        // Control to declare one. It exists only long enough for the same one explicit
+        // model call a formal Mission always used to produce this syllabus.
+        const adHocMission = createWorkspaceMission({ goalTitle: tool.goalTitle });
+
+        const { group, items, phases } = await this.generateSyllabusInteractor.execute({
+          mission: adHocMission,
+          workspaceId,
+          apiKey: this.domain.openRouterKey,
+          model,
+        });
+
+        const summary = `Created a syllabus: ${items.length} topic${items.length === 1 ? "" : "s"} across ${phases.length || 1} phase${phases.length === 1 ? "" : "s"}.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:generate_syllabus",
+          workspaceId,
+          parentId,
+          inputCardIds: [],
+          createdCards: [group, ...phases, ...items],
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
       case "draft_experiment":
         // No dedicated interactor exists yet — deliberately not dispatched. Left as an
         // inert, truthful no-op rather than fabricating execution.

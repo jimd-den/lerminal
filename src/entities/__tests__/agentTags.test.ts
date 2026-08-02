@@ -137,6 +137,19 @@ describe("parseAgentTags", () => {
     expect(parsed.text).toContain("see my notes");
   });
 
+  it("offers to generate a syllabus from a goal, never the syllabus content itself", () => {
+    const parsed = parseAgentTags(
+      "Got it — a phased plan sounds right. [[syllabus: Master real-time rendering]]"
+    );
+
+    expect(parsed.tags[0].type).toBe("syllabus");
+    expect(parsed.tags[0].kindLabel).toBe("SYLLABUS");
+    expect(parsed.tags[0].intent).toEqual({
+      type: "generate_syllabus",
+      goalTitle: "Master real-time rendering",
+    });
+  });
+
   it("groups the cards the app has in context when the model names none", () => {
     const parsed = parseAgentTags("[[group: Memory research]]", {
       cards: [

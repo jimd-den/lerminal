@@ -65,7 +65,16 @@ export type AgentToolIntent =
       /** Existing cards the plan was drawn from. Validated against the real workspace. */
       cardIds?: string[];
     }
-  | { type: "ask_clarifying_question"; question: string; rationale?: string };
+  | { type: "ask_clarifying_question"; question: string; rationale?: string }
+  /**
+   * Turn a casually-stated mastery goal straight into a phased syllabus — the one intent
+   * reachable via a chat tag (see `entities/agentTags`) rather than only a dedicated UI
+   * flow, because a capable model can be trusted to notice "I want to really understand
+   * X" without the user having to open Mission Control first. Dispatch still runs the same
+   * one explicit model call `GenerateSyllabusInteractor` always ran; nothing here invents
+   * a source or a fact, only the goal text itself.
+   */
+  | { type: "generate_syllabus"; goalTitle: string };
 
 
 /**
@@ -87,6 +96,7 @@ const AGENT_TOOL_INTENT_TYPE_MAP: Record<AgentToolIntent["type"], true> = {
   draft_experiment: true,
   create_mission: true,
   ask_clarifying_question: true,
+  generate_syllabus: true,
 };
 
 export const AGENT_TOOL_INTENT_TYPES = Object.keys(
