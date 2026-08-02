@@ -1,10 +1,8 @@
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
   Linking,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +10,11 @@ import {
   TextInput,
   View,
 } from "react-native";
+import {
+  KeyboardAvoidingView,
+  useKeyboardState,
+} from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AppState,
   GriotController,
@@ -42,6 +45,26 @@ import { modalAnimation, useReducedMotion } from "../useReducedMotion";
  * When no model is configured, or a stream dies, `state.workspaceAgent.agentError` is
  * shown as-is rather than a fabricated reply — that honesty is enforced upstream in
  * `WorkspaceAgentWorkflow`; this component only renders what it's given.
+ *
+ * ## Keeping the composer above the keyboard
+ * The `KeyboardAvoidingView` here is the one from `react-native-keyboard-controller`, not
+ * React Native's. React Native's works from keyboard *events* and needs a per-platform
+ * `behavior`, and on Android it did nothing at all: this sheet is a `Modal`, which is its
+ * own window, and since Expo SDK 54 made Android edge-to-edge the window no longer
+ * resizes for the keyboard. The result was a composer sitting underneath the keyboard.
+ *
+ * The controller version reads the real IME inset instead, works the same inside a modal,
+ * and takes one `behavior` for both platforms — so there is no longer a platform branch
+ * here to get wrong. It needs `KeyboardProvider` mounted above it, which `App.tsx` does.
+ *
+ * `automaticOffset` exists for precisely this case: it measures where the view actually
+ * sits rather than assuming it starts at the top of the screen, which is what a sheet
+ * inside a modal needs.
+ *
+ * The bottom safe-area inset is applied **only while the keyboard is down**. Edge-to-edge
+ * means the sheet draws under the Android navigation bar, so without it the composer sits
+ * beneath the gesture bar at rest; but once the keyboard is up the IME inset already spans
+ * that region, and adding both would float the composer a nav-bar's height too high.
  */
 export function ConversationSheet({
   controller,
@@ -55,6 +78,8 @@ export function ConversationSheet({
   const view = state.workspaceAgent;
   const [draft, setDraft] = useState("");
   const reducedMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
 
   const submit = () => {
     const text = draft.trim();
@@ -76,14 +101,27 @@ export function ConversationSheet({
       visible={view.isOpen}
       animationType={modalAnimation(reducedMotion, "slide")}
       transparent
+      // A Modal is its own Android window, and by default that window is *not* laid out
+      // edge-to-edge like the app behind it. Without these two the window stops short of
+      // the system bars, so the IME inset the keyboard controller reads is measured
+      // against a different box than the one being drawn — the composer lands in the
+      // wrong place by exactly the inset height. Both are no-ops on iOS.
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={() => controller.closeWorkspaceAgent()}
     >
       <View style={styles.overlay}>
-        <KeyboardAvoidingView
-          style={styles.sheet}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        <KeyboardAvoidingView style={styles.sheet} behavior="padding" automaticOffset>
+        <View
+          style={[
+            styles.sheetInner,
+            {
+              backgroundColor: theme.background,
+              borderColor: theme.line,
+              paddingBottom: keyboardVisible ? 12 : 12 + insets.bottom,
+            },
+          ]}
         >
-        <View style={[styles.sheetInner, { backgroundColor: theme.background, borderColor: theme.line }]}>
           <View style={[styles.header, { borderBottomColor: theme.line }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
