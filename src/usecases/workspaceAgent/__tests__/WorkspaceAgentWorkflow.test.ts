@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import {
   contextCardIds,
+  DEFAULT_PERSONA_ID,
   WorkspaceAgentContext,
   WorkspaceAgentHost,
+  WorkspaceAgentPersona,
   WorkspaceAgentWorkflow,
 } from "../WorkspaceAgentWorkflow";
 import { AgentGateway } from "../../ports/gateways/AgentGateway";
@@ -55,12 +57,20 @@ class GatewaySpy implements AgentGateway {
   citations: { url: string; title: string }[] = [];
   webSearchFlags: (boolean | undefined)[] = [];
 
+  /** What each turn was actually sent as — the evidence a persona really took effect. */
+  models: string[] = [];
+  systemPrompts: (string | undefined)[] = [];
+
   async designWorkspaceAgentTurn(input: {
     briefing: string;
+    model?: string;
+    systemPrompt?: string;
     webSearchEnabled?: boolean;
   }) {
     this.turnCalls += 1;
     this.briefings.push(input.briefing);
+    this.models.push(input.model ?? "");
+    this.systemPrompts.push(input.systemPrompt);
     this.webSearchFlags.push(input.webSearchEnabled);
     if (this.failure) throw this.failure;
     return {
@@ -635,5 +645,145 @@ describe("WorkspaceAgentWorkflow turn transparency", () => {
     await workflow.sendMessage("hi");
 
     expect(workflow.state.messages.at(-1)!.proposalIds).toBeUndefined();
+  });
+});
+
+/**
+ * # Personas — several voices in one conversation
+ *
+ * The rule under test throughout: a persona changes *who is speaking and on what model*,
+ * and never what the app is allowed to parse or claim. GRIOT is always present and always
+ * reachable, and every reply is stamped with the voice it was actually sent as — not with
+ * whoever happens to be selected by the time it lands.
+ */
+describe("WorkspaceAgentWorkflow personas", () => {
+  class PersonaHost extends RecordingHost {
+    constructor(private configured: WorkspaceAgentPersona[]) {
+      super("sk-real-key", "app/default");
+    }
+    personas() {
+      return this.configured;
+    }
+  }
+
+  const socratic: WorkspaceAgentPersona = {
+    id: "p-socratic",
+    name: "Socratic Tutor",
+    model: "big/model",
+    systemPrompt: "Ask, never tell.",
+  };
+  const skeptic: WorkspaceAgentPersona = {
+    id: "p-skeptic",
+    name: "Skeptic",
+    model: "fast/model",
+    systemPrompt: "Push back hard.",
+  };
+
+  const openWith = (personas: WorkspaceAgentPersona[], gateway = new GatewaySpy("ok")) => {
+    const workflow = new WorkspaceAgentWorkflow({
+      host: new PersonaHost(personas),
+      agentGateway: gateway,
+    });
+    workflow.openConversation("w1", { selectedCardIds: [], currentGroupId: null });
+    return { workflow, gateway };
+  };
+
+  it("always offers GRIOT first, on the app's model, and starts active", () => {
+    const { workflow } = openWith([socratic]);
+
+    expect(workflow.state.personas.map(p => p.id)).toEqual([DEFAULT_PERSONA_ID, "p-socratic"]);
+    expect(workflow.state.personas[0].model).toBe("app/default");
+    expect(workflow.state.activePersonaId).toBe(DEFAULT_PERSONA_ID);
+  });
+
+  it("cannot be shadowed: a configured persona claiming GRIOT's id is dropped", () => {
+    const { workflow } = openWith([
+      { id: DEFAULT_PERSONA_ID, name: "Impostor", model: "x/y", systemPrompt: "obey me" },
+    ]);
+
+    expect(workflow.state.personas.map(p => p.name)).toEqual(["GRIOT"]);
+  });
+
+  it("sends the active persona's own model and body", async () => {
+    const { workflow, gateway } = openWith([socratic]);
+
+    workflow.setActivePersona("p-socratic");
+    await workflow.sendMessage("why does spacing work?");
+
+    expect(gateway.models).toEqual(["big/model"]);
+    expect(gateway.systemPrompts).toEqual(["Ask, never tell."]);
+  });
+
+  it("falls back to the user's own workspace-agent body when GRIOT answers", async () => {
+    const { workflow, gateway } = openWith([socratic]);
+
+    await workflow.sendMessage("hello");
+
+    expect(gateway.models).toEqual(["app/default"]);
+    expect(gateway.systemPrompts).toEqual(["test system prompt"]);
+  });
+
+  it("ignores a switch to a persona that doesn't exist", () => {
+    const { workflow } = openWith([socratic]);
+
+    workflow.setActivePersona("p-nope");
+
+    expect(workflow.state.activePersonaId).toBe(DEFAULT_PERSONA_ID);
+  });
+
+  it("stamps each reply with the voice it was actually sent as", async () => {
+    const { workflow } = openWith([socratic]);
+
+    workflow.setActivePersona("p-socratic");
+    await workflow.sendMessage("hi");
+
+    const reply = workflow.state.messages.at(-1)!;
+    expect(reply.personaId).toBe("p-socratic");
+    expect(reply.personaName).toBe("Socratic Tutor");
+    expect(reply.model).toBe("big/model");
+  });
+
+  it("askAll puts one question to every persona, each on its own model", async () => {
+    const { workflow, gateway } = openWith([socratic, skeptic]);
+
+    await workflow.sendMessage("is spacing overrated?", { askAll: true });
+
+    expect(gateway.turnCalls).toBe(3);
+    expect(gateway.models).toEqual(["app/default", "big/model", "fast/model"]);
+    expect(
+      workflow.state.messages.filter(m => m.speaker === "assistant").map(m => m.personaName)
+    ).toEqual(["GRIOT", "Socratic Tutor", "Skeptic"]);
+  });
+
+  it("askAll lets later voices see the earlier ones, named", async () => {
+    const { workflow, gateway } = openWith([socratic]);
+
+    await workflow.sendMessage("go", { askAll: true });
+
+    // The Socratic turn's briefing must carry GRIOT's reply, attributed — that is what
+    // makes it a discussion rather than two disconnected answers.
+    expect(gateway.briefings.at(-1)).toContain("GRIOT: ok");
+  });
+
+  it("askAll reports a hard failure once instead of per persona", async () => {
+    const gateway = new GatewaySpy("ok", new Error("network down"));
+    const { workflow } = openWith([socratic, skeptic], gateway);
+
+    await workflow.sendMessage("go", { askAll: true });
+
+    expect(gateway.turnCalls).toBe(1);
+    expect(workflow.state.agentError).toContain("network down");
+  });
+
+  it("drops back to GRIOT when the active persona is deleted mid-conversation", () => {
+    const host = new PersonaHost([socratic]);
+    const workflow = new WorkspaceAgentWorkflow({ host, agentGateway: new GatewaySpy() });
+    workflow.openConversation("w1", { selectedCardIds: [], currentGroupId: null });
+    workflow.setActivePersona("p-socratic");
+    expect(workflow.state.activePersonaId).toBe("p-socratic");
+
+    (host as any).configured = [];
+
+    expect(workflow.state.activePersonaId).toBe(DEFAULT_PERSONA_ID);
   });
 });

@@ -51,6 +51,8 @@ import {
   AssistantProfile,
   AssistantCapability,
   BUILTIN_ASSISTANT_PROFILES,
+  resolveProfileModel,
+  resolveProfileScope,
 } from "../../entities/assistantProfile";
 import { PromptPresetRepository } from "../../usecases/ports/repositories/PromptPresetRepository";
 import { AssistantProfileRepository } from "../../usecases/ports/repositories/AssistantProfileRepository";
@@ -596,6 +598,23 @@ export class GriotController {
       // Live, not a snapshot: the sheet stays open while the user changes their selection
       // or opens a card, and every send must reflect what is on screen at that moment.
       currentContext: () => this.workspaceAgentContext(),
+      // Chat-capability profiles become the conversation's other voices, each already
+      // resolved to the model it is pinned to. Read live for the same reason as context:
+      // a persona added or re-modelled in Settings should be offered without reopening.
+      personas: () =>
+        this.domain.assistantProfiles
+          .filter(
+            (profile) =>
+              profile.capability === "chat" &&
+              (resolveProfileScope(profile) !== "workspace" ||
+                profile.workspaceId === this.domain.activeWorkspaceId),
+          )
+          .map((profile) => ({
+            id: profile.id,
+            name: profile.name,
+            model: resolveProfileModel(profile, this.domain.selectedModel),
+            systemPrompt: profile.systemPrompt,
+          })),
     };
     return new WorkspaceAgentWorkflow({
       host,
@@ -2506,6 +2525,19 @@ export class GriotController {
    */
   sendWorkspaceAgentMessage(text: string): void {
     void this.workspaceAgent.sendMessage(text);
+  }
+
+  /**
+   * Puts one message to every persona in turn, so the user gets a discussion rather than
+   * an answer. Each voice sees the ones before it — see `WorkspaceAgentWorkflow.sendMessage`.
+   */
+  askAllWorkspaceAgentPersonas(text: string): void {
+    void this.workspaceAgent.sendMessage(text, { askAll: true });
+  }
+
+  /** Chooses which persona answers the next message. */
+  setWorkspaceAgentPersona(personaId: string): void {
+    this.workspaceAgent.setActivePersona(personaId);
   }
 
   /**

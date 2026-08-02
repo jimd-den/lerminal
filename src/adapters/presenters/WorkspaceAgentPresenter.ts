@@ -98,6 +98,22 @@ export interface WorkspaceAgentMessageViewModel {
   segments: WorkspaceAgentSegmentViewModel[];
   /** True while this reply is still being generated. The sheet shows the partial text. */
   streaming: boolean;
+  /**
+   * Which voice said it, and on what model. Assistant messages only, and recorded at send
+   * time — a transcript with several personas in it stays honest about who said what even
+   * after the user switches persona or re-pins a model.
+   */
+  personaName?: string;
+  model?: string;
+}
+
+/** One selectable voice in the persona strip. */
+export interface WorkspaceAgentPersonaViewModel {
+  id: string;
+  name: string;
+  /** The model it speaks through, shown under the name so the pairing is never a guess. */
+  model: string;
+  active: boolean;
 }
 
 /** One inline chip: what the model offered to create, and what has become of it. */
@@ -169,6 +185,10 @@ export interface WorkspaceAgentViewModel {
   isEmpty: boolean;
   isThinking: boolean;
   agentError: string | null;
+  /** Every voice available. Always begins with plain GRIOT. */
+  personas: WorkspaceAgentPersonaViewModel[];
+  /** True once the user has configured a persona beyond GRIOT — the strip hides until then. */
+  hasMultiplePersonas: boolean;
 }
 
 const EMPTY_CONTEXT_VIEW: WorkspaceAgentContextViewModel = {
@@ -206,6 +226,16 @@ export function presentWorkspaceAgent(
     toMessageViewModel(message, state.tagActions, cardTitles)
   );
 
+  // Defaulted rather than assumed: this projection feeds the whole app state, and a
+  // conversation state that predates personas must degrade to "GRIOT only", never crash
+  // the screen. Same posture as `message.segments ?? []` below.
+  const personas: WorkspaceAgentPersonaViewModel[] = (state.personas ?? []).map(persona => ({
+    id: persona.id,
+    name: persona.name,
+    model: persona.model,
+    active: persona.id === state.activePersonaId,
+  }));
+
   return {
     isOpen: state.isOpen,
     context,
@@ -213,6 +243,10 @@ export function presentWorkspaceAgent(
     isEmpty: messages.length === 0,
     isThinking: state.isThinking,
     agentError: state.agentError,
+    personas,
+    // One voice is not a choice: with only GRIOT configured the sheet looks exactly as it
+    // did before personas existed.
+    hasMultiplePersonas: personas.length > 1,
   };
 }
 
@@ -236,6 +270,8 @@ function toMessageViewModel(
       toSegmentViewModel(segment, message.id, tagActions, cardsById)
     ),
     streaming: message.streaming ?? false,
+    ...(message.personaName ? { personaName: message.personaName } : {}),
+    ...(message.model ? { model: message.model } : {}),
   };
 }
 

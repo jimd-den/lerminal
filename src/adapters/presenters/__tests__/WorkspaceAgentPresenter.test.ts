@@ -3,13 +3,18 @@ import {
   presentWorkspaceAgent,
   presentWorkspacePulse,
 } from "../WorkspaceAgentPresenter";
-import { WorkspaceAgentState } from "../../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
+import {
+  DEFAULT_PERSONA_ID,
+  WorkspaceAgentState,
+} from "../../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
 import { Workspace } from "../../../entities/workspace";
 
 const EMPTY_STATE: WorkspaceAgentState = {
   isOpen: false,
   workspaceId: null,
   context: { selectedCardIds: [], currentGroupId: null },
+  personas: [],
+  activePersonaId: DEFAULT_PERSONA_ID,
   messages: [],
   tagActions: {},
   isThinking: false,
@@ -60,6 +65,8 @@ describe("presentWorkspaceAgent", () => {
     const state: WorkspaceAgentState = {
       isOpen: true,
       workspaceId: "w1",
+      personas: [],
+      activePersonaId: DEFAULT_PERSONA_ID,
       context: { selectedCardIds: ["c1", "c2"], currentGroupId: "g1" },
       messages: [
         { id: "m1", speaker: "user", text: "hi", createdAt: 1, pending: true },
@@ -89,6 +96,8 @@ describe("presentWorkspaceAgent", () => {
     const state: WorkspaceAgentState = {
       isOpen: true,
       workspaceId: "w1",
+      personas: [],
+      activePersonaId: DEFAULT_PERSONA_ID,
       context: { selectedCardIds: [], currentGroupId: null },
       messages: [],
       tagActions: {},
@@ -110,6 +119,8 @@ describe("presentWorkspaceAgent tag chips", () => {
   const stateWith = (segments: any[], tagActions = {}): WorkspaceAgentState => ({
     isOpen: true,
     workspaceId: "w1",
+    personas: [],
+    activePersonaId: DEFAULT_PERSONA_ID,
     context: { selectedCardIds: [], currentGroupId: null },
     messages: [
       { id: "m1", speaker: "assistant", text: "Worth keeping.", createdAt: 1, segments },

@@ -63,6 +63,14 @@ export function ConversationSheet({
     setDraft("");
   };
 
+  /** Puts the same question to every persona, so the reply is a discussion, not an answer. */
+  const submitToAll = () => {
+    const text = draft.trim();
+    if (!text) return;
+    controller.askAllWorkspaceAgentPersonas(text);
+    setDraft("");
+  };
+
   return (
     <Modal
       visible={view.isOpen}
@@ -117,6 +125,53 @@ export function ConversationSheet({
             ) : null}
           </View>
 
+          {/* Hidden entirely until a second voice exists — one persona is not a choice. */}
+          {view.hasMultiplePersonas ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.personaRow}
+            >
+              {view.personas.map((persona) => (
+                <Pressable
+                  key={persona.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: persona.active }}
+                  accessibilityLabel={`Ask as ${persona.name}`}
+                  onPress={() => controller.setWorkspaceAgentPersona(persona.id)}
+                  style={[
+                    styles.persona,
+                    {
+                      borderColor: persona.active ? theme.accent : theme.line,
+                      backgroundColor: persona.active ? theme.accentSoft : theme.panelMuted,
+                    },
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.personaName,
+                      { color: theme.text, fontFamily: theme.fontMono },
+                    ]}
+                  >
+                    {persona.name}
+                  </Text>
+                  {/* The model rides with the name: which one a persona speaks through is
+                      part of who it is, never something the user has to go and look up. */}
+                  <Text
+                    numberOfLines={1}
+                    style={[
+                      styles.personaModel,
+                      { color: theme.textMuted, fontFamily: theme.fontMono },
+                    ]}
+                  >
+                    {persona.model || "—"}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
+
           <ScrollView
             style={styles.messages}
             contentContainerStyle={styles.messagesContent}
@@ -145,6 +200,20 @@ export function ConversationSheet({
                       : null,
                   ]}
                 >
+                  {/* Who is speaking, shown only once several voices are in play so a
+                      single-persona transcript reads exactly as it always did. */}
+                  {message.personaName && view.hasMultiplePersonas ? (
+                    <Text
+                      style={[
+                        styles.personaByline,
+                        { color: theme.accent, fontFamily: theme.fontMono },
+                      ]}
+                    >
+                      {message.model
+                        ? `${message.personaName} · ${message.model}`
+                        : message.personaName}
+                    </Text>
+                  ) : null}
                   {message.segments.length > 0 ? (
                     <MessageBody theme={theme} message={message} controller={controller} />
                   ) : (
@@ -190,6 +259,34 @@ export function ConversationSheet({
               multiline
               onSubmitEditing={submit}
             />
+            {/* Only offered when there is actually a panel to put the question to. */}
+            {view.hasMultiplePersonas ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Ask every persona"
+                accessibilityState={{ disabled: !draft.trim() || view.isThinking }}
+                onPress={submitToAll}
+                disabled={!draft.trim() || view.isThinking}
+                style={[
+                  styles.askAllButton,
+                  {
+                    borderColor: draft.trim() && !view.isThinking ? theme.accent : theme.line,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.sendText,
+                    {
+                      color: draft.trim() && !view.isThinking ? theme.accent : theme.textMuted,
+                      fontFamily: theme.fontMono,
+                    },
+                  ]}
+                >
+                  ALL
+                </Text>
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={view.isThinking ? "Waiting for a reply" : "Send"}
@@ -773,6 +870,35 @@ const styles = StyleSheet.create({
     borderRadius: Structure.radiusControl,
     alignItems: "center",
     justifyContent: "center",
+  },
+  askAllButton: {
+    minHeight: Structure.tap,
+    paddingHorizontal: 12,
+    borderRadius: Structure.radiusControl,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  personaRow: {
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: Structure.gutter,
+    paddingBottom: 8,
+  },
+  persona: {
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 180,
+  },
+  personaName: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6 },
+  personaModel: { fontSize: 10, marginTop: 2 },
+  personaByline: {
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 4,
   },
   sendText: {
     fontSize: TypeScale.label,

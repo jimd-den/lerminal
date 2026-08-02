@@ -56,6 +56,32 @@ export interface WorkspaceAgentSentContext {
   briefing: string;
 }
 
+/**
+ * One voice in the conversation: a name, the model that speaks it, and the behaviour body
+ * that shapes it.
+ *
+ * The workflow deliberately knows nothing about `AssistantProfile` — the controller maps
+ * chat-capability profiles down to this, resolving each one's pinned model first. What
+ * reaches here is only what a turn actually needs, which keeps "who is talking" a
+ * conversation concept rather than a settings one.
+ */
+export interface WorkspaceAgentPersona {
+  id: string;
+  name: string;
+  /** Already resolved: the persona's pinned model, or the app's current selection. */
+  model: string;
+  /**
+   * The persona's behaviour body, replacing the user's `workspace-agent` body for this
+   * turn. Undefined means "speak as plain GRIOT". Only the *body* — the parent rules and
+   * the tag contract are appended downstream either way, so a persona can change the
+   * voice and never the trust boundary or what the app can parse.
+   */
+  systemPrompt?: string;
+}
+
+/** The always-present first voice: the user's own `workspace-agent` prompt, unmodified. */
+export const DEFAULT_PERSONA_ID = "griot";
+
 /** One line of the conversation. `pending` marks a user message with no reply yet. */
 export interface WorkspaceAgentMessage {
   id: string;
@@ -64,6 +90,15 @@ export interface WorkspaceAgentMessage {
   createdAt: number;
   /** True for a just-sent user message while its reply is still in flight. */
   pending?: boolean;
+  /**
+   * Who said it and on what model. Assistant messages only, and recorded from the persona
+   * the turn was actually sent as — never relabelled afterwards, so a transcript with
+   * three voices in it stays honest about which one said what, even after the user
+   * switches personas or re-pins a model.
+   */
+  personaId?: string;
+  personaName?: string;
+  model?: string;
   /**
    * Sources the model's provider actually consulted for *this* reply — the receipts.
    *
@@ -157,6 +192,10 @@ export interface WorkspaceAgentState {
   isOpen: boolean;
   workspaceId: string | null;
   context: WorkspaceAgentContext;
+  /** Every voice available in this conversation. Always begins with plain GRIOT. */
+  personas: WorkspaceAgentPersona[];
+  /** Who answers the next message. Always an id present in {@link personas}. */
+  activePersonaId: string;
   messages: WorkspaceAgentMessage[];
   /**
    * What has become of each tag the user pressed `+` on, keyed `messageId:tagId`. A tag
@@ -177,6 +216,12 @@ export interface WorkspaceAgentHost {
   model?(): string;
   /** The user's edited "workspace-agent" prompt body, if any — see `entities/agentPrompts`. */
   systemPrompt?(): string;
+  /**
+   * The chat personas the user has configured, already model-resolved. Plain GRIOT is
+   * added by the workflow and must not appear here. Absent means "GRIOT only", which is
+   * every conversation's behavior before personas existed.
+   */
+  personas?(): WorkspaceAgentPersona[];
   /**
    * Whether the provider's own web search may ride along. Defaults to on when the host
    * doesn't say — the gateway treats only an explicit `false` as an opt-out.
@@ -223,11 +268,29 @@ const EMPTY_STATE: WorkspaceAgentState = {
   isOpen: false,
   workspaceId: null,
   context: EMPTY_CONTEXT,
+  personas: [],
+  activePersonaId: DEFAULT_PERSONA_ID,
   messages: [],
   tagActions: {},
   isThinking: false,
   agentError: null,
 };
+
+/** Identity comparison for the persona list, so a re-read doesn't churn re-renders. */
+function samePersonas(a: WorkspaceAgentPersona[], b: WorkspaceAgentPersona[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((persona, i) => {
+      const other = b[i];
+      return (
+        persona.id === other.id &&
+        persona.name === other.name &&
+        persona.model === other.model &&
+        persona.systemPrompt === other.systemPrompt
+      );
+    })
+  );
+}
 
 export class WorkspaceAgentWorkflow {
   private current: WorkspaceAgentState = { ...EMPTY_STATE };
@@ -249,8 +312,52 @@ export class WorkspaceAgentWorkflow {
           context: { ...live, selectedCardIds: [...live.selectedCardIds] },
         };
       }
+      // Personas are re-read for the same reason context is: the user can add, delete, or
+      // re-model a persona in Settings while the sheet is open, and the selector must
+      // offer what exists now. A deleted active persona falls back to GRIOT rather than
+      // leaving the conversation pointed at a voice that is gone.
+      const personas = this.resolvePersonas();
+      if (!samePersonas(personas, this.current.personas)) {
+        const stillThere = personas.some(p => p.id === this.current.activePersonaId);
+        this.current = {
+          ...this.current,
+          personas,
+          activePersonaId: stillThere ? this.current.activePersonaId : DEFAULT_PERSONA_ID,
+        };
+      }
     }
     return this.current;
+  }
+
+  /**
+   * Every voice available, GRIOT always first.
+   *
+   * GRIOT is synthesized here rather than supplied by the host so it can never be removed,
+   * renamed out of existence, or shadowed by a configured persona claiming its id — the
+   * user must always be able to get back to the plain assistant.
+   */
+  private resolvePersonas(): WorkspaceAgentPersona[] {
+    const griot: WorkspaceAgentPersona = {
+      id: DEFAULT_PERSONA_ID,
+      name: "GRIOT",
+      model: this.deps.host.model?.() ?? "",
+    };
+    const configured = (this.deps.host.personas?.() ?? []).filter(
+      persona => persona.id !== DEFAULT_PERSONA_ID
+    );
+    return [griot, ...configured];
+  }
+
+  /** The persona that answers next. Falls back to GRIOT if the active id has gone away. */
+  private activePersona(): WorkspaceAgentPersona {
+    const personas = this.resolvePersonas();
+    return personas.find(p => p.id === this.current.activePersonaId) ?? personas[0];
+  }
+
+  /** Switches who answers next. An unknown id is ignored rather than silently reassigned. */
+  setActivePersona(personaId: string): void {
+    if (!this.resolvePersonas().some(p => p.id === personaId)) return;
+    this.patch({ activePersonaId: personaId });
   }
 
   private patch(changes: Partial<WorkspaceAgentState>): void {
@@ -281,7 +388,17 @@ export class WorkspaceAgentWorkflow {
    * stored; a valid reply → an assistant message plus inspectable (never executed)
    * proposals.
    */
-  async sendMessage(text: string): Promise<void> {
+  async sendMessage(
+    text: string,
+    options: {
+      /**
+       * Put the question to every persona instead of just the active one. They answer in
+       * order, and because each turn's briefing includes the transcript so far, later
+       * voices can see — and argue with — what the earlier ones said.
+       */
+      askAll?: boolean;
+    } = {}
+  ): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed || !this.current.isOpen) return;
 
@@ -295,7 +412,13 @@ export class WorkspaceAgentWorkflow {
 
     this.patch({ messages: [...this.current.messages, message], agentError: null });
 
-    await this.requestTurn();
+    const speakers = options.askAll ? this.resolvePersonas() : [this.activePersona()];
+    for (const persona of speakers) {
+      await this.requestTurn(persona);
+      // A hard failure (no key, no gateway, network down) will fail identically for every
+      // remaining persona. Stopping reports it once instead of N times.
+      if (this.current.agentError) break;
+    }
   }
 
   /**
@@ -349,7 +472,7 @@ export class WorkspaceAgentWorkflow {
     return undefined;
   }
 
-  private async requestTurn(): Promise<void> {
+  private async requestTurn(persona: WorkspaceAgentPersona): Promise<void> {
     const apiKey = (this.deps.host.apiKey?.() ?? "").trim();
     const gateway = this.deps.agentGateway;
 
@@ -425,6 +548,12 @@ export class WorkspaceAgentWorkflow {
           speaker: "assistant",
           text: parsed.text,
           createdAt: this.now(),
+          // Stamped from the persona this turn was actually sent as, not from whoever is
+          // active by the time it finishes — an "ask all" run has a different persona
+          // active than the one currently streaming.
+          personaId: persona.id,
+          personaName: persona.name,
+          ...(persona.model ? { model: persona.model } : {}),
           sentContext,
           segments: parsed.segments,
           ...(streaming ? { streaming: true } : {}),
@@ -442,8 +571,10 @@ export class WorkspaceAgentWorkflow {
       const result = await gateway.designWorkspaceAgentTurn({
         briefing,
         apiKey,
-        model: this.deps.host.model?.() ?? "",
-        systemPrompt: this.deps.host.systemPrompt?.(),
+        // The persona's own model and voice. Its body replaces the user's workspace-agent
+        // body downstream; the parent rules and tag contract are appended either way.
+        model: persona.model || (this.deps.host.model?.() ?? ""),
+        systemPrompt: persona.systemPrompt ?? this.deps.host.systemPrompt?.(),
         webSearchEnabled: this.deps.host.webSearchEnabled?.(),
         // A gateway that cannot stream never calls this, and the reply simply appears
         // whole. Nothing here fakes a typing effect when the provider doesn't stream.
@@ -505,7 +636,14 @@ export class WorkspaceAgentWorkflow {
 
     lines.push("\nConversation so far:");
     for (const message of this.current.messages) {
-      lines.push(`${message.speaker}: ${message.text}`);
+      // Assistant turns are labelled by persona so a multi-voice transcript reads as a
+      // discussion rather than as one assistant contradicting itself — and so a persona
+      // can address what another one actually said.
+      const speaker =
+        message.speaker === "assistant" && message.personaName
+          ? message.personaName
+          : message.speaker;
+      lines.push(`${speaker}: ${message.text}`);
     }
 
     return lines.join("\n");
