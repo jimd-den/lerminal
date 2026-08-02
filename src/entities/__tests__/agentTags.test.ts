@@ -44,12 +44,46 @@ describe("parseAgentTags", () => {
     expect(intent.cards[0].body).toBe("A cue that fails is still informative.");
   });
 
-  it("falls back to following prose, then to the title, for a body", () => {
+  it("takes the detail straight from the tag when the model supplies one", () => {
+    const parsed = parseAgentTags(
+      "[[note: Interference | Competing traces blunt recall, especially for similar material.]]"
+    );
+    const card = (parsed.tags[0].intent as any).cards[0];
+
+    // The tag's own detail wins over anything scavenged from prose — it is the shape the
+    // contract asks for, and the only one that survives being read weeks later.
+    expect(card.title).toBe("Interference");
+    expect(card.body).toBe("Competing traces blunt recall, especially for similar material.");
+  });
+
+  it("falls back to following prose when the tag carried no detail", () => {
     const after = parseAgentTags("[[note: Interference]] Competing traces blunt recall.");
     expect((after.tags[0].intent as any).cards[0].body).toBe("Competing traces blunt recall.");
+  });
 
+  it("leaves the body empty rather than echoing the title back", () => {
+    // A body repeating its own title looks filled in and teaches nothing. Blank is the
+    // honest state, and the one the UI can visibly flag.
     const alone = parseAgentTags("[[note: Interference]]");
-    expect((alone.tags[0].intent as any).cards[0].body).toBe("Interference");
+    expect((alone.tags[0].intent as any).cards[0].body).toBe("");
+  });
+
+  it("refuses a lead-in as a description when the model lists tags", () => {
+    // "Here are some cards:" introduces the tags; it does not describe any of them, and
+    // saving it as the first note's body is worse than saving nothing.
+    const parsed = parseAgentTags("Here are some cards:\n[[note: Alpha]]\n[[note: Beta]]");
+
+    expect((parsed.tags[0].intent as any).cards[0].body).toBe("");
+    expect((parsed.tags[1].intent as any).cards[0].body).toBe("");
+  });
+
+  it("still accepts a long sentence that merely happens to end in a colon", () => {
+    const long =
+      "The three mechanisms that make spaced practice work are all variations on one idea, " +
+      "which is that retrieval difficulty is itself the thing doing the consolidating:";
+    const parsed = parseAgentTags(`${long} [[note: Spacing]]`);
+
+    expect((parsed.tags[0].intent as any).cards[0].body).toContain("retrieval difficulty");
   });
 
   it("never starts a note body mid-sentence when the preceding paragraph is long", () => {
