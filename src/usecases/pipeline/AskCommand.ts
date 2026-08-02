@@ -1,6 +1,6 @@
 import { createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
-import { resolveAssistantProfile } from "../../entities/assistantProfile";
+import { resolveAssistantProfile, resolveProfileModel } from "../../entities/assistantProfile";
 import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { CardRepository } from "../ports/repositories/CardRepository";
 import { AgentRequestError } from "../errors";
@@ -61,6 +61,9 @@ export class AskCommand implements PipelineCommand {
       undefined,
       profileOverride
     );
+    // A persona pinned to its own model speaks through that one; everything else follows
+    // the app's current selection, exactly as before personas could carry a model.
+    const model = resolveProfileModel(profile, ctx.model);
     const settingsInstruction = ctx.systemPrompt?.trim();
     const systemPrompt = [
       profile.systemPrompt,
@@ -77,7 +80,7 @@ export class AskCommand implements PipelineCommand {
         query,
         ctx.inputCards,
         ctx.apiKey,
-        ctx.model,
+        model,
         systemPrompt,
         profile.outputContract ?? "cards-v1"
       );
@@ -99,7 +102,7 @@ export class AskCommand implements PipelineCommand {
           mode: "agent",
           sourceCardIds: ctx.inputCards.map(card => card.id),
           assistantProfileId: profile.id,
-          model: ctx.model,
+          model,
           isLocalFallback: result.isLocalFallback || undefined,
         }),
       })

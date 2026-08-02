@@ -75,6 +75,8 @@ export function SettingsScreen({
   const [typeFieldLabel, setTypeFieldLabel] = useState("");
   const [typeFieldKind, setTypeFieldKind] = useState<FieldKind>("text");
   const [designerOpen, setDesignerOpen] = useState(false);
+  /** Which persona's model picker is expanded, if any. One at a time keeps the list scannable. */
+  const [modelPickerProfileId, setModelPickerProfileId] = useState<string | null>(null);
 
   useEffect(() => setApiKey(state.openRouterKey), [state.openRouterKey]);
   useEffect(() => setCustomModel(state.selectedModel), [state.selectedModel]);
@@ -494,11 +496,20 @@ export function SettingsScreen({
               .map((profile) => {
                 const active =
                   state.activeProfileIds[capability.id] === profile.id;
+                const pinnedModel = profile.model;
+                // The pin is shown by the model's friendly name when we know it, but a
+                // pin to a model that isn't in the fetched list still shows its raw id
+                // rather than silently reading as "app default".
+                const pinLabel = pinnedModel
+                  ? (state.availableModels.find((m) => m.id === pinnedModel)?.name ??
+                    pinnedModel)
+                  : "APP DEFAULT";
+                const pickerOpen = modelPickerProfileId === profile.id;
                 return (
                   <View
                     key={profile.id}
                     style={[
-                      styles.profileRow,
+                      styles.profileCard,
                       {
                         borderColor: active ? theme.accent : theme.line,
                         backgroundColor: active
@@ -507,56 +518,162 @@ export function SettingsScreen({
                       },
                     ]}
                   >
-                    <Pressable
-                      style={{ flex: 1 }}
-                      onPress={() =>
-                        controller.setActiveProfileForCapability(
-                          capability.id,
-                          profile.id,
-                        )
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.profileName,
-                          { color: theme.text, fontFamily: theme.fontMono },
-                        ]}
-                      >
-                        {profile.name}
-                      </Text>
-                      <Text
-                        numberOfLines={2}
-                        style={[
-                          styles.profileDescription,
-                          { color: theme.textMuted },
-                        ]}
-                      >
-                        {profile.description}
-                      </Text>
-                    </Pressable>
-                    {!profile.builtin ? (
+                    <View style={styles.profileRow}>
                       <Pressable
+                        style={{ flex: 1 }}
                         onPress={() =>
-                          Alert.alert(
-                            `Delete "${profile.name}"?`,
-                            "This assistant profile will be removed.",
-                            [
-                              { text: "Cancel", style: "cancel" },
-                              {
-                                text: "Delete",
-                                style: "destructive",
-                                onPress: () =>
-                                  void controller.deleteAssistantProfile(
-                                    profile.id,
-                                  ),
-                              },
-                            ],
+                          controller.setActiveProfileForCapability(
+                            capability.id,
+                            profile.id,
                           )
                         }
-                        style={styles.miniDelete}
                       >
-                        <TrashIcon color={theme.danger} size={19} />
+                        <Text
+                          style={[
+                            styles.profileName,
+                            { color: theme.text, fontFamily: theme.fontMono },
+                          ]}
+                        >
+                          {profile.name}
+                        </Text>
+                        <Text
+                          numberOfLines={2}
+                          style={[
+                            styles.profileDescription,
+                            { color: theme.textMuted },
+                          ]}
+                        >
+                          {profile.description}
+                        </Text>
                       </Pressable>
+                      {!profile.builtin ? (
+                        <Pressable
+                          onPress={() =>
+                            Alert.alert(
+                              `Delete "${profile.name}"?`,
+                              "This assistant profile will be removed.",
+                              [
+                                { text: "Cancel", style: "cancel" },
+                                {
+                                  text: "Delete",
+                                  style: "destructive",
+                                  onPress: () =>
+                                    void controller.deleteAssistantProfile(
+                                      profile.id,
+                                    ),
+                                },
+                              ],
+                            )
+                          }
+                          style={styles.miniDelete}
+                        >
+                          <TrashIcon color={theme.danger} size={19} />
+                        </Pressable>
+                      ) : null}
+                    </View>
+
+                    <Pressable
+                      onPress={() =>
+                        setModelPickerProfileId(pickerOpen ? null : profile.id)
+                      }
+                      style={[styles.modelPinRow, { borderTopColor: theme.line }]}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.modelPinText,
+                          {
+                            color: pinnedModel ? theme.accent : theme.textMuted,
+                            fontFamily: theme.fontMono,
+                          },
+                        ]}
+                      >
+                        {`MODEL: ${pinLabel}`}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.modelPinText,
+                          { color: theme.textMuted, fontFamily: theme.fontMono },
+                        ]}
+                      >
+                        {pickerOpen ? "▲" : "▼"}
+                      </Text>
+                    </Pressable>
+
+                    {pickerOpen ? (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.modelRow}
+                      >
+                        {/* Clearing the pin is a first-class choice, not a hidden gesture. */}
+                        <Pressable
+                          onPress={() => {
+                            void controller.setProfileModel(profile.id, undefined);
+                            setModelPickerProfileId(null);
+                          }}
+                          style={[
+                            styles.model,
+                            {
+                              borderColor: !pinnedModel ? theme.accent : theme.line,
+                              backgroundColor: !pinnedModel
+                                ? theme.accentSoft
+                                : theme.panelMuted,
+                            },
+                          ]}
+                        >
+                          <Text
+                            numberOfLines={1}
+                            style={[
+                              styles.modelName,
+                              { color: theme.text, fontFamily: theme.fontMono },
+                            ]}
+                          >
+                            APP DEFAULT
+                          </Text>
+                        </Pressable>
+                        {state.availableModels.map((model) => (
+                          <Pressable
+                            key={model.id}
+                            onPress={() => {
+                              void controller.setProfileModel(profile.id, model.id);
+                              setModelPickerProfileId(null);
+                            }}
+                            style={[
+                              styles.model,
+                              {
+                                borderColor:
+                                  pinnedModel === model.id ? theme.accent : theme.line,
+                                backgroundColor:
+                                  pinnedModel === model.id
+                                    ? theme.accentSoft
+                                    : theme.panelMuted,
+                              },
+                            ]}
+                          >
+                            <Text
+                              numberOfLines={1}
+                              style={[
+                                styles.modelName,
+                                { color: theme.text, fontFamily: theme.fontMono },
+                              ]}
+                            >
+                              {model.name}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.modelMeta,
+                                {
+                                  color: model.free ? theme.accent : theme.warning,
+                                  fontFamily: theme.fontMono,
+                                },
+                              ]}
+                            >
+                              {model.free ? "FREE" : "PAID"}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
                     ) : null}
                   </View>
                 );
@@ -1620,15 +1737,28 @@ const styles = StyleSheet.create({
   },
   dangerText: { fontSize: 12, fontWeight: "900" },
   profileSection: { marginBottom: 16 },
-  profileRow: {
-    minHeight: 78,
+  profileCard: {
     borderWidth: 1,
     borderRadius: 6,
-    padding: 11,
-    flexDirection: "row",
-    alignItems: "center",
+    paddingHorizontal: 11,
+    paddingTop: 11,
+    paddingBottom: 4,
     marginBottom: 6,
   },
+  profileRow: {
+    minHeight: 60,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  modelPinRow: {
+    borderTopWidth: 1,
+    minHeight: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  modelPinText: { fontSize: 11, fontWeight: "800", letterSpacing: 0.6 },
   profileName: { fontSize: 12, fontWeight: "800" },
   profileDescription: { fontSize: 12, lineHeight: 17, marginTop: 4 },
   miniDelete: {

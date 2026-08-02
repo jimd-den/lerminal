@@ -7,6 +7,7 @@ import {
   resolveOutputPolicy,
   resolveWebPolicy,
   resolveProfileScope,
+  resolveProfileModel,
   isProfileEditable,
   DEFAULT_CONTEXT_POLICY,
   DEFAULT_OUTPUT_POLICY,
@@ -111,6 +112,46 @@ describe("Assistant Profile Domain Entity", () => {
       systemPrompt: "x",
     });
     expect(isProfileEditable(custom)).toBe(true);
+  });
+
+  it("runs a persona on its pinned model, and on the app default when unpinned", () => {
+    const pinned = createAssistantProfile({
+      name: "Socratic on a big model",
+      capability: "chat",
+      systemPrompt: "x",
+      model: "anthropic/claude-sonnet-5",
+    });
+    const unpinned = createAssistantProfile({
+      name: "Follows the app",
+      capability: "chat",
+      systemPrompt: "x",
+    });
+
+    expect(resolveProfileModel(pinned, "app/default")).toBe("anthropic/claude-sonnet-5");
+    expect(resolveProfileModel(unpinned, "app/default")).toBe("app/default");
+  });
+
+  it("treats a blank pin as absent, so clearing the field restores the app default", () => {
+    const blank = createAssistantProfile({
+      name: "Cleared",
+      capability: "chat",
+      systemPrompt: "x",
+      model: "   ",
+    });
+
+    expect(blank.model).toBeUndefined();
+    expect(resolveProfileModel(blank, "app/default")).toBe("app/default");
+  });
+
+  it("carries the pinned model onto a duplicate", () => {
+    const source = createAssistantProfile({
+      name: "Pinned",
+      capability: "chat",
+      systemPrompt: "x",
+      model: "some/model",
+    });
+
+    expect(duplicateAssistantProfile(source).model).toBe("some/model");
   });
 
   it("duplicating a builtin never mutates it, and marks the copy editable", () => {

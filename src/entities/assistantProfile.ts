@@ -91,6 +91,16 @@ export interface AssistantProfile {
   capability: AssistantCapability;
   systemPrompt: string;
   outputContract?: OutputContractKind;
+  /**
+   * The model this persona speaks through. Undefined means "whatever the app is set to" —
+   * the behavior every profile had before this field existed, and still the right default
+   * for a persona the user never bound to a specific model.
+   *
+   * A persona is a voice *and* the model that voices it: "Socratic tutor on a big model"
+   * and "Socratic tutor on a fast local one" are different collaborators, and pinning the
+   * model here is what lets a conversation put several of them in the same room.
+   */
+  model?: string;
   createdAt: number;
   updatedAt: number;
   builtin?: boolean;
@@ -118,6 +128,8 @@ export interface CreateAssistantProfileParams {
   capability: AssistantCapability;
   systemPrompt: string;
   outputContract?: OutputContractKind;
+  /** Undefined means the app's currently selected model — see {@link AssistantProfile.model}. */
+  model?: string;
   builtin?: boolean;
   scope?: ProfileScope;
   workspaceId?: string;
@@ -298,6 +310,7 @@ export function createAssistantProfile(params: CreateAssistantProfileParams): As
     capability: params.capability,
     systemPrompt: params.systemPrompt.trim(),
     outputContract: params.outputContract,
+    model: params.model?.trim() || undefined,
     createdAt: now,
     updatedAt: now,
     builtin: params.builtin ?? false,
@@ -331,6 +344,17 @@ export function resolveProfileScope(profile: AssistantProfile): ProfileScope {
   return profile.scope ?? "global";
 }
 
+/**
+ * The model a profile actually runs on: its own pin, else the app's current selection.
+ *
+ * Total and pure, so every call site resolves this the same way and a persona pinned to a
+ * model can never be silently run on a different one. A blank pin is treated as absent —
+ * clearing the field is how a user asks for "follow the app default" back.
+ */
+export function resolveProfileModel(profile: AssistantProfile, fallbackModel: string): string {
+  return profile.model?.trim() || fallbackModel;
+}
+
 /** Whether a profile can be edited: explicit `isEditable`, else "not a builtin". */
 export function isProfileEditable(profile: AssistantProfile): boolean {
   return profile.isEditable ?? !profile.builtin;
@@ -354,6 +378,7 @@ export function duplicateAssistantProfile(
     capability: overrides.capability ?? source.capability,
     systemPrompt: overrides.systemPrompt ?? source.systemPrompt,
     outputContract: overrides.outputContract ?? source.outputContract,
+    model: overrides.model ?? source.model,
     scope: overrides.scope ?? "global",
     workspaceId: overrides.workspaceId,
     contextPolicy: overrides.contextPolicy ?? source.contextPolicy,

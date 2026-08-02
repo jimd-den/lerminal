@@ -1,6 +1,6 @@
 import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { CardRepository } from "../ports/repositories/CardRepository";
-import { BUILTIN_ASSISTANT_PROFILES } from "../../entities/assistantProfile";
+import { BUILTIN_ASSISTANT_PROFILES, resolveProfileModel } from "../../entities/assistantProfile";
 import { Card, createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
 import { WorkspaceMission } from "../../entities/workspace";
@@ -58,11 +58,14 @@ export class GenerateSyllabusInteractor {
       throw new MissingApiKeyError("Generating a syllabus");
     }
 
+    // Honors a model pinned onto the syllabus-planner persona; otherwise the caller's.
+    const model = resolveProfileModel(SYLLABUS_PROFILE, request.model);
+
     const askResult = await this.agentGateway.ask(
       buildQueryStrategistPrompt(request.mission.goalTitle, request.mission),
       [],
       request.apiKey,
-      request.model,
+      model,
       SYLLABUS_PROFILE.systemPrompt,
       "cards-v1"
     );
@@ -87,7 +90,7 @@ export class GenerateSyllabusInteractor {
       type: "group",
       title: `Syllabus: ${request.mission.goalTitle}`,
       body: "",
-      provenance: createProvenance({ mode: "agent", model: request.model }),
+      provenance: createProvenance({ mode: "agent", model }),
     });
 
     // A model that names a phase ("Foundations :: Vector spaces") gets one subgroup per
@@ -110,7 +113,7 @@ export class GenerateSyllabusInteractor {
             title: phase,
             body: "",
             parentId: group.id,
-            provenance: createProvenance({ mode: "agent", model: request.model }),
+            provenance: createProvenance({ mode: "agent", model }),
           });
           phaseGroups.set(phase, phaseGroup);
           phases.push(phaseGroup);
@@ -126,7 +129,7 @@ export class GenerateSyllabusInteractor {
           title: topic,
           body: item.body.trim(),
           parentId,
-          provenance: createProvenance({ mode: "agent", model: request.model }),
+          provenance: createProvenance({ mode: "agent", model }),
         })
       );
     }

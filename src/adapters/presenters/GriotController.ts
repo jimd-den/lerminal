@@ -3071,6 +3071,27 @@ export class GriotController {
     this.showToast(`Deleted assistant "${target.name}"`);
   }
 
+  /**
+   * Pins a persona to a model, or clears the pin with `undefined` so it follows the app's
+   * current selection again. Works on builtins too — they are seeded into the repo on
+   * first load, so the edit persists like any other profile's.
+   */
+  async setProfileModel(
+    profileId: string,
+    model: string | undefined,
+  ): Promise<void> {
+    const target = this.domain.assistantProfiles.find((p) => p.id === profileId);
+    if (!target) return;
+    const updated: AssistantProfile = {
+      ...target,
+      model: model?.trim() || undefined,
+      updatedAt: Date.now(),
+    };
+    await this.assistantProfileRepo.saveProfile(updated);
+    this.domain.assistantProfiles = await this.loadAssistantProfiles();
+    this.emit();
+  }
+
   setActiveProfileForCapability(
     capability: AssistantCapability,
     profileId: string,

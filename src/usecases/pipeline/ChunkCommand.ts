@@ -3,7 +3,7 @@ import { CardRepository } from "../ports/repositories/CardRepository";
 import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { Card, createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
-import { resolveAssistantProfile } from "../../entities/assistantProfile";
+import { resolveAssistantProfile, resolveProfileModel } from "../../entities/assistantProfile";
 import { chunkCard } from "../../entities/chunking";
 import { MarkdownChunkerService, MarkdownNode } from "../card/MarkdownChunkerService";
 import { EmptySelectionError } from "../errors";
@@ -74,6 +74,9 @@ export class ChunkCommand implements PipelineCommand {
       ctx.assistantProfiles,
       undefined
     );
+    // A persona pinned to its own model speaks through that one; everything else follows
+    // the app's current selection, exactly as before personas could carry a model.
+    const model = resolveProfileModel(profile, ctx.model);
     const settingsInstruction = ctx.chunkSystemPrompt?.trim();
     const systemPrompt = [
       profile.systemPrompt || DEFAULT_AI_CHUNK_SYSTEM_PROMPT,
@@ -94,7 +97,7 @@ export class ChunkCommand implements PipelineCommand {
           goal,
           [source],
           ctx.apiKey,
-          ctx.model,
+          model,
           systemPrompt,
           profile.outputContract ?? "chunks-v1"
         );
@@ -141,7 +144,7 @@ export class ChunkCommand implements PipelineCommand {
               mode: "agent",
               sourceCardIds: [source.id],
               assistantProfileId: profile.id,
-              model: ctx.model,
+              model,
               isLocalFallback: usedLocalFallback || undefined,
             }),
           })
