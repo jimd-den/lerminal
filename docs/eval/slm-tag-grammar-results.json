@@ -3,7 +3,7 @@
     "model": "google/gemma-4-26b-a4b-it:free",
     "case": "mastery-syllabus-breakdown",
     "ok": false,
-    "rawText": "To master WebGPU, you should start with the fundamental graphics pipeline, similar to what you have outlined in card 3. A good syllabus would progress from learning about buffers and memory management to understanding shaders (WGSL), render pipelines, and finally more advanced topics like compute shaders and command encoders.\n\nI suggest we organize these topics into a structured [[group: WebGPU Syllabus]] so you can track your progress as you learn.",
+    "rawText": "To master WebGPU, you should start with the core concepts of the graphics pipeline and then move toward memory management and compute shaders. Since you already have card 3, [[group: WebGPU Learning Path]], we can build a syllabus around that.\n\nI suggest following this progression:\n\n1. **The Basics**: Understanding the GPU device, command encoders, and queues.\n2. **The Pipeline**: Setting up render pipelines, vertex buffers, and fragment shaders.\n3. **Data Flow**: Mastering bind groups and uniform buffers to move data from CPU to GPU.\n4. **Advanced Rendering**: Implementing depth testing, stencil buffers, and texture sampling.\n5. **Compute Shaders**: Moving beyond graphics to general-purpose GPU computation for physics or particle systems.",
     "tagCount": 1,
     "tagTypes": [
       "GROUP"
@@ -18,7 +18,7 @@
     "model": "google/gemma-4-26b-a4b-it:free",
     "case": "single-fact-worth-keeping",
     "ok": true,
-    "rawText": "Spacing beats massing because it leverages the spacing effect, where distributing learning sessions over time forces the brain to work harder to retrieve information, thereby strengthening long-term memory. [[note: The spacing effect]]",
+    "rawText": "Spacing improves memory because increasing the interval between reviews forces a more effortful retrieval, which strengthens the neural pathways. [[note: Desirable difficulty]]",
     "tagCount": 1,
     "tagTypes": [
       "NOTE"
@@ -30,23 +30,19 @@
   {
     "model": "google/gemma-4-26b-a4b-it:free",
     "case": "plain-question-no-artifact",
-    "ok": false,
-    "rawText": "Recognition is the ability to identify information when you see it presented again, like a multiple-choice test. Recall is the much more difficult task of retrieving that information from memory without any external cues, which is why techniques like active recall are so effective. [[note: Recall vs Recognition]]",
-    "tagCount": 1,
-    "tagTypes": [
-      "NOTE"
-    ],
+    "ok": true,
+    "rawText": "Recognition occurs when you identify information that is presented to you, like a multiple-choice test. Recall requires you to retrieve the information from memory without it being visible, such as an essay question or trying to remember a name in conversation.",
+    "tagCount": 0,
+    "tagTypes": [],
     "unresolvedTagCount": 0,
     "leakedBracketNoise": false,
-    "notes": [
-      "Expected zero tags but got 1 — model over-tagged a plain question."
-    ]
+    "notes": []
   },
   {
     "model": "google/gemma-4-26b-a4b-it:free",
     "case": "group-existing-notes",
     "ok": true,
-    "rawText": "I can propose a new group for your WebGPU notes. Would you like me to create a group called [[group: WebGPU]] to hold card 3?",
+    "rawText": "I can certainly propose a group for those. I would suggest creating a new [[group: WebGPU]] to house card 3 and any future notes on the topic.",
     "tagCount": 1,
     "tagTypes": [
       "GROUP"
@@ -59,9 +55,10 @@
     "model": "google/gemma-4-26b-a4b-it:free",
     "case": "multi-question-generation",
     "ok": true,
-    "rawText": "Here are a few ways you could test yourself on the concept:\n\nWhat is the primary factor that determines the steepness of the forgetting curve?\n\nHow does the timing of a review session impact the rate of memory decay?\n\n[[question: Factors affecting the forgetting curve]]",
-    "tagCount": 1,
+    "rawText": "To test yourself on the forgetting curve, you could ask how the rate of memory loss changes over time or what specific interventions can slow down that decline. [[question: How does the forgetting curve change over time?]] You might also ask about the relationship between the strength of a memory trace and its durability. [[question: How does memory strength affect decay?]]",
+    "tagCount": 2,
     "tagTypes": [
+      "QUESTION",
       "QUESTION"
     ],
     "unresolvedTagCount": 0,
@@ -72,7 +69,7 @@
     "model": "nvidia/nemotron-3-nano-30b-a3b:free",
     "case": "mastery-syllabus-breakdown",
     "ok": true,
-    "rawText": "First, open the existing card 3 that gives an overview of the WebGPU pipeline. Then work through these phases: fundamentals of GPU concepts, JavaScript/TypeScript API basics, WGSL shader language, rendering pipeline stages (vertex, fragment, compute), resource binding, debugging tools, and a small project to render a triangle. As you complete each phase you can add new cards for the topics you cover, building the syllabus over time. [[note: WebGPU syllabus]]",
+    "rawText": "You can begin with the basics of WebGPU (card 3), then study the graphics pipeline concepts, followed by shader programming and texture handling. After each step, add practice exercises and refer back to the spaced‑repetition fundamentals (card 1) and the forgetting curve (card 2) to reinforce the material. As you progress, you can keep expanding the syllabus with new topics or projects. [[note: WebGPU mastery syllabus]]",
     "tagCount": 1,
     "tagTypes": [
       "NOTE"
@@ -84,21 +81,21 @@
   {
     "model": "nvidia/nemotron-3-nano-30b-a3b:free",
     "case": "single-fact-worth-keeping",
-    "ok": true,
-    "rawText": "Because spaced repetitions create more retrieval effort over time, they strengthen memory more than a single massed session. [[note: Spacing advantage]]",
-    "tagCount": 1,
-    "tagTypes": [
-      "NOTE"
-    ],
+    "ok": false,
+    "rawText": "",
+    "tagCount": 0,
+    "tagTypes": [],
     "unresolvedTagCount": 0,
     "leakedBracketNoise": false,
-    "notes": []
+    "notes": [
+      "REQUEST FAILED: No text content in response: {\"error\":{\"message\":\"Upstream error from Nvidia: ResourceExhausted: Worker local total request limit reached (32/32)\",\"code\":502}}"
+    ]
   },
   {
     "model": "nvidia/nemotron-3-nano-30b-a3b:free",
     "case": "plain-question-no-artifact",
     "ok": false,
-    "rawText": "Recall means actively retrieving information from memory, while recognition is simply noticing that you’ve seen it before when it’s presented. This distinction is central to how spaced‑repetition systems work. [[note: Recall vs Recognition]]",
+    "rawText": "Recall is actively retrieving information from memory, while recognition is just noticing that something feels familiar. [[note: Recall vs Recognition]]",
     "tagCount": 1,
     "tagTypes": [
       "NOTE"
@@ -113,7 +110,7 @@
     "model": "nvidia/nemotron-3-nano-30b-a3b:free",
     "case": "group-existing-notes",
     "ok": true,
-    "rawText": "You could create a group called WebGPU to collect those notes. [[group: WebGPU]]",
+    "rawText": "Sure, you could create a group named “WebGPU pipeline” to contain those notes. [[group: WebGPU pipeline]]",
     "tagCount": 1,
     "tagTypes": [
       "GROUP"
@@ -126,7 +123,7 @@
     "model": "nvidia/nemotron-3-nano-30b-a3b:free",
     "case": "multi-question-generation",
     "ok": true,
-    "rawText": "Here are three quiz questions you can use to test yourself on the forgetting‑curve idea (based on Card 2):\n\n1) What does the forgetting curve illustrate?  \n2) How does the rate of forgetting change as time passes?  \n3) Which factor can modify the shape of the curve, such as spaced repetition?  \n\n[[question: What does the forgetting curve illustrate?]]",
+    "rawText": "Here are three quiz questions you could use to test yourself on the forgetting‑curve idea:\n\n1. What general shape does the forgetting curve follow, and why is an exponential decay model often used? [[question: Shape of forgetting curve?]]\n2. How does the interval between learning and later recall affect the steepness of forgetting?\n3. Which factor mentioned in the card most strongly influences how quickly memories fade?\n\nChoose the ones that suit your study plan.",
     "tagCount": 1,
     "tagTypes": [
       "QUESTION"
@@ -139,33 +136,7 @@
     "model": "nvidia/nemotron-nano-9b-v2:free",
     "case": "mastery-syllabus-breakdown",
     "ok": true,
-    "rawText": "\n\nLearning WebGPU requires building a strong foundation in graphics concepts and the API itself. Here’s a proposed syllabus:  \n\n**Phase 1: Environment & Basics**  \n- Set up a WebGPU-compatible browser (e.g., Chrome).  \n- Understand the core WebGPU structure: devices, queues, buffers, textures, and shader modules.  \n- Learn how to write and compile shader code (WGSL) for graphics and compute tasks.  \n\n**Phase 2: Rendering Fundamentals**  \n- Implement a simple 2D or 3D rendering pipeline (vertex/fragment shaders).  \n- Practice drawing shapes, handling input, and animating objects.  \n- Explore debugging tools like the WebGPU inspector.  \n\n**Phase 3: Advanced Topics**  \n- Optimize performance using GPU features (e.g., compute shaders, multi-stage pipelines).  \n- Work with complex geometries, lighting, or physics simulations.  \n- Integrate WebGPU with other Web APIs (e.g., WebAssembly, WebRTC).  \n\nTag key points as you add details to your cards. For example, tag card #3 with `[[note: WebGPU pipeline overview]]` once you flesh it out. Start small and build incrementally!\n",
-    "tagCount": 1,
-    "tagTypes": [
-      "NOTE"
-    ],
-    "unresolvedTagCount": 0,
-    "leakedBracketNoise": false,
-    "notes": []
-  },
-  {
-    "model": "nvidia/nemotron-nano-9b-v2:free",
-    "case": "single-fact-worth-keeping",
-    "ok": true,
-    "rawText": "\n\nSpacing beats massing because each delayed recall is harder, and difficulty strengthens memory. [[note: Desirable difficulty]]\n",
-    "tagCount": 1,
-    "tagTypes": [
-      "NOTE"
-    ],
-    "unresolvedTagCount": 0,
-    "leakedBracketNoise": false,
-    "notes": []
-  },
-  {
-    "model": "nvidia/nemotron-nano-9b-v2:free",
-    "case": "plain-question-no-artifact",
-    "ok": false,
-    "rawText": "\n\nRecall requires you to actively retrieve information from memory without cues (like remembering a fact on your own), while recognition involves identifying something from given choices or cues (like picking the correct answer in a multiple-choice question). [[note: Recall vs Recognition]] [[question: Are there practical examples of each?]]\n",
+    "rawText": "\n\nHere's a suggested syllabus structure: 1. Master HTML/CSS/JS fundamentals for web basics. 2. Learn computer graphics concepts like shaders and rendering pipelines. 3. Study WebGPU API fundamentals: resources, commands, and rendering loop. 4. Practice building 3D scenes in WebGPU. 5. Explore advanced WebGPU features and optimize performance. 6. Build real projects like a game or simulation. [[note: WebGPU pipeline]] [[question: How to structure project phases?]]\n",
     "tagCount": 2,
     "tagTypes": [
       "NOTE",
@@ -173,18 +144,16 @@
     ],
     "unresolvedTagCount": 0,
     "leakedBracketNoise": false,
-    "notes": [
-      "Expected zero tags but got 2 — model over-tagged a plain question."
-    ]
+    "notes": []
   },
   {
     "model": "nvidia/nemotron-nano-9b-v2:free",
-    "case": "group-existing-notes",
+    "case": "single-fact-worth-keeping",
     "ok": true,
-    "rawText": "\n\nThe WebGPU notes can be grouped using your existing card:  \n\"3. WebGPU pipeline overview\".  \n\nWould you like me to tag this card with a \"group: WebGPU\" label? [[group: WebGPU]]\n",
+    "rawText": "\n\nSpacing beats massing because repeated, spaced exposure strengthens memory traces more effectively than massed practice. [[note: Spacing effect]]\n",
     "tagCount": 1,
     "tagTypes": [
-      "GROUP"
+      "NOTE"
     ],
     "unresolvedTagCount": 0,
     "leakedBracketNoise": false,
@@ -192,14 +161,38 @@
   },
   {
     "model": "nvidia/nemotron-nano-9b-v2:free",
+    "case": "plain-question-no-artifact",
+    "ok": true,
+    "rawText": "\n\nRecall is actively retrieving information from memory without cues, like answering a question without options. Recognition is identifying correct information from given choices, like picking the right answer in a multiple-choice quiz. They differ in how the mind accesses stored knowledge—directly vs. through comparison.\n",
+    "tagCount": 0,
+    "tagTypes": [],
+    "unresolvedTagCount": 0,
+    "leakedBracketNoise": false,
+    "notes": []
+  },
+  {
+    "model": "nvidia/nemotron-nano-9b-v2:free",
+    "case": "group-existing-notes",
+    "ok": false,
+    "rawText": "\n\nYou can group your WebGPU notes into a single card. Would you like me to help structure that content under one card? [[group: WebGPU notes]]\n",
+    "tagCount": 1,
+    "tagTypes": [
+      "GROUP"
+    ],
+    "unresolvedTagCount": 1,
+    "leakedBracketNoise": false,
+    "notes": [
+      "1 tag(s) referenced something that didn't resolve to a real card."
+    ]
+  },
+  {
+    "model": "nvidia/nemotron-nano-9b-v2:free",
     "case": "multi-question-generation",
     "ok": true,
-    "rawText": "\n\nThe forgetting curve describes how memory strength declines over time without review. [[question: What triggers the reset of the forgetting curve?]] Spacing reviews just before forgetting maximizes retention. [[question: How does spacing leverage the curve?]] Testing yourself at intervals aligned with the curve’s decay can turn forgetting into learning. [[question: How might this apply to self-testing?]]\n",
-    "tagCount": 3,
+    "rawText": "\n\nHere are some quiz questions you can test yourself with: [[note: Forgetting curve quiz questions]]  \n\n1. Who is credited with discovering the forgetting curve?  \n2. What does the forgetting curve illustrate about memory retention over time?  \n3. How does spaced repetition counteract the effects described by the forgetting curve?\n",
+    "tagCount": 1,
     "tagTypes": [
-      "QUESTION",
-      "QUESTION",
-      "QUESTION"
+      "NOTE"
     ],
     "unresolvedTagCount": 0,
     "leakedBracketNoise": false,

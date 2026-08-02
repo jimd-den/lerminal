@@ -52,6 +52,59 @@ describe("parseAgentTags", () => {
     expect((alone.tags[0].intent as any).cards[0].body).toBe("Interference");
   });
 
+  it("never starts a note body mid-sentence when the preceding paragraph is long", () => {
+    // A note is only "usable" study material if it reads as a complete thought. Naive
+    // character-truncation of a long lead-in paragraph can slice into the middle of a
+    // sentence (or word), handing the reviewer a fragment to puzzle over later.
+    const longLeadIn =
+      "Cognitive load theory holds that working memory can juggle only a handful of " +
+      "elements at once, so material that packs too many interacting ideas into a single " +
+      "explanation overwhelms a learner before they can encode any of it. Effective " +
+      "teaching therefore sequences complexity deliberately, introducing one new element " +
+      "at a time and letting each become automatic before the next is layered on top, " +
+      "which is the same reasoning behind interleaving practice across related skills " +
+      "rather than mastering one in isolation before touching the next.";
+    const parsed = parseAgentTags(`${longLeadIn} [[note: Cognitive load]]`);
+    const body = (parsed.tags[0].intent as any).cards[0].body as string;
+
+    // A real sentence starts with a capital letter (or a quote/number), never with a
+    // lowercase continuation of the word or clause it was sliced out of.
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]).toBe(body[0].toUpperCase());
+    expect(longLeadIn).toContain(body.trimEnd().replace(/\.$/, ""));
+  });
+
+  it("returns one oversized sentence whole rather than fragmenting it", () => {
+    const oneGiantSentence =
+      "This single sentence about the testing effect keeps going and going with clause " +
+      "after clause about how retrieval practice strengthens memory traces more than " +
+      "additional rereading ever could, deliberately written well past four hundred " +
+      "characters in total length so that no reasonable per-body budget could possibly " +
+      "hold the whole thing without cutting straight through the middle of a clause, " +
+      "which is exactly the fragment this test exists to rule out entirely.";
+    expect(oneGiantSentence.length).toBeGreaterThan(400);
+
+    const parsed = parseAgentTags(`${oneGiantSentence} [[note: Testing effect]]`);
+    const body = (parsed.tags[0].intent as any).cards[0].body as string;
+
+    expect(body).toBe(oneGiantSentence);
+  });
+
+  it("keeps a forward (following-prose) body from cutting mid-sentence too", () => {
+    const longFollowUp =
+      "This idea keeps expanding across several clauses about how interleaving different " +
+      "problem types forces the learner to first identify which strategy applies before " +
+      "executing it, which is precisely the discrimination skill that blocked practice " +
+      "never trains, and that is exactly why the effect shows up so reliably in the " +
+      "literature on mathematics and category learning alike.";
+    const parsed = parseAgentTags(`[[note: Interleaving]] ${longFollowUp}`);
+    const body = (parsed.tags[0].intent as any).cards[0].body as string;
+
+    expect(body.length).toBeGreaterThan(0);
+    expect(/[.!?]["')\]]*$/.test(body)).toBe(true);
+    expect(longFollowUp).toContain(body);
+  });
+
   it("turns a question tag into a question card", () => {
     const parsed = parseAgentTags("[[question: Why does spacing beat massing?]]");
     const intent = parsed.tags[0].intent as any;
