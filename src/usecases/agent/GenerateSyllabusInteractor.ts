@@ -21,6 +21,18 @@ export interface GeneratedSyllabus {
   group: Card;
   /** Ordered prerequisite cards, each title a searchable topic name. */
   items: Card[];
+  /** Phase subgroups, in first-appearance order. Empty when the model gave no phase. */
+  phases: Card[];
+}
+
+/** Splits a model-written "Phase Name :: Topic" title into its two parts, if present. */
+function splitPhaseTitle(rawTitle: string): { phase: string | null; topic: string } {
+  const separatorIndex = rawTitle.indexOf("::");
+  if (separatorIndex === -1) return { phase: null, topic: rawTitle };
+  const phase = rawTitle.slice(0, separatorIndex).trim();
+  const topic = rawTitle.slice(separatorIndex + 2).trim();
+  if (!phase || !topic) return { phase: null, topic: rawTitle };
+  return { phase, topic };
 }
 
 /**
@@ -78,19 +90,48 @@ export class GenerateSyllabusInteractor {
       provenance: createProvenance({ mode: "agent", model: request.model }),
     });
 
-    const items = valid.map(item =>
-      createCard({
-        workspaceId: request.workspaceId,
-        type: "note",
-        role: "concept",
-        title: item.title.trim(),
-        body: item.body.trim(),
-        parentId: group.id,
-        provenance: createProvenance({ mode: "agent", model: request.model }),
-      })
-    );
+    // A model that names a phase ("Foundations :: Vector spaces") gets one subgroup per
+    // distinct phase, created in the order it first appears; a model that doesn't parents
+    // every item directly on the syllabus group, exactly as before phases existed.
+    const phaseGroups = new Map<string, Card>();
+    const phases: Card[] = [];
+    const items: Card[] = [];
 
-    await this.cardRepo.saveCards([group, ...items]);
-    return { group, items };
+    for (const item of valid) {
+      const { phase, topic } = splitPhaseTitle(item.title.trim());
+      let parentId = group.id;
+
+      if (phase) {
+        let phaseGroup = phaseGroups.get(phase);
+        if (!phaseGroup) {
+          phaseGroup = createCard({
+            workspaceId: request.workspaceId,
+            type: "group",
+            title: phase,
+            body: "",
+            parentId: group.id,
+            provenance: createProvenance({ mode: "agent", model: request.model }),
+          });
+          phaseGroups.set(phase, phaseGroup);
+          phases.push(phaseGroup);
+        }
+        parentId = phaseGroup.id;
+      }
+
+      items.push(
+        createCard({
+          workspaceId: request.workspaceId,
+          type: "note",
+          role: "concept",
+          title: topic,
+          body: item.body.trim(),
+          parentId,
+          provenance: createProvenance({ mode: "agent", model: request.model }),
+        })
+      );
+    }
+
+    await this.cardRepo.saveCards([group, ...phases, ...items]);
+    return { group, items, phases };
   }
 }

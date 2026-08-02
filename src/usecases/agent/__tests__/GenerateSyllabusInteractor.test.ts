@@ -51,7 +51,7 @@ describe("GenerateSyllabusInteractor", () => {
     ]);
     const interactor = new GenerateSyllabusInteractor(gateway, cardRepo);
 
-    const { group, items } = await interactor.execute({ mission, workspaceId: "w", apiKey: "key", model: "m" });
+    const { group, items, phases } = await interactor.execute({ mission, workspaceId: "w", apiKey: "key", model: "m" });
 
     expect(group.type).toBe("group");
     expect(group.title).toBe("Syllabus: Ship a renderer");
@@ -60,6 +60,7 @@ describe("GenerateSyllabusInteractor", () => {
     expect(items.every(i => i.parentId === group.id)).toBe(true);
     expect(items.every(i => i.role === "concept")).toBe(true);
     expect(items.every(i => i.provenance?.mode === "agent")).toBe(true);
+    expect(phases).toEqual([]);
 
     // The full mission rode along in the prompt.
     expect(gateway.lastQuery).toContain("Ship a renderer");
@@ -67,5 +68,32 @@ describe("GenerateSyllabusInteractor", () => {
 
     const persisted = await cardRepo.getCardsByWorkspace("w");
     expect(persisted.length).toBe(3);
+  });
+
+  it("groups items under phase subgroups when the model titles them 'Phase :: Topic'", async () => {
+    const cardRepo = new MemoryCardRepository();
+    const gateway = new StubAgentGateway([
+      { title: "Foundations :: Linear algebra basics", body: "Vectors and matrices first." },
+      { title: "Foundations :: Coordinate spaces", body: "World vs. local space." },
+      { title: "Advanced :: GPU pipeline fundamentals", body: "How draw calls flow." },
+    ]);
+    const interactor = new GenerateSyllabusInteractor(gateway, cardRepo);
+
+    const { group, items, phases } = await interactor.execute({ mission, workspaceId: "w", apiKey: "key", model: "m" });
+
+    expect(phases.map(p => p.title)).toEqual(["Foundations", "Advanced"]);
+    expect(phases.every(p => p.type === "group" && p.parentId === group.id)).toBe(true);
+
+    expect(items.map(i => i.title)).toEqual([
+      "Linear algebra basics",
+      "Coordinate spaces",
+      "GPU pipeline fundamentals",
+    ]);
+    expect(items[0].parentId).toBe(phases[0].id);
+    expect(items[1].parentId).toBe(phases[0].id);
+    expect(items[2].parentId).toBe(phases[1].id);
+
+    const persisted = await cardRepo.getCardsByWorkspace("w");
+    expect(persisted.length).toBe(1 + phases.length + items.length);
   });
 });

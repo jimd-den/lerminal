@@ -49,6 +49,8 @@ export interface MissionState {
 export interface SyllabusOutcome {
   group: Card;
   items: Card[];
+  /** Phase subgroups, in first-appearance order. Empty when the model gave no phase. */
+  phases: Card[];
   workspaceId: string;
 }
 
@@ -235,14 +237,14 @@ export class MissionWorkflow {
 
     const operationId = this.deps.host.beginOperation("Generating syllabus…");
     try {
-      const { group, items } = await this.deps.generateSyllabus.execute({
+      const { group, items, phases } = await this.deps.generateSyllabus.execute({
         mission: workspace.mission,
         workspaceId: workspace.id,
         apiKey: this.deps.host.apiKey(),
         model: this.deps.host.model(),
       });
       this.deps.host.endOperation(operationId);
-      await this.deps.host.onSyllabusCreated({ group, items, workspaceId: workspace.id });
+      await this.deps.host.onSyllabusCreated({ group, items, phases, workspaceId: workspace.id });
     } catch (error) {
       const message = messageFor(error, "Could not generate syllabus");
       this.deps.host.failOperation(operationId, message);

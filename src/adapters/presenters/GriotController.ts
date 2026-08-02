@@ -676,14 +676,14 @@ export class GriotController {
             this.ui.preflightQuery = prompt;
             this.emit();
           },
-          onSyllabusCreated: async ({ group, items, workspaceId }) => {
+          onSyllabusCreated: async ({ group, items, phases, workspaceId }) => {
             if (this.domain.activeWorkspaceId === workspaceId) {
               await this.loadCardsForActiveWorkspace();
               this.domain.selection = new Set(items.map((card) => card.id));
             }
             this.operations.present({
               summary: `Syllabus created: ${items.length} prerequisite topic${items.length === 1 ? "" : "s"}`,
-              createdCardIds: [group.id, ...items.map((card) => card.id)],
+              createdCardIds: [group.id, ...phases.map((card) => card.id), ...items.map((card) => card.id)],
               destination: { spaceId: workspaceId, groupId: group.id },
               primaryActionLabel: "Open syllabus",
             });
