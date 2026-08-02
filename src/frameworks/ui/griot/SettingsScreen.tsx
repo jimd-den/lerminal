@@ -47,7 +47,7 @@ import { BRAND_NAME } from "../../../entities/brand";
 const CAPABILITIES: { id: AssistantCapability; label: string }[] = [
   { id: "generate-cards", label: "CARD GENERATION" },
   { id: "chunk-document", label: "DOCUMENT CHUNKING" },
-  { id: "chat", label: "CHAT" },
+  { id: "chat", label: "CHAT · ASK GRIOT PERSONAS" },
   { id: "cloze", label: "CLOZE" },
 ];
 
@@ -1267,6 +1267,8 @@ function AssistantDesignerModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
+  /** The model this persona will speak through. Undefined = follow the app's selection. */
+  const [model, setModel] = useState<string | undefined>(undefined);
   useEffect(() => {
     if (!visible) {
       setMessages([]);
@@ -1274,6 +1276,7 @@ function AssistantDesignerModal({
       setName("");
       setDescription("");
       setPrompt("");
+      setModel(undefined);
     }
   }, [visible]);
   const chooseCapability = (next: AssistantCapability) => {
@@ -1284,6 +1287,7 @@ function AssistantDesignerModal({
     setName("");
     setDescription("");
     setPrompt("");
+    setModel(undefined);
   };
   const send = async () => {
     if (!input.trim()) return;
@@ -1343,6 +1347,7 @@ function AssistantDesignerModal({
         capability,
         systemPrompt: prompt,
         outputContract,
+        model,
       }),
     );
     controller.setActiveProfileForCapability(capability, profile.id);
@@ -1466,6 +1471,31 @@ function AssistantDesignerModal({
                     { color: theme.text, borderColor: theme.line },
                   ]}
                 />
+                {/* Binding the model here is what makes this a persona rather than just a
+                    prompt: the same instructions on a big model and on a fast one are two
+                    different collaborators, and the choice belongs with the writing of it. */}
+                <FieldLabel theme={theme}>MODEL</FieldLabel>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.modelRow}
+                >
+                  <Chip
+                    label="APP DEFAULT"
+                    active={!model}
+                    theme={theme}
+                    onPress={() => setModel(undefined)}
+                  />
+                  {state.availableModels.map((option) => (
+                    <Chip
+                      key={option.id}
+                      label={option.name}
+                      active={model === option.id}
+                      theme={theme}
+                      onPress={() => setModel(option.id)}
+                    />
+                  ))}
+                </ScrollView>
                 <ActionButton
                   label="SAVE AND ACTIVATE"
                   theme={theme}
