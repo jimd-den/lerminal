@@ -1,8 +1,8 @@
 import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { CardRepository } from "../ports/repositories/CardRepository";
 import { BUILTIN_ASSISTANT_PROFILES, resolveProfileModel } from "../../entities/assistantProfile";
-import { Card, createCard } from "../../entities/card";
-import { createProvenance } from "../../entities/provenance";
+import { Card } from "../../entities/card";
+import { buildGroupedCards } from "./groupedCards";
 import { WorkspaceMission } from "../../entities/workspace";
 import { AgentRequestError, MissingApiKeyError } from "../errors";
 import { buildQueryStrategistPrompt } from "./SuggestSearchQueriesInteractor";
@@ -23,16 +23,6 @@ export interface GeneratedSyllabus {
   items: Card[];
   /** Phase subgroups, in first-appearance order. Empty when the model gave no phase. */
   phases: Card[];
-}
-
-/** Splits a model-written "Phase Name :: Topic" title into its two parts, if present. */
-function splitPhaseTitle(rawTitle: string): { phase: string | null; topic: string } {
-  const separatorIndex = rawTitle.indexOf("::");
-  if (separatorIndex === -1) return { phase: null, topic: rawTitle };
-  const phase = rawTitle.slice(0, separatorIndex).trim();
-  const topic = rawTitle.slice(separatorIndex + 2).trim();
-  if (!phase || !topic) return { phase: null, topic: rawTitle };
-  return { phase, topic };
 }
 
 /**
@@ -85,56 +75,16 @@ export class GenerateSyllabusInteractor {
       throw new AgentRequestError("The model didn't return a usable syllabus.");
     }
 
-    const group = createCard({
+    // The container -> phase -> card tree is built by the shared grouper, which the topic
+    // expansion uses too: one place decides what "Section :: Title" means.
+    const { group, sections, items } = buildGroupedCards({
       workspaceId: request.workspaceId,
-      type: "group",
-      title: `Syllabus: ${request.mission.goalTitle}`,
-      body: "",
-      provenance: createProvenance({ mode: "agent", model }),
+      groupTitle: `Syllabus: ${request.mission.goalTitle}`,
+      items: valid.map(item => ({ title: item.title, body: item.body })),
+      model,
     });
 
-    // A model that names a phase ("Foundations :: Vector spaces") gets one subgroup per
-    // distinct phase, created in the order it first appears; a model that doesn't parents
-    // every item directly on the syllabus group, exactly as before phases existed.
-    const phaseGroups = new Map<string, Card>();
-    const phases: Card[] = [];
-    const items: Card[] = [];
-
-    for (const item of valid) {
-      const { phase, topic } = splitPhaseTitle(item.title.trim());
-      let parentId = group.id;
-
-      if (phase) {
-        let phaseGroup = phaseGroups.get(phase);
-        if (!phaseGroup) {
-          phaseGroup = createCard({
-            workspaceId: request.workspaceId,
-            type: "group",
-            title: phase,
-            body: "",
-            parentId: group.id,
-            provenance: createProvenance({ mode: "agent", model }),
-          });
-          phaseGroups.set(phase, phaseGroup);
-          phases.push(phaseGroup);
-        }
-        parentId = phaseGroup.id;
-      }
-
-      items.push(
-        createCard({
-          workspaceId: request.workspaceId,
-          type: "note",
-          role: "concept",
-          title: topic,
-          body: item.body.trim(),
-          parentId,
-          provenance: createProvenance({ mode: "agent", model }),
-        })
-      );
-    }
-
-    await this.cardRepo.saveCards([group, ...phases, ...items]);
-    return { group, items, phases };
+    await this.cardRepo.saveCards([group, ...sections, ...items]);
+    return { group, items, phases: sections };
   }
 }

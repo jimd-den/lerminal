@@ -118,6 +118,7 @@ import { CreateResearchBriefInteractor } from "../../usecases/research/CreateRes
 import { SaveResearchResultAsSourceInteractor } from "../../usecases/research/SaveResearchResultAsSourceInteractor";
 import { SuggestSearchQueriesInteractor } from "../../usecases/agent/SuggestSearchQueriesInteractor";
 import { GenerateSyllabusInteractor } from "../../usecases/agent/GenerateSyllabusInteractor";
+import { ExpandTopicInteractor } from "../../usecases/agent/ExpandTopicInteractor";
 import { SuggestedActionDispatch } from "../../usecases/actions/SuggestedAction";
 import { resolveCommandAlias } from "../../usecases/commands/commandCatalog";
 import {
@@ -416,6 +417,7 @@ export class GriotController {
   private saveResearchResultAsSourceInteractor: SaveResearchResultAsSourceInteractor;
   private suggestSearchQueriesInteractor: SuggestSearchQueriesInteractor;
   private generateSyllabusInteractor: GenerateSyllabusInteractor;
+  private expandTopicInteractor: ExpandTopicInteractor;
   private gapReportInteractor: GapReportInteractor;
   private installFontInteractor: InstallFontInteractor;
   private searchFontsInteractor: SearchFontsInteractor;
@@ -532,6 +534,10 @@ export class GriotController {
       deps.agentGateway,
     );
     this.generateSyllabusInteractor = new GenerateSyllabusInteractor(
+      deps.agentGateway,
+      deps.cardRepo,
+    );
+    this.expandTopicInteractor = new ExpandTopicInteractor(
       deps.agentGateway,
       deps.cardRepo,
     );
@@ -2541,6 +2547,25 @@ export class GriotController {
     void this.workspaceAgent.sendMessage(text, { askAll: true });
   }
 
+  /**
+   * The persona currently answering in the chat sheet.
+   *
+   * Read at dispatch time rather than captured earlier: the user may have switched voices
+   * between the reply that offered a chip and the moment they tapped it, and the voice
+   * they are talking to *now* is the one they mean.
+   */
+  private activeChatPersona(): {
+    name: string;
+    model: string;
+    systemPrompt?: string;
+  } {
+    const view = this.workspaceAgent.state;
+    const persona = view.personas.find((p) => p.id === view.activePersonaId);
+    return (
+      persona ?? { name: "GRIOT", model: this.domain.selectedModel, systemPrompt: undefined }
+    );
+  }
+
   /** Chooses which persona answers the next message. */
   setWorkspaceAgentPersona(personaId: string): void {
     this.workspaceAgent.setActivePersona(personaId);
@@ -2935,6 +2960,38 @@ export class GriotController {
           parentId,
           inputCardIds: [],
           createdCards: [group, ...phases, ...items],
+          startedAt,
+          summary,
+        });
+        return summary;
+      }
+
+      case "expand_topic": {
+        if (!this.domain.openRouterKey?.trim()) {
+          throw new Error("Add your OpenRouter key in Settings first. Nothing was changed.");
+        }
+        // The voice the user is actually talking to travels into the generation, so the
+        // chapters read like the assistant that offered them rather than a stock
+        // curriculum writer. Plain GRIOT carries no body and gets the app's own.
+        const persona = this.activeChatPersona();
+
+        const { group, chapters, items } = await this.expandTopicInteractor.execute({
+          topic: tool.topic,
+          workspaceId,
+          parentId: parentId ?? null,
+          apiKey: this.domain.openRouterKey,
+          model: persona.model || model,
+          voicePrompt: persona.systemPrompt,
+          voiceName: persona.name,
+        });
+
+        const summary = `Built "${group.title}": ${items.length} card${items.length === 1 ? "" : "s"} across ${chapters.length || 1} chapter${chapters.length === 1 ? "" : "s"}.`;
+        await this.finishWorkspaceAgentDispatch({
+          commandName: "workspace-agent:expand_topic",
+          workspaceId,
+          parentId,
+          inputCardIds: [],
+          createdCards: [group, ...chapters, ...items],
           startedAt,
           summary,
         });

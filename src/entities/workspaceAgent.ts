@@ -84,7 +84,17 @@ export type AgentToolIntent =
    * one explicit model call `GenerateSyllabusInteractor` always ran; nothing here invents
    * a source or a fact, only the goal text itself.
    */
-  | { type: "generate_syllabus"; goalTitle: string };
+  | { type: "generate_syllabus"; goalTitle: string }
+  /**
+   * Hand one topic to a dedicated generation pass — chapters of cards, plus what to read
+   * next — rather than whatever fits inside the current reply.
+   *
+   * Distinct from a `create_cards` set for a reason: that one is written inline by the
+   * chat model and is bounded by the turn it lives in, while this triggers a second,
+   * focused call whose whole job is to cover the topic. The active persona's voice travels
+   * with it, so the chapters read like the assistant the user was just talking to.
+   */
+  | { type: "expand_topic"; topic: string };
 
 
 /**
@@ -107,6 +117,7 @@ const AGENT_TOOL_INTENT_TYPE_MAP: Record<AgentToolIntent["type"], true> = {
   create_mission: true,
   ask_clarifying_question: true,
   generate_syllabus: true,
+  expand_topic: true,
 };
 
 export const AGENT_TOOL_INTENT_TYPES = Object.keys(

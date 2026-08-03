@@ -92,7 +92,14 @@ import { AgentToolIntent } from "./workspaceAgent";
 import { CardType } from "./card";
 
 /** Every tag type the grammar accepts. Anything else degrades to prose. */
-export type AgentTagType = "note" | "question" | "link" | "group" | "syllabus" | "cards";
+export type AgentTagType =
+  | "note"
+  | "question"
+  | "link"
+  | "group"
+  | "syllabus"
+  | "cards"
+  | "topic";
 
 /**
  * One tag found in a reply.
@@ -163,6 +170,7 @@ const KIND_LABELS: Record<AgentTagType, string> = {
   group: "GROUP",
   syllabus: "SYLLABUS",
   cards: "SET",
+  topic: "TOPIC",
 };
 
 const TAG_TYPES = Object.keys(KIND_LABELS) as AgentTagType[];
@@ -508,6 +516,12 @@ function buildTag(
         })),
       });
     }
+
+    case "topic":
+      // Deliberately one argument. Everything else about the expansion — how many
+      // chapters, in what order, in whose voice — is the app's to decide when the user
+      // taps, not something the chat model should try to specify mid-sentence.
+      return make(title, { type: "expand_topic", topic: title });
 
     case "syllabus":
       // Deliberately the same one-argument shape as every other tag: a goal title, and

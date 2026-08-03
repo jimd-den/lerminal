@@ -242,6 +242,19 @@ describe("parseAgentTags", () => {
     expect(parsed.tags.every(t => t.intent !== null)).toBe(true);
   });
 
+  it("hands a whole topic to the deeper pass with a single argument", () => {
+    const parsed = parseAgentTags(
+      "The display side is a subject on its own. [[topic: Driving multiplexed LED displays]]"
+    );
+
+    expect(parsed.tags[0].type).toBe("topic");
+    expect(parsed.tags[0].kindLabel).toBe("TOPIC");
+    expect(parsed.tags[0].intent).toEqual({
+      type: "expand_topic",
+      topic: "Driving multiplexed LED displays",
+    });
+  });
+
   it("groups the cards the app has in context when the model names none", () => {
     const parsed = parseAgentTags("[[group: Memory research]]", {
       cards: [
