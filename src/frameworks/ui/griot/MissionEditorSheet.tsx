@@ -1,8 +1,6 @@
 import React, { useState } from "react";
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +8,9 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
+import { ModalSurface } from "./ModalSurface";
 import { GriotTheme } from "./theme";
 
 /**
@@ -41,10 +41,9 @@ export function MissionEditorSheet({
       animationType="slide"
       onRequestClose={() => controller.closeMissionEditor()}
     >
-      <KeyboardAvoidingView
-        style={[styles.root, { backgroundColor: theme.background }]}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      {/* Bottom inset is left to the keyboard avoider, which already accounts for it. */}
+      <ModalSurface theme={theme} edges={["top", "left", "right"]}>
+        <KeyboardAvoidingView style={styles.root} behavior="padding">
         <View style={[styles.header, { borderBottomColor: theme.line }]}>
           <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>MISSION</Text>
           <Pressable onPress={() => controller.closeMissionEditor()} style={styles.close}>
@@ -135,7 +134,8 @@ export function MissionEditorSheet({
             </Text>
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </ModalSurface>
     </Modal>
   );
 }

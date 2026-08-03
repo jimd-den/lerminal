@@ -239,7 +239,7 @@ export function ConversationSheet({
                       { color: theme.textMuted, fontFamily: theme.fontMono },
                     ]}
                   >
-                    {persona.model || "—"}
+                    {persona.model ? shortModelName(persona.model) : "—"}
                   </Text>
                 </Pressable>
               ))}
@@ -467,6 +467,18 @@ export function ConversationSheet({
       </View>
     </Modal>
   );
+}
+
+/**
+ * The readable half of a model id: "google/gemini-2.5-flash" reads as "gemini-2.5-flash".
+ *
+ * The vendor prefix is identical across most of a user's models, so it costs width on
+ * every chip while distinguishing none of them. The full id is still what the view model
+ * carries and what the message byline shows — this only shortens the label.
+ */
+function shortModelName(model: string): string {
+  const tail = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
+  return tail || model;
 }
 
 /**
@@ -1044,12 +1056,16 @@ const styles = StyleSheet.create({
   persona: {
     borderWidth: 1,
     borderRadius: Structure.radiusControl,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    maxWidth: 180,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    // The strip scrolls horizontally, so a chip should size to its name and then stop.
+    // It must never shrink: in a row of flex children the longest name is the one that
+    // gets compressed, which is exactly the one worth reading.
+    flexShrink: 0,
+    minWidth: 92,
   },
   personaName: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6 },
-  personaModel: { fontSize: 10, marginTop: 2 },
+  personaModel: { fontSize: 10, marginTop: 3, letterSpacing: 0.3 },
   historyRow: {
     flexDirection: "row",
     alignItems: "center",

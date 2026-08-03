@@ -206,3 +206,108 @@ describe("OperationsWorkflow", () => {
     });
   });
 });
+
+/**
+ * # Completion notifications
+ *
+ * The policy under test is narrow on purpose: a notification is for the person who walked
+ * away. Someone watching the activity banner has already been told, and telling them twice
+ * is noise — so foreground finishes stay silent, and only jobs that opted in speak at all.
+ */
+describe("OperationsWorkflow completion notifications", () => {
+  class ForegroundHost extends RecordingHost {
+    foreground = true;
+    isForeground() {
+      return this.foreground;
+    }
+  }
+
+  class NotificationSpy {
+    sent: { title: string; body: string; threadId?: string }[] = [];
+    async requestPermission() {
+      return true;
+    }
+    async notify(notification: { title: string; body: string; threadId?: string }) {
+      this.sent.push(notification);
+    }
+  }
+
+  const build = () => {
+    const host = new ForegroundHost();
+    const notifications = new NotificationSpy();
+    const cardRepo = new MemoryCardRepository();
+    const workflow = new OperationsWorkflow({
+      operationLog: new MemoryOperationLogRepository(),
+      undoOperation: new UndoOperationInteractor(cardRepo, new MemoryOperationLogRepository()),
+      host,
+      notifications,
+    });
+    return { workflow, host, notifications };
+  };
+
+  it("stays silent when the job finishes while the user is watching", () => {
+    const { workflow, host, notifications } = build();
+    host.foreground = true;
+
+    const id = workflow.begin("Generating syllabus…", undefined, {
+      notifyOnComplete: "Your syllabus is ready.",
+    });
+    workflow.end(id);
+
+    expect(notifications.sent).toEqual([]);
+  });
+
+  it("notifies when the job finishes after the user has left", () => {
+    const { workflow, host, notifications } = build();
+
+    const id = workflow.begin("Generating syllabus…", undefined, {
+      notifyOnComplete: "Your syllabus is ready.",
+    });
+    host.foreground = false;
+    workflow.end(id);
+
+    expect(notifications.sent).toHaveLength(1);
+    expect(notifications.sent[0].body).toBe("Your syllabus is ready.");
+  });
+
+  it("says so when a job the user walked away from failed", () => {
+    const { workflow, host, notifications } = build();
+
+    const id = workflow.begin("Generating syllabus…", undefined, {
+      notifyOnComplete: "Your syllabus is ready.",
+    });
+    host.foreground = false;
+    workflow.fail(id, "The model didn't answer.");
+
+    // Otherwise someone who walked away waits for something that is never coming.
+    expect(notifications.sent).toHaveLength(1);
+    expect(notifications.sent[0].title).toBe("Didn't finish");
+    expect(notifications.sent[0].body).toBe("The model didn't answer.");
+  });
+
+  it("never notifies for a job that did not ask to", () => {
+    const { workflow, host, notifications } = build();
+
+    const id = workflow.begin("Regrouping cards");
+    host.foreground = false;
+    workflow.end(id);
+
+    expect(notifications.sent).toEqual([]);
+  });
+
+  it("finishes normally when no notification gateway is configured", () => {
+    const host = new ForegroundHost();
+    host.foreground = false;
+    const cardRepo = new MemoryCardRepository();
+    const workflow = new OperationsWorkflow({
+      operationLog: new MemoryOperationLogRepository(),
+      undoOperation: new UndoOperationInteractor(cardRepo, new MemoryOperationLogRepository()),
+      host,
+    });
+
+    const id = workflow.begin("Generating…", undefined, { notifyOnComplete: "Done." });
+    workflow.end(id);
+
+    expect(workflow.state.pending).toEqual([]);
+  });
+});

@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Alert,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Markdown from "react-native-markdown-display";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
@@ -102,10 +101,10 @@ export function CardDetailModal({
         <SafeAreaView
           style={[styles.root, { backgroundColor: theme.background }]}
         >
-          <KeyboardAvoidingView
-            style={styles.root}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-          >
+          {/* The controller's avoider, not React Native's: this is a Modal, its own
+              window, and Android has been edge-to-edge since SDK 54 — the window no longer
+              resizes for the keyboard, so the built-in one did nothing here. */}
+          <KeyboardAvoidingView style={styles.root} behavior="padding" automaticOffset>
             <View style={[styles.header, { borderBottomColor: theme.line }]}>
               <View
                 style={[styles.typeRail, { backgroundColor: type.color }]}

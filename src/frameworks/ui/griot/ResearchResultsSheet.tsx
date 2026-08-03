@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
 import { evidenceKindLabel, ResearchResult } from "../../../entities/research";
+import { ModalSurface } from "./ModalSurface";
 import { GriotTheme } from "./theme";
 
 /**
@@ -41,7 +42,7 @@ export function ResearchResultsSheet({
       animationType="slide"
       onRequestClose={() => controller.closeResearch()}
     >
-      <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <ModalSurface theme={theme} style={styles.root}>
         <View style={[styles.header, { borderBottomColor: theme.line }]}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
@@ -112,7 +113,7 @@ export function ResearchResultsSheet({
             )}
           </Pressable>
         </View>
-      </View>
+      </ModalSurface>
     </Modal>
   );
 }

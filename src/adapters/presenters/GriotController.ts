@@ -56,6 +56,7 @@ import {
 } from "../../entities/assistantProfile";
 import { PromptPresetRepository } from "../../usecases/ports/repositories/PromptPresetRepository";
 import { ConversationRepository } from "../../usecases/ports/repositories/ConversationRepository";
+import { NotificationGateway } from "../../usecases/ports/gateways/NotificationGateway";
 import { MemoryConversationRepository } from "../repositories/MemoryConversationRepository";
 import { AssistantProfileRepository } from "../../usecases/ports/repositories/AssistantProfileRepository";
 import { Logger, silentLogger } from "../../usecases/ports/Logger";
@@ -352,6 +353,8 @@ export interface GriotControllerDeps {
   /** Persists card-to-card links created via the Workspace Agent's `link_cards` tool. */
   cardLinkRepo?: CardLinkRepository;
   conversationRepo?: ConversationRepository;
+  /** Optional: without one, long jobs finish quietly instead of notifying. */
+  notifications?: NotificationGateway;
   /** Resolves a font family name to a downloadable file. Optional so tests can omit it. */
   fontGateway?: FontGateway;
   /** Registers a downloaded font with the platform. Optional so tests can omit it. */
@@ -403,6 +406,13 @@ export class GriotController {
   private groupCardsInteractor: GroupCardsInteractor;
   private cardLinkRepo: CardLinkRepository;
   private conversationRepo: ConversationRepository;
+  private notifications?: NotificationGateway;
+  /**
+   * Whether the app is on screen. Tracked here rather than read from React Native, which
+   * this layer must not import; the shell pushes it in via {@link setForeground}.
+   * Defaults to true so a host that never reports it simply never interrupts anyone.
+   */
+  private isForeground = true;
   private linkCardsInteractor: LinkCardsInteractor;
   /** Card links for the active workspace, kept alongside `domain.cards` — see `loadCardsForActiveWorkspace`. */
   private cardLinks: CardLink[] = [];
@@ -454,6 +464,8 @@ export class GriotController {
   } | null = null;
 
   constructor(deps: GriotControllerDeps) {
+    // Assigned first: `buildOperationsWorkflow` below closes over it.
+    this.notifications = deps.notifications;
     this.cardRepo = deps.cardRepo;
     this.workspaceRepo = deps.workspaceRepo;
     this.settingsRepo = deps.settingsRepo;
@@ -720,7 +732,10 @@ export class GriotController {
             });
             this.emit();
           },
-          beginOperation: (label) => this.addPendingOperation(label),
+          beginOperation: (label) =>
+            this.addPendingOperation(label, undefined, {
+              notifyOnComplete: "Your syllabus is ready.",
+            }),
           endOperation: (id) => this.removePendingOperation(id),
           failOperation: (id, message) => this.setPendingOperationError(id, message),
         },
@@ -737,6 +752,7 @@ export class GriotController {
       return new OperationsWorkflow({
         operationLog: this.operationLogRepo,
         undoOperation: this.undoOperationInteractor,
+        notifications: this.notifications,
         host: {
           cards: () => this.domain.cards,
           activeWorkspaceId: () => this.domain.activeWorkspaceId,
@@ -744,6 +760,7 @@ export class GriotController {
           notify: (message) => this.showToast(message),
           forgetCards: (removedCardIds) => this.session.forgetCards(removedCardIds),
           refreshCards: () => this.loadCardsForActiveWorkspace(),
+          isForeground: () => this.isForeground,
           navigateToResult: async (result) => {
             if (result.destination.spaceId !== this.domain.activeWorkspaceId) {
               await this.switchWorkspace(result.destination.spaceId);
@@ -2321,8 +2338,9 @@ export class GriotController {
       inputCardIds: string[];
       parentId: string | null;
     },
+    options?: { notifyOnComplete?: string },
   ): string {
-    return this.operations.begin(commandName, retry);
+    return this.operations.begin(commandName, retry, options);
   }
 
   /**
@@ -2564,6 +2582,14 @@ export class GriotController {
     return (
       persona ?? { name: "GRIOT", model: this.domain.selectedModel, systemPrompt: undefined }
     );
+  }
+
+  /**
+   * Tells the controller whether the app is on screen, so a finished job knows whether a
+   * notification would be useful or merely noisy. Pushed in by the shell.
+   */
+  setForeground(active: boolean): void {
+    this.isForeground = active;
   }
 
   /** Chooses which persona answers the next message. */

@@ -1,9 +1,10 @@
 import React from "react";
-import { Modal, StyleSheet, View } from "react-native";
+import { Modal } from "react-native";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
 import { GriotTheme } from "./theme";
 import { modalAnimation, useReducedMotion } from "../useReducedMotion";
 import { CaptureScreen } from "./screens/CaptureScreen";
+import { ModalSurface } from "./ModalSurface";
 
 /**
  * # Capture Sheet — the modal wrapper around the familiar door
@@ -20,13 +21,13 @@ import { CaptureScreen } from "./screens/CaptureScreen";
  * can interrupt a capture, and the draft has to outlive that round trip, so it is passed
  * down rather than owned by this sheet.
  *
- * ## Why this shell paints a background
- * `CaptureScreen` colours its own text and panels but never its page — when it was a
- * routed screen, `MainLayout`'s themed root sat behind it. An opaque `Modal` is its own
- * surface with nothing behind it, so without this the sheet fell back to the platform
- * default (white) and the whole capture flow ignored dark mode. The background belongs
- * here rather than in `CaptureScreen`, which is still rendered inside `MainLayout`
- * elsewhere and must not paint over it twice.
+ * ## Why this shell wraps the screen in a surface
+ * `CaptureScreen` colours its own text and panels but never its page, and applies no
+ * insets — as a routed screen, `MainLayout` supplied both. An opaque `Modal` is its own
+ * window with neither, so the sheet fell back to platform white in dark mode and drew its
+ * first row under the camera cutout. {@link ModalSurface} restores both, and lives here
+ * rather than in `CaptureScreen`, which is still rendered inside `MainLayout` elsewhere
+ * and must not paint over it twice.
  */
 export function CaptureSheet({
   controller,
@@ -60,7 +61,7 @@ export function CaptureSheet({
         if (!working) controller.closeCaptureSheet();
       }}
     >
-      <View style={[styles.surface, { backgroundColor: theme.background }]}>
+      <ModalSurface theme={theme}>
         <CaptureScreen
           controller={controller}
           theme={theme}
@@ -72,11 +73,7 @@ export function CaptureSheet({
           onInputRequired={onInputRequired}
           onComplete={onComplete}
         />
-      </View>
+      </ModalSurface>
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  surface: { flex: 1 },
-});

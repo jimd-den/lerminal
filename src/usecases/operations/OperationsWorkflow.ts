@@ -2,6 +2,7 @@ import { Card } from "../../entities/card";
 import { createOperationRecord } from "../../entities/operationLog";
 import { UseCaseError } from "../errors";
 import { OperationLogRepository } from "../ports/repositories/OperationLogRepository";
+import { NotificationGateway } from "../ports/gateways/NotificationGateway";
 import {
   UndoOperationInteractor,
   UndoUnavailableError,
@@ -26,6 +27,12 @@ export interface PendingOperation {
   id: string;
   commandName: string;
   status: "loading" | "error";
+  /**
+   * What to say if this finishes while the user is away. Absent means "never interrupt
+   * them for this one" — most operations are fast enough that a notification would be
+   * noise, so it is opt-in per job rather than a blanket policy.
+   */
+  notifyOnComplete?: string;
   errorMessage?: string;
   pipelineText?: string;
   inputCardIds?: string[];
@@ -66,6 +73,15 @@ export interface OperationsHost {
   refreshCards(): Promise<void>;
   /** Move the user to a receipt's destination and select what it created. */
   navigateToResult(result: OperationResult): Promise<void>;
+  /**
+   * Whether the user is actually looking at the app right now.
+   *
+   * The whole policy rests on this: a job that lands while they are watching already told
+   * them through the activity banner, and a notification on top of that is noise. The
+   * notification exists for the case where they walked away. Optional — a host that cannot
+   * tell is treated as foreground, which errs toward not interrupting.
+   */
+  isForeground?(): boolean;
 }
 
 export interface OperationsWorkflowDeps {
@@ -74,6 +90,11 @@ export interface OperationsWorkflowDeps {
   host: OperationsHost;
   /** Injectable for tests; defaults to a short random id. */
   generateId?: () => string;
+  /**
+   * Where "your generation is done" goes. Optional: without one, long jobs simply finish
+   * quietly, exactly as they did before notifications existed.
+   */
+  notifications?: NotificationGateway;
 }
 
 export interface OperationsState {
@@ -131,6 +152,13 @@ export class OperationsWorkflow {
   begin(
     commandName: string,
     retry?: { pipelineText: string; inputCardIds: string[]; parentId: string | null },
+    options?: {
+      /**
+       * Notify the user if this finishes while they are away. Reserved for jobs slow
+       * enough to walk away from — a model generation, not a local regroup.
+       */
+      notifyOnComplete?: string;
+    },
   ): string {
     const id = this.generateId();
     this.patch({
@@ -141,6 +169,9 @@ export class OperationsWorkflow {
           commandName,
           status: "loading",
           workspaceId: this.deps.host.activeWorkspaceId() ?? undefined,
+          ...(options?.notifyOnComplete
+            ? { notifyOnComplete: options.notifyOnComplete }
+            : {}),
           ...retry,
         },
       ],
@@ -149,12 +180,36 @@ export class OperationsWorkflow {
   }
 
   end(id: string): void {
+    const finished = this.find(id);
     this.patch({ pending: this.current.pending.filter((op) => op.id !== id) });
+    if (finished?.notifyOnComplete) {
+      this.announce("Ready", finished.notifyOnComplete);
+    }
   }
 
   /** Leaves the operation on screen as a failure the user can retry or dismiss. */
   fail(id: string, errorMessage: string): void {
+    const failing = this.find(id);
     this.patchPending(id, { status: "error", errorMessage });
+    // A job worth notifying about on success is worth notifying about when it fails —
+    // otherwise someone who walked away waits for something that is never coming.
+    if (failing?.notifyOnComplete) {
+      this.announce("Didn't finish", errorMessage);
+    }
+  }
+
+  /**
+   * Sends one completion notification, if there is anywhere to send it and the user is
+   * actually away. Never awaited and never allowed to throw: the work already finished,
+   * and its outcome must not depend on whether a notification could be delivered.
+   */
+  private announce(title: string, body: string): void {
+    const notifications = this.deps.notifications;
+    if (!notifications) return;
+    // Absent host support is treated as foreground — erring toward not interrupting.
+    const away = this.deps.host.isForeground ? !this.deps.host.isForeground() : false;
+    if (!away) return;
+    void notifications.notify({ title, body, threadId: "griot-generation" });
   }
 
   find(id: string): PendingOperation | undefined {

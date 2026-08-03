@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
+import { ModalSurface } from "./ModalSurface";
 import { GriotTheme } from "./theme";
 
 /**
@@ -30,7 +31,7 @@ export function GapReportSheet({
       animationType="slide"
       onRequestClose={() => controller.closeGapReport()}
     >
-      <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <ModalSurface theme={theme} style={styles.root}>
         <View style={[styles.header, { borderBottomColor: theme.line }]}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>STATUS</Text>
@@ -139,7 +140,7 @@ export function GapReportSheet({
             </Pressable>
           </ScrollView>
         )}
-      </View>
+      </ModalSurface>
     </Modal>
   );
 }

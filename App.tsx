@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { AppState as RNAppState, View, ActivityIndicator, StyleSheet } from "react-native";
 import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { GriotController } from "./src/adapters/presenters/GriotController";
@@ -25,10 +25,25 @@ import { MainLayout } from "./src/frameworks/ui/MainLayout";
  *
  * Both translucency flags are on because the app is edge-to-edge: they tell the provider
  * not to double-count the status and navigation bar insets it is already drawing under.
+ *
+ * ## Why foreground state is pushed into the controller
+ * A finished generation should only raise a notification when the user actually walked
+ * away — interrupting someone who is watching the activity banner is noise. Only this
+ * layer may read React Native's `AppState`, so the shell observes it and tells the
+ * controller; the decision of what to do with that stays in the use-case layer.
  */
 export default function App() {
   const [controller, setController] = useState<GriotController | null>(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!controller) return;
+    controller.setForeground(RNAppState.currentState === "active");
+    const subscription = RNAppState.addEventListener("change", (next) => {
+      controller.setForeground(next === "active");
+    });
+    return () => subscription.remove();
+  }, [controller]);
 
   useEffect(() => {
     const appController = composeController();
