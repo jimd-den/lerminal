@@ -107,6 +107,17 @@ export interface WorkspaceAgentMessageViewModel {
   model?: string;
 }
 
+/** One row in the history list. */
+export interface WorkspaceAgentHistoryEntryViewModel {
+  id: string;
+  title: string;
+  /** How many turns are in it, so a one-line exchange is distinguishable from real work. */
+  messageCount: number;
+  updatedAt: number;
+  /** True for the conversation currently on screen. */
+  current: boolean;
+}
+
 /** One selectable voice in the persona strip. */
 export interface WorkspaceAgentPersonaViewModel {
   id: string;
@@ -189,6 +200,9 @@ export interface WorkspaceAgentViewModel {
   personas: WorkspaceAgentPersonaViewModel[];
   /** True once the user has configured a persona beyond GRIOT — the strip hides until then. */
   hasMultiplePersonas: boolean;
+  isHistoryOpen: boolean;
+  /** Saved conversations for this workspace, newest first. */
+  history: WorkspaceAgentHistoryEntryViewModel[];
 }
 
 const EMPTY_CONTEXT_VIEW: WorkspaceAgentContextViewModel = {
@@ -247,6 +261,14 @@ export function presentWorkspaceAgent(
     // One voice is not a choice: with only GRIOT configured the sheet looks exactly as it
     // did before personas existed.
     hasMultiplePersonas: personas.length > 1,
+    isHistoryOpen: state.isHistoryOpen ?? false,
+    history: (state.history ?? []).map(conversation => ({
+      id: conversation.id,
+      title: conversation.title,
+      messageCount: conversation.messages.length,
+      updatedAt: conversation.updatedAt,
+      current: conversation.id === state.conversationId,
+    })),
   };
 }
 

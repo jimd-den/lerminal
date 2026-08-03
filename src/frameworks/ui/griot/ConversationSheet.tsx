@@ -136,6 +136,42 @@ export function ConversationSheet({
             </View>
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel={view.isHistoryOpen ? "Hide conversation history" : "Show conversation history"}
+              accessibilityState={{ expanded: view.isHistoryOpen }}
+              onPress={() =>
+                view.isHistoryOpen
+                  ? controller.closeWorkspaceAgentHistory()
+                  : void controller.openWorkspaceAgentHistory()
+              }
+              hitSlop={8}
+              style={styles.close}
+            >
+              <Text
+                style={[
+                  styles.closeText,
+                  { color: view.isHistoryOpen ? theme.text : theme.accent, fontFamily: theme.fontMono },
+                ]}
+              >
+                HISTORY
+              </Text>
+            </Pressable>
+            {/* Offered only once there is something to preserve — on an empty transcript
+                "new" would do nothing the user could perceive. */}
+            {!view.isEmpty ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Start a new conversation"
+                onPress={() => void controller.startNewConversation()}
+                hitSlop={8}
+                style={styles.close}
+              >
+                <Text style={[styles.closeText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                  NEW
+                </Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
               accessibilityLabel="Close Ask GRIOT"
               onPress={() => controller.closeWorkspaceAgent()}
               hitSlop={8}
@@ -210,6 +246,68 @@ export function ConversationSheet({
             </ScrollView>
           ) : null}
 
+          {view.isHistoryOpen ? (
+            <ScrollView
+              style={styles.messages}
+              contentContainerStyle={styles.messagesContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {view.history.length === 0 ? (
+                <Text
+                  style={[styles.empty, { color: theme.textMuted, fontFamily: theme.fontSans }]}
+                >
+                  No saved conversations in this space yet. They are kept automatically once
+                  you send a message.
+                </Text>
+              ) : (
+                view.history.map((entry) => (
+                  <View
+                    key={entry.id}
+                    style={[
+                      styles.historyRow,
+                      {
+                        borderColor: entry.current ? theme.accent : theme.line,
+                        backgroundColor: entry.current ? theme.accentSoft : theme.panelMuted,
+                      },
+                    ]}
+                  >
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Open conversation: ${entry.title}`}
+                      onPress={() => void controller.openSavedConversation(entry.id)}
+                      style={{ flex: 1 }}
+                    >
+                      <Text
+                        numberOfLines={2}
+                        style={[styles.historyTitle, { color: theme.text, fontFamily: theme.fontSans }]}
+                      >
+                        {entry.title}
+                      </Text>
+                      <Text
+                        style={[styles.historyMeta, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+                      >
+                        {`${entry.messageCount} message${entry.messageCount === 1 ? "" : "s"} · ${relativeTime(entry.updatedAt)}`}
+                        {entry.current ? " · OPEN" : ""}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete conversation: ${entry.title}`}
+                      onPress={() => void controller.deleteSavedConversation(entry.id)}
+                      hitSlop={8}
+                      style={styles.historyDelete}
+                    >
+                      <Text
+                        style={[styles.closeText, { color: theme.danger, fontFamily: theme.fontMono }]}
+                      >
+                        DELETE
+                      </Text>
+                    </Pressable>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          ) : (
           <ScrollView
             style={styles.messages}
             contentContainerStyle={styles.messagesContent}
@@ -285,6 +383,7 @@ export function ConversationSheet({
             ) : null}
 
           </ScrollView>
+          )}
 
           <View style={[styles.composer, { borderTopColor: theme.line }]}>
             <TextInput
@@ -368,6 +467,23 @@ export function ConversationSheet({
       </View>
     </Modal>
   );
+}
+
+/**
+ * A coarse "when" for a history row. Coarse on purpose: the exact minute a conversation
+ * was last touched is noise, and what the reader is actually scanning for is whether this
+ * is the one from this morning or the one from last week.
+ */
+function relativeTime(timestamp: number): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
 }
 
 type MessageViewModel = AppState["workspaceAgent"]["messages"][number];
@@ -713,7 +829,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     borderBottomWidth: 1,
     padding: Structure.gutter,
-    gap: 12,
+    // Tighter than the usual gutter rhythm: the header carries three actions now
+    // (HISTORY / NEW / CLOSE) and they must not crowd the workspace name on a narrow phone.
+    gap: 8,
   },
   eyebrow: {
     fontSize: TypeScale.label,
@@ -932,6 +1050,19 @@ const styles = StyleSheet.create({
   },
   personaName: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6 },
   personaModel: { fontSize: 10, marginTop: 2 },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  historyTitle: { fontSize: TypeScale.body, fontWeight: "700" },
+  historyMeta: { fontSize: 10, marginTop: 4, letterSpacing: 0.5 },
+  historyDelete: { paddingVertical: 6, paddingHorizontal: 4 },
   personaByline: {
     fontSize: 10,
     fontWeight: "900",

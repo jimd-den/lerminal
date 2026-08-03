@@ -6,6 +6,16 @@ import {
   parseAgentTags,
 } from "../../entities/agentTags";
 import { AgentGateway } from "../ports/gateways/AgentGateway";
+import { ConversationRepository } from "../ports/repositories/ConversationRepository";
+import {
+  Conversation,
+  ConversationMessage,
+  ConversationTagAction,
+  createConversation,
+  isWorthSaving,
+  sortByRecency,
+  withMessages,
+} from "../../entities/conversation";
 import { WebCitation } from "../../entities/webCitation";
 import { resolveScopedContext } from "../agent/AgentScope";
 
@@ -13,7 +23,7 @@ import { resolveScopedContext } from "../agent/AgentScope";
  * # Workspace Agent Workflow — a streamed conversation with taggable artifacts
  *
  * ## Business Value & Purpose
- * Owns the "Ask GRIOT" conversation sheet's session-only state: is it open, for which
+ * Owns the "Ask GRIOT" conversation sheet's state: is it open, for which
  * workspace/selection, what has been said, and what the reply offered to create.
  *
  * The model no longer returns a JSON envelope of "proposed actions". It writes prose and
@@ -33,7 +43,17 @@ import { resolveScopedContext } from "../agent/AgentScope";
  * everything else untouched. A stream that dies mid-way discards the half-written reply
  * rather than presenting a truncated one as an answer — and creates nothing either way.
  *
- * Messages are session-only (never persisted): closing the conversation forgets it.
+ * ## Conversations are saved now
+ * Messages used to be session-only. They are persisted per workspace instead, because the
+ * conversation is where a vague goal actually gets sharpened and losing it on a stray tap
+ * loses the thinking. Saving happens at the three points where something real changed —
+ * the user sent a message, a turn finished, a tag settled — so a crash costs at most the
+ * turn in flight.
+ *
+ * What is stored is the model's **raw** text, tags and all (see `entities/conversation`),
+ * so a restored transcript re-parses into the same chips it had live. Tag outcomes ride
+ * along, which is what stops a restored conversation from offering a fresh `+` on a note
+ * whose card already exists.
  */
 
 /**
@@ -131,6 +151,12 @@ export interface WorkspaceAgentMessage {
    * this false and the message appears complete when it appears at all.
    */
   streaming?: boolean;
+  /**
+   * The reply exactly as the model wrote it, tags and all — the string {@link segments}
+   * was parsed from. Kept so persistence stores the source rather than the rendering, and
+   * a conversation reopened from history re-parses into the same chips it had live.
+   */
+  rawText?: string;
 }
 
 /**
@@ -205,6 +231,14 @@ export interface WorkspaceAgentState {
   isThinking: boolean;
   /** An actionable failure (no key, no gateway support, network error, malformed reply). */
   agentError: string | null;
+  /**
+   * The saved conversation this transcript belongs to, or null before the first message
+   * has made it worth saving.
+   */
+  conversationId: string | null;
+  /** Past conversations for this workspace, newest first. Loaded when history opens. */
+  history: Conversation[];
+  isHistoryOpen: boolean;
 }
 
 /** The effects the workflow needs from the app but must not own. */
@@ -257,6 +291,11 @@ export interface WorkspaceAgentWorkflowDeps {
    * usable (transcript + inert chips) without a controller wired in.
    */
   dispatchTool?: (tool: AgentToolIntent, context: WorkspaceAgentContext) => Promise<string>;
+  /**
+   * Where transcripts are kept. Optional: without one the sheet behaves exactly as it did
+   * when conversations were session-only, rather than failing.
+   */
+  conversationRepo?: ConversationRepository;
 }
 
 const EMPTY_CONTEXT: WorkspaceAgentContext = {
@@ -274,6 +313,9 @@ const EMPTY_STATE: WorkspaceAgentState = {
   tagActions: {},
   isThinking: false,
   agentError: null,
+  conversationId: null,
+  history: [],
+  isHistoryOpen: false,
 };
 
 /** Identity comparison for the persona list, so a re-read doesn't churn re-renders. */
@@ -374,8 +416,14 @@ export class WorkspaceAgentWorkflow {
     });
   }
 
-  /** Closes the sheet. Session-only, so the transcript and proposals are forgotten with it. */
+  /**
+   * Closes the sheet, saving the transcript on the way out.
+   *
+   * Not awaited by callers, and deliberately so: closing must feel instant. The write is
+   * already queued behind the store's mutex, so it cannot interleave with the next one.
+   */
   closeConversation(): void {
+    void this.persist();
     this.patch({ ...EMPTY_STATE });
   }
 
@@ -411,6 +459,8 @@ export class WorkspaceAgentWorkflow {
     };
 
     this.patch({ messages: [...this.current.messages, message], agentError: null });
+    // Saved before the reply is requested, so a turn that fails still keeps the question.
+    await this.persist();
 
     const speakers = options.askAll ? this.resolvePersonas() : [this.activePersona()];
     for (const persona of speakers) {
@@ -461,6 +511,192 @@ export class WorkspaceAgentWorkflow {
         resultMessage: error?.message ?? "That didn't complete. Nothing was changed.",
       });
     }
+    // Either outcome is worth remembering: it is what stops a reopened conversation from
+    // offering a fresh `+` on a card that already exists.
+    await this.persist();
+  }
+
+  // --- Persistence & history ---
+
+  /**
+   * Writes the current transcript to the conversation store.
+   *
+   * Called after anything real changed. Silent on failure by design: a storage error must
+   * not tear down a conversation the user is in the middle of, and the transcript on
+   * screen is still correct — it is only the copy on disk that is behind.
+   */
+  private async persist(): Promise<void> {
+    const repo = this.deps.conversationRepo;
+    const workspaceId = this.current.workspaceId;
+    if (!repo || !workspaceId) return;
+
+    const messages = this.toConversationMessages(this.current.messages);
+    const draft = createConversation({
+      workspaceId,
+      id: this.current.conversationId ?? undefined,
+      messages,
+      tagActions: this.settledTagActions(),
+      now: this.now(),
+    });
+    // An opened-and-abandoned sheet is not a conversation; a history list full of empty
+    // rows is worse than no history.
+    if (!isWorthSaving(draft)) return;
+
+    try {
+      await repo.saveConversation(draft);
+      if (!this.current.conversationId) this.patch({ conversationId: draft.id });
+    } catch {
+      // See the note above: the on-screen transcript remains the source of truth.
+    }
+  }
+
+  /** Runtime messages narrowed to what is worth storing — the raw text, not the rendering. */
+  private toConversationMessages(messages: WorkspaceAgentMessage[]): ConversationMessage[] {
+    return messages
+      // A reply still streaming is not a turn yet; persisting it would save half a sentence.
+      .filter(message => !message.streaming)
+      .map(message => ({
+        id: message.id,
+        speaker: message.speaker,
+        text: message.speaker === "assistant" ? (message.rawText ?? message.text) : message.text,
+        createdAt: message.createdAt,
+        ...(message.personaId ? { personaId: message.personaId } : {}),
+        ...(message.personaName ? { personaName: message.personaName } : {}),
+        ...(message.model ? { model: message.model } : {}),
+        ...(message.reasoning ? { reasoning: message.reasoning } : {}),
+      }));
+  }
+
+  /**
+   * Tag outcomes worth persisting: the settled ones.
+   *
+   * `pending` is dropped — it means a dispatch was in flight when we saved, and neither
+   * "it worked" nor "it failed" is something we know. See `entities/conversation`.
+   */
+  private settledTagActions(): Record<string, ConversationTagAction> {
+    const settled: Record<string, ConversationTagAction> = {};
+    for (const [key, action] of Object.entries(this.current.tagActions)) {
+      if (action.status === "pending") continue;
+      settled[key] = {
+        status: action.status,
+        ...(action.resultMessage ? { resultMessage: action.resultMessage } : {}),
+      };
+    }
+    return settled;
+  }
+
+  /** Loads this workspace's saved conversations and opens the history list. */
+  async openHistory(): Promise<void> {
+    const repo = this.deps.conversationRepo;
+    const workspaceId = this.current.workspaceId;
+    if (!repo || !workspaceId) {
+      this.patch({ isHistoryOpen: true, history: [] });
+      return;
+    }
+    try {
+      const saved = await repo.getConversations(workspaceId);
+      this.patch({ isHistoryOpen: true, history: sortByRecency(saved) });
+    } catch {
+      // An unreadable store yields an empty list rather than a broken sheet. The user can
+      // still carry on with the conversation they are in.
+      this.patch({ isHistoryOpen: true, history: [] });
+    }
+  }
+
+  closeHistory(): void {
+    this.patch({ isHistoryOpen: false });
+  }
+
+  /**
+   * Replaces the transcript with a saved one.
+   *
+   * Assistant turns are re-parsed from their stored raw text against the cards in scope
+   * *now*, so a chip whose card has since been deleted is refused the same way it would be
+   * in a live turn — a restored conversation never offers to act on something gone.
+   */
+  async loadConversation(conversationId: string): Promise<void> {
+    const repo = this.deps.conversationRepo;
+    if (!repo) return;
+
+    let saved: Conversation | undefined;
+    try {
+      saved = await repo.getConversation(conversationId);
+    } catch {
+      saved = undefined;
+    }
+    if (!saved) {
+      this.patch({ isHistoryOpen: false, agentError: "That conversation could not be opened." });
+      return;
+    }
+
+    // Persist whatever is on screen before replacing it, so switching conversations never
+    // silently discards the one being left.
+    await this.persist();
+
+    const allCards = this.deps.host.allCards?.() ?? [];
+    const tagCards = allCards.map(card => ({ id: card.id, title: card.title }));
+
+    const messages: WorkspaceAgentMessage[] = saved.messages.map(message => {
+      if (message.speaker === "user") {
+        return {
+          id: message.id,
+          speaker: "user" as const,
+          text: message.text,
+          createdAt: message.createdAt,
+        };
+      }
+      const parsed = parseAgentTags(message.text, { cards: tagCards });
+      return {
+        id: message.id,
+        speaker: "assistant" as const,
+        text: parsed.text,
+        rawText: message.text,
+        segments: parsed.segments,
+        createdAt: message.createdAt,
+        ...(message.personaId ? { personaId: message.personaId } : {}),
+        ...(message.personaName ? { personaName: message.personaName } : {}),
+        ...(message.model ? { model: message.model } : {}),
+        ...(message.reasoning ? { reasoning: message.reasoning } : {}),
+      };
+    });
+
+    this.patch({
+      conversationId: saved.id,
+      messages,
+      tagActions: { ...saved.tagActions },
+      isHistoryOpen: false,
+      agentError: null,
+      isThinking: false,
+    });
+  }
+
+  /** Saves the current transcript and starts an empty one in the same workspace. */
+  async startNewConversation(): Promise<void> {
+    await this.persist();
+    this.patch({
+      conversationId: null,
+      messages: [],
+      tagActions: {},
+      agentError: null,
+      isThinking: false,
+      isHistoryOpen: false,
+    });
+  }
+
+  /** Forgets a saved conversation. Clears the open transcript too if it was that one. */
+  async deleteConversation(conversationId: string): Promise<void> {
+    const repo = this.deps.conversationRepo;
+    if (!repo) return;
+    try {
+      await repo.deleteConversation(conversationId);
+    } catch {
+      return;
+    }
+    const clearing = this.current.conversationId === conversationId;
+    this.patch({
+      history: this.current.history.filter(conversation => conversation.id !== conversationId),
+      ...(clearing ? { conversationId: null, messages: [], tagActions: {} } : {}),
+    });
   }
 
   /** The tag a `+` belongs to, or undefined — never a tag from a different message. */
@@ -556,6 +792,8 @@ export class WorkspaceAgentWorkflow {
           ...(persona.model ? { model: persona.model } : {}),
           sentContext,
           segments: parsed.segments,
+          // The source the segments came from — what persistence stores.
+          rawText: text,
           ...(streaming ? { streaming: true } : {}),
           // Only a non-empty string counts. A provider that returns nothing leaves this
           // undefined, and the sheet then renders no reasoning UI whatsoever.
@@ -598,6 +836,7 @@ export class WorkspaceAgentWorkflow {
 
       render(false, ...([citations.length > 0 ? { webCitations: citations } : {}] as const));
       this.patch({ isThinking: false, agentError: null });
+      await this.persist();
     } catch (error: any) {
       // A stream that died mid-way is not an answer. The partial text is dropped rather
       // than presented as a reply, and nothing was created either way.

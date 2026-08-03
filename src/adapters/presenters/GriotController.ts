@@ -55,6 +55,8 @@ import {
   resolveProfileScope,
 } from "../../entities/assistantProfile";
 import { PromptPresetRepository } from "../../usecases/ports/repositories/PromptPresetRepository";
+import { ConversationRepository } from "../../usecases/ports/repositories/ConversationRepository";
+import { MemoryConversationRepository } from "../repositories/MemoryConversationRepository";
 import { AssistantProfileRepository } from "../../usecases/ports/repositories/AssistantProfileRepository";
 import { Logger, silentLogger } from "../../usecases/ports/Logger";
 import {
@@ -348,6 +350,7 @@ export interface GriotControllerDeps {
   operationLogRepo?: OperationLogRepository;
   /** Persists card-to-card links created via the Workspace Agent's `link_cards` tool. */
   cardLinkRepo?: CardLinkRepository;
+  conversationRepo?: ConversationRepository;
   /** Resolves a font family name to a downloadable file. Optional so tests can omit it. */
   fontGateway?: FontGateway;
   /** Registers a downloaded font with the platform. Optional so tests can omit it. */
@@ -398,6 +401,7 @@ export class GriotController {
   private extractUrlInteractor: ExtractUrlInteractor;
   private groupCardsInteractor: GroupCardsInteractor;
   private cardLinkRepo: CardLinkRepository;
+  private conversationRepo: ConversationRepository;
   private linkCardsInteractor: LinkCardsInteractor;
   /** Card links for the active workspace, kept alongside `domain.cards` — see `loadCardsForActiveWorkspace`. */
   private cardLinks: CardLink[] = [];
@@ -464,6 +468,7 @@ export class GriotController {
     this.suggestNextActionInteractor = new SuggestNextActionInteractor(deps.agentGateway);
     this.groupCardsInteractor = new GroupCardsInteractor(deps.cardRepo);
     this.cardLinkRepo = deps.cardLinkRepo ?? new MemoryCardLinkRepository();
+    this.conversationRepo = deps.conversationRepo ?? new MemoryConversationRepository();
     this.linkCardsInteractor = new LinkCardsInteractor(this.cardLinkRepo);
     this.commandRegistry = new CommandRegistry({
       cardRepo: deps.cardRepo,
@@ -620,6 +625,7 @@ export class GriotController {
       host,
       agentGateway: deps.agentGateway,
       dispatchTool: (tool, context) => this.dispatchWorkspaceAgentTool(tool, context),
+      conversationRepo: this.conversationRepo,
     });
   }
 
@@ -2538,6 +2544,32 @@ export class GriotController {
   /** Chooses which persona answers the next message. */
   setWorkspaceAgentPersona(personaId: string): void {
     this.workspaceAgent.setActivePersona(personaId);
+  }
+
+  // --- Conversation history ---
+
+  /** Loads this workspace's saved conversations and shows the history list. */
+  async openWorkspaceAgentHistory(): Promise<void> {
+    await this.workspaceAgent.openHistory();
+  }
+
+  closeWorkspaceAgentHistory(): void {
+    this.workspaceAgent.closeHistory();
+  }
+
+  /** Replaces the open transcript with a saved one, saving the current one first. */
+  async openSavedConversation(conversationId: string): Promise<void> {
+    await this.workspaceAgent.loadConversation(conversationId);
+  }
+
+  /** Saves the current transcript and starts a fresh one. */
+  async startNewConversation(): Promise<void> {
+    await this.workspaceAgent.startNewConversation();
+  }
+
+  async deleteSavedConversation(conversationId: string): Promise<void> {
+    await this.workspaceAgent.deleteConversation(conversationId);
+    this.showToast("Conversation deleted");
   }
 
   /**

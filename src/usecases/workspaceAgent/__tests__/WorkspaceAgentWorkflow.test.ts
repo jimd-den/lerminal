@@ -6,8 +6,10 @@ import {
   WorkspaceAgentHost,
   WorkspaceAgentPersona,
   WorkspaceAgentWorkflow,
+  tagActionKey,
 } from "../WorkspaceAgentWorkflow";
 import { AgentGateway } from "../../ports/gateways/AgentGateway";
+import { MemoryConversationRepository } from "../../../adapters/repositories/MemoryConversationRepository";
 import { Card } from "../../../entities/card";
 
 class RecordingHost implements WorkspaceAgentHost {
@@ -785,5 +787,162 @@ describe("WorkspaceAgentWorkflow personas", () => {
     (host as any).configured = [];
 
     expect(workflow.state.activePersonaId).toBe(DEFAULT_PERSONA_ID);
+  });
+});
+
+/**
+ * # History — a conversation that outlives the sheet
+ *
+ * The invariants under test: nothing empty is ever saved, a restored transcript re-parses
+ * into the same chips it had live, and a tag already actioned does not come back offering
+ * a fresh `+` on a card that already exists.
+ */
+describe("WorkspaceAgentWorkflow history", () => {
+  const openSaving = (turn = "ok") => {
+    const repo = new MemoryConversationRepository();
+    const gateway = new GatewaySpy(turn);
+    // A monotonic clock, because two conversations saved in the same millisecond would
+    // otherwise tie and leave "newest first" resting on sort stability rather than time.
+    let clock = 1_000;
+    const workflow = new WorkspaceAgentWorkflow({
+      host: new RecordingHost("sk-real-key", "test/model", [card("c1")]),
+      agentGateway: gateway,
+      conversationRepo: repo,
+      now: () => (clock += 1_000),
+    });
+    workflow.openConversation("w1", { selectedCardIds: [], currentGroupId: null });
+    return { workflow, repo, gateway };
+  };
+
+  it("saves nothing for a sheet that was opened and closed again", async () => {
+    const { workflow, repo } = openSaving();
+
+    workflow.closeConversation();
+
+    expect(await repo.getConversations("w1")).toEqual([]);
+  });
+
+  it("saves the question before the reply, so a failed turn still keeps it", async () => {
+    const repo = new MemoryConversationRepository();
+    const workflow = new WorkspaceAgentWorkflow({
+      host: new RecordingHost("sk-real-key", "test/model"),
+      agentGateway: new GatewaySpy("ok", new Error("network down")),
+      conversationRepo: repo,
+    });
+    workflow.openConversation("w1", { selectedCardIds: [], currentGroupId: null });
+
+    await workflow.sendMessage("why does spacing work?");
+
+    const [saved] = await repo.getConversations("w1");
+    expect(saved.messages.map(m => m.text)).toEqual(["why does spacing work?"]);
+    expect(saved.title).toBe("why does spacing work?");
+  });
+
+  it("stores the model's raw text, tags and all, not the rendered prose", async () => {
+    const { workflow, repo } = openSaving("Worth keeping. [[note: Spacing | It works.]]");
+
+    await workflow.sendMessage("tell me");
+
+    const [saved] = await repo.getConversations("w1");
+    const reply = saved.messages.find(m => m.speaker === "assistant")!;
+    // The stored string is the source the chips were parsed from — see entities/conversation.
+    expect(reply.text).toContain("[[note: Spacing | It works.]]");
+  });
+
+  it("re-parses a restored reply back into the same chip", async () => {
+    const { workflow, repo } = openSaving("Worth keeping. [[note: Spacing | It works.]]");
+    await workflow.sendMessage("tell me");
+    const [saved] = await repo.getConversations("w1");
+
+    await workflow.startNewConversation();
+    expect(workflow.state.messages).toEqual([]);
+
+    await workflow.loadConversation(saved.id);
+
+    const reply = workflow.state.messages.find(m => m.speaker === "assistant")!;
+    const tags = (reply.segments ?? []).filter(s => s.kind === "tag");
+    expect(tags).toHaveLength(1);
+    // Rendered text, not the raw source, is what the reader sees.
+    expect(reply.text).not.toContain("[[");
+  });
+
+  it("restores a settled tag so a created card is never offered twice", async () => {
+    const repo = new MemoryConversationRepository();
+    const workflow = new WorkspaceAgentWorkflow({
+      host: new RecordingHost("sk-real-key", "test/model"),
+      agentGateway: new GatewaySpy("Keep this. [[note: Spacing | It works.]]"),
+      conversationRepo: repo,
+      dispatchTool: async () => "Created 1 card.",
+    });
+    workflow.openConversation("w1", { selectedCardIds: [], currentGroupId: null });
+    await workflow.sendMessage("tell me");
+
+    const reply = workflow.state.messages.find(m => m.speaker === "assistant")!;
+    const tagId = (reply.segments ?? []).find(s => s.kind === "tag")!.tag.id;
+    await workflow.addTag(reply.id, tagId);
+
+    const [saved] = await repo.getConversations("w1");
+    await workflow.startNewConversation();
+    await workflow.loadConversation(saved.id);
+
+    expect(workflow.state.tagActions[tagActionKey(reply.id, tagId)]).toEqual({
+      status: "done",
+      resultMessage: "Created 1 card.",
+    });
+  });
+
+  it("lists saved conversations newest first", async () => {
+    const { workflow, repo } = openSaving();
+    await workflow.sendMessage("first");
+    await workflow.startNewConversation();
+    await workflow.sendMessage("second");
+
+    await workflow.openHistory();
+
+    expect(workflow.state.isHistoryOpen).toBe(true);
+    expect(workflow.state.history.map(c => c.title)).toEqual(["second", "first"]);
+    expect(await repo.getConversations("w1")).toHaveLength(2);
+  });
+
+  it("keeps the conversation being left when switching to another", async () => {
+    const { workflow, repo } = openSaving();
+    await workflow.sendMessage("first");
+    const [first] = await repo.getConversations("w1");
+
+    await workflow.startNewConversation();
+    await workflow.sendMessage("second");
+    await workflow.loadConversation(first.id);
+
+    expect(workflow.state.messages.some(m => m.text === "first")).toBe(true);
+    // The one we navigated away from is still on disk, not discarded.
+    const titles = (await repo.getConversations("w1")).map(c => c.title).sort();
+    expect(titles).toEqual(["first", "second"]);
+  });
+
+  it("deleting the open conversation clears the transcript too", async () => {
+    const { workflow, repo } = openSaving();
+    await workflow.sendMessage("doomed");
+    const [saved] = await repo.getConversations("w1");
+
+    await workflow.openHistory();
+    await workflow.deleteConversation(saved.id);
+
+    expect(workflow.state.messages).toEqual([]);
+    expect(workflow.state.history).toEqual([]);
+    expect(await repo.getConversations("w1")).toEqual([]);
+  });
+
+  it("works with no repository at all, exactly as before conversations were saved", async () => {
+    const workflow = new WorkspaceAgentWorkflow({
+      host: new RecordingHost("sk-real-key", "test/model"),
+      agentGateway: new GatewaySpy("ok"),
+    });
+    workflow.openConversation("w1", { selectedCardIds: [], currentGroupId: null });
+
+    await workflow.sendMessage("hello");
+    await workflow.openHistory();
+
+    expect(workflow.state.messages).toHaveLength(2);
+    expect(workflow.state.history).toEqual([]);
   });
 });
