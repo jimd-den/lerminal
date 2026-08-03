@@ -2626,7 +2626,12 @@ export class GriotController {
         // keeps using it. Only cards with no destination at all get bundled into a new
         // group below, so a card explicitly targeted at an existing group is never
         // re-nested.
-        const hasExplicitDestination = tool.cards.some((spec) => spec.parentId != null) || parentId != null;
+        // A named set always gets its own group, even inside another one: nesting the set
+        // under the current group is the point, and scattering its members into the
+        // surrounding group would lose exactly the structure being offered.
+        const hasExplicitDestination =
+          !tool.groupName &&
+          (tool.cards.some((spec) => spec.parentId != null) || parentId != null);
         const created: Card[] = [];
         for (const spec of tool.cards) {
           const card = createCard({
@@ -2653,9 +2658,9 @@ export class GriotController {
           // No group already exists to hold these — build the same kind of real,
           // openable container `create_group`/`GroupCardsInteractor` produces, rather
           // than leaving the cards scattered at the workspace root.
-          const groupName = created[0]?.title
-            ? `New cards: ${created[0].title}`
-            : "New cards";
+          const groupName =
+            tool.groupName?.trim() ||
+            (created[0]?.title ? `New cards: ${created[0].title}` : "New cards");
           const group = await this.groupCardsInteractor.execute({
             workspaceId,
             parentId: parentId ?? null,

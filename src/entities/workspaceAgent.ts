@@ -27,6 +27,16 @@ export type AgentToolIntent =
   | { type: "suggest_next_actions"; cardIds?: string[]; suggestions: string[] }
   | {
       type: "create_cards";
+      /**
+       * Name for a group to create and nest these cards under.
+       *
+       * Set when the model proposed a *study set* rather than a stray note — several
+       * related cards that only make sense together. The dispatcher creates the group even
+       * when the user is already inside one, because a named set nested in the current
+       * group is the point; scattering its members into the surrounding group would lose
+       * exactly the structure being offered.
+       */
+      groupName?: string;
       cards: Array<{
         type: CardType;
         role?: SemanticRole;
@@ -188,7 +198,9 @@ export function narrowToolIntent(
     case "create_cards": {
       const cards = tool.cards.filter((_, index) => selected.has(`card-${index}`));
       if (cards.length === 0) return null;
-      return { type: "create_cards", cards };
+      // The group name survives pruning: keeping two of five proposed cards still means
+      // creating that named set, just a smaller one.
+      return { ...tool, cards };
     }
 
     case "create_group": {

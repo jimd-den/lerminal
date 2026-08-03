@@ -92,7 +92,7 @@ import { AgentToolIntent } from "./workspaceAgent";
 import { CardType } from "./card";
 
 /** Every tag type the grammar accepts. Anything else degrades to prose. */
-export type AgentTagType = "note" | "question" | "link" | "group" | "syllabus";
+export type AgentTagType = "note" | "question" | "link" | "group" | "syllabus" | "cards";
 
 /**
  * One tag found in a reply.
@@ -162,6 +162,7 @@ const KIND_LABELS: Record<AgentTagType, string> = {
   link: "LINK",
   group: "GROUP",
   syllabus: "SYLLABUS",
+  cards: "SET",
 };
 
 const TAG_TYPES = Object.keys(KIND_LABELS) as AgentTagType[];
@@ -471,6 +472,42 @@ function buildTag(
 
     case "question":
       return make(title, card("question", title, detail));
+
+    case "cards": {
+      // "Group name | Title :: detail | Title :: detail" — a whole study set in one tag,
+      // because the useful unit of an answer is usually several related cards, not one.
+      const specs = parts
+        .slice(1)
+        .map(part => {
+          const split = part.indexOf("::");
+          const cardTitle = (split === -1 ? part : part.slice(0, split)).trim();
+          const body = split === -1 ? "" : part.slice(split + 2).trim();
+          return { cardTitle, body };
+        })
+        .filter(spec => spec.cardTitle.length > 0);
+
+      if (specs.length === 0) {
+        return make(
+          title,
+          null,
+          "This set listed no cards, so there is nothing to add."
+        );
+      }
+
+      return make(title, {
+        type: "create_cards",
+        groupName: title,
+        cards: specs.map(spec => ({
+          type: "note" as CardType,
+          role: "concept" as const,
+          title: spec.cardTitle,
+          // Left blank rather than echoed from the title — `resolveBodiesFromProse`
+          // deliberately does not touch a multi-card set, since one paragraph cannot
+          // describe five different cards.
+          body: spec.body,
+        })),
+      });
+    }
 
     case "syllabus":
       // Deliberately the same one-argument shape as every other tag: a goal title, and

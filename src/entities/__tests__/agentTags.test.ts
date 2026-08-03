@@ -184,6 +184,64 @@ describe("parseAgentTags", () => {
     });
   });
 
+  it("builds a whole named study set from one tag", () => {
+    const parsed = parseAgentTags(
+      "[[cards: Watch hardware | MCU register file :: How few registers you get | Memory map :: Where RAM and flash live]]"
+    );
+    const tag = parsed.tags[0];
+
+    expect(tag.type).toBe("cards");
+    expect(tag.kindLabel).toBe("SET");
+    expect(tag.title).toBe("Watch hardware");
+    expect(tag.intent).toEqual({
+      type: "create_cards",
+      groupName: "Watch hardware",
+      cards: [
+        {
+          type: "note",
+          role: "concept",
+          title: "MCU register file",
+          body: "How few registers you get",
+        },
+        {
+          type: "note",
+          role: "concept",
+          title: "Memory map",
+          body: "Where RAM and flash live",
+        },
+      ],
+    });
+  });
+
+  it("keeps a set card that omitted its detail, rather than dropping it", () => {
+    const parsed = parseAgentTags("[[cards: Basics | Addressing modes | Stack frames :: why]]");
+    const intent = parsed.tags[0].intent as any;
+
+    expect(intent.cards.map((c: any) => c.title)).toEqual([
+      "Addressing modes",
+      "Stack frames",
+    ]);
+    expect(intent.cards[0].body).toBe("");
+  });
+
+  it("refuses a set that listed no cards, and says so", () => {
+    const parsed = parseAgentTags("[[cards: Empty set]]");
+
+    expect(parsed.tags[0].intent).toBeNull();
+    expect(parsed.tags[0].invalidReason).toContain("nothing to add");
+  });
+
+  it("carries several sets from one reply, in order", () => {
+    const parsed = parseAgentTags(
+      "Three fronts here.\n" +
+        "[[cards: Hardware | Registers :: few of them]]\n" +
+        "[[cards: Assembly | Addressing :: how you walk a table]]"
+    );
+
+    expect(parsed.tags.map(t => t.title)).toEqual(["Hardware", "Assembly"]);
+    expect(parsed.tags.every(t => t.intent !== null)).toBe(true);
+  });
+
   it("groups the cards the app has in context when the model names none", () => {
     const parsed = parseAgentTags("[[group: Memory research]]", {
       cards: [

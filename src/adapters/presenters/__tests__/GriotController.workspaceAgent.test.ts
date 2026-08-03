@@ -195,6 +195,54 @@ describe("GriotController — Workspace Agent Phase D dispatch", () => {
     expect(message).toContain(group!.title);
   });
 
+  it("a named set uses its own name for the group it creates", async () => {
+    const { controller } = await buildController();
+
+    const message = await dispatchTool(controller, {
+      type: "create_cards",
+      groupName: "Watch hardware constraints",
+      cards: [
+        { type: "note", title: "MCU register file", body: "How few you get" },
+        { type: "note", title: "Memory map", body: "Where flash lives" },
+      ],
+    });
+
+    const group = controller
+      .getState()
+      .cards.find((c) => c.type === "group" && c.title === "Watch hardware constraints");
+    expect(group).toBeDefined();
+    expect(message).toContain("Watch hardware constraints");
+  });
+
+  it("a named set still gets its own group while the user is inside another one", async () => {
+    const { controller } = await buildController();
+    const note = await controller.createNote({ content: "seed", title: "Seed" });
+    await controller.dispatchWorkspaceAgentTool(
+      { type: "create_group", name: "Open group", cardIds: [note.id] },
+      { selectedCardIds: [], currentGroupId: null },
+    );
+    const openGroupId = controller
+      .getState()
+      .cards.find((c) => c.title === "Open group")!.id;
+
+    await controller.dispatchWorkspaceAgentTool(
+      {
+        type: "create_cards",
+        groupName: "Assembly foundations",
+        cards: [{ type: "note", title: "Addressing modes", body: "How you walk a table" }],
+      },
+      { selectedCardIds: [], currentGroupId: openGroupId },
+    );
+
+    // Nesting the set *inside* the open group is the point — scattering its members into
+    // the surrounding group would lose the structure being offered.
+    const state = controller.getState();
+    const set = state.cards.find((c) => c.title === "Assembly foundations");
+    expect(set?.type).toBe("group");
+    expect(set?.parentId).toBe(openGroupId);
+    expect(state.cards.find((c) => c.title === "Addressing modes")?.parentId).toBe(set!.id);
+  });
+
   it("create_cards with an existing destination group lands cards there directly, without creating an extra group", async () => {
     const { controller } = await buildController();
 

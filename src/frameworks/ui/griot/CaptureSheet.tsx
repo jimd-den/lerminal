@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal } from "react-native";
+import { Modal, StyleSheet, View } from "react-native";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
 import { GriotTheme } from "./theme";
 import { modalAnimation, useReducedMotion } from "../useReducedMotion";
@@ -19,6 +19,14 @@ import { CaptureScreen } from "./screens/CaptureScreen";
  * The capture draft itself still lives in `MainLayout`, not here: a pending-input prompt
  * can interrupt a capture, and the draft has to outlive that round trip, so it is passed
  * down rather than owned by this sheet.
+ *
+ * ## Why this shell paints a background
+ * `CaptureScreen` colours its own text and panels but never its page — when it was a
+ * routed screen, `MainLayout`'s themed root sat behind it. An opaque `Modal` is its own
+ * surface with nothing behind it, so without this the sheet fell back to the platform
+ * default (white) and the whole capture flow ignored dark mode. The background belongs
+ * here rather than in `CaptureScreen`, which is still rendered inside `MainLayout`
+ * elsewhere and must not paint over it twice.
  */
 export function CaptureSheet({
   controller,
@@ -52,17 +60,23 @@ export function CaptureSheet({
         if (!working) controller.closeCaptureSheet();
       }}
     >
-      <CaptureScreen
-        controller={controller}
-        theme={theme}
-        initialIntent={state.captureIntent ?? "note"}
-        value={draft}
-        working={working}
-        onChangeText={onChangeText}
-        onWorkingChange={onWorkingChange}
-        onInputRequired={onInputRequired}
-        onComplete={onComplete}
-      />
+      <View style={[styles.surface, { backgroundColor: theme.background }]}>
+        <CaptureScreen
+          controller={controller}
+          theme={theme}
+          initialIntent={state.captureIntent ?? "note"}
+          value={draft}
+          working={working}
+          onChangeText={onChangeText}
+          onWorkingChange={onWorkingChange}
+          onInputRequired={onInputRequired}
+          onComplete={onComplete}
+        />
+      </View>
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  surface: { flex: 1 },
+});
