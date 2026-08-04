@@ -6,10 +6,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from "react-native";
+import { Text, TextInput } from "../Typography";
 import { GriotController } from "../../../../adapters/presenters/GriotController";
 import { Chip } from "../components";
 import { GriotTheme, Structure, TypeScale } from "../theme";

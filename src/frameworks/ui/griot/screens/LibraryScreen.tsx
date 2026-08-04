@@ -1,5 +1,10 @@
 import React from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
+import { Text } from "../Typography";
 import { GriotDeckModel } from "../../../../adapters/presenters/GriotDeckPresenter";
 import { SectionLabel, Slab } from "../components";
 import { GriotTheme, TypeScale } from "../theme";

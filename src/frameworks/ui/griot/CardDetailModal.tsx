@@ -6,10 +6,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from "react-native";
+import { Text, TextInput } from "./Typography";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import Markdown from "react-native-markdown-display";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -1136,7 +1135,10 @@ function buildInteractiveHtml(body: string, theme: GriotTheme): string {
 
 function markdownStyles(theme: GriotTheme): any {
   return {
-    body: { color: theme.text, fontSize: 16, lineHeight: 25 },
+    // The markdown renderer builds its own `<Text>` elements, so it never sees the
+    // provider's default — the chosen face has to be named here or card prose, the
+    // single largest body of text in the app, keeps the platform font.
+    body: { color: theme.text, fontSize: 16, lineHeight: 25, fontFamily: theme.fontSans },
     heading1: {
       color: theme.text,
       fontSize: 25,

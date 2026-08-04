@@ -6,10 +6,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from "react-native";
+import { Text, TextInput } from "./Typography";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
 import { AgentPreflightModel, presentAgentPreflight } from "../../../adapters/presenters/AgentPreflightPresenter";
 import { GriotTheme } from "./theme";

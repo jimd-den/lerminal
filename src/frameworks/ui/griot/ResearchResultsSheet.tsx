@@ -6,9 +6,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
+import { Text } from "./Typography";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
 import { evidenceKindLabel, ResearchResult } from "../../../entities/research";
 import { ModalSurface } from "./ModalSurface";

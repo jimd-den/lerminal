@@ -4,10 +4,9 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from "react-native";
+import { Text, TextInput } from "./Typography";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
 import { ModalSurface } from "./ModalSurface";

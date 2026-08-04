@@ -1,5 +1,10 @@
 import React, { useState } from "react";
-import { Alert, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  StyleSheet,
+  View,
+} from "react-native";
+import { FontProvider, Text } from "./griot/Typography";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { GriotController } from "../../adapters/presenters/GriotController";
@@ -170,6 +175,10 @@ export function MainLayout({ controller }: { controller: GriotController }) {
   }
 
   return (
+    // The font provider wraps the whole shell, modals included: a typeface the user chose
+    // has to reach every `<Text>` in the app, not the two-thirds that happened to be
+    // wired by hand. See `Typography.tsx`.
+    <FontProvider theme={theme}>
     <View style={[styles.root, { backgroundColor: theme.background }]}>
       <StatusBar style={state.theme === "dark" ? "light" : "dark"} animated />
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
@@ -268,6 +277,7 @@ export function MainLayout({ controller }: { controller: GriotController }) {
         }}
       />
     </View>
+    </FontProvider>
   );
 }
 

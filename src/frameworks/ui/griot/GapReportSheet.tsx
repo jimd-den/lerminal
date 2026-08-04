@@ -1,5 +1,12 @@
 import React from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
+import { Text } from "./Typography";
 import { AppState, GriotController } from "../../../adapters/presenters/GriotController";
 import { ModalSurface } from "./ModalSurface";
 import { GriotTheme } from "./theme";

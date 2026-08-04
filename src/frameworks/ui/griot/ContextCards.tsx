@@ -1,5 +1,10 @@
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
+import { Text } from "./Typography";
 import { Card } from "../../../entities/card";
 import { presentRole } from "../../../adapters/presenters/MissionCanvasPresenter";
 import { GriotTheme, Structure, TypeScale } from "./theme";
