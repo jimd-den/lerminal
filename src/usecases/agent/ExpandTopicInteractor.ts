@@ -103,7 +103,11 @@ export class ExpandTopicInteractor {
       workspaceId: request.workspaceId,
       groupTitle: topic,
       parentId: request.parentId ?? null,
-      items: valid.map(card => ({ title: card.title, body: card.body })),
+      items: valid.map(card => ({
+        title: card.title,
+        body: card.body,
+        references: card.references,
+      })),
       model: request.model,
     });
 

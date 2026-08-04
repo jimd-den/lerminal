@@ -1,6 +1,7 @@
 import { Card } from "../../../entities/card";
 import { AssistantCapability, OutputContractKind } from "../../../entities/assistantProfile";
 import { WebCitation } from "../../../entities/webCitation";
+import { ApaReference } from "../../../entities/apaReference";
 
 /**
  * # Agent Gateway Interface
@@ -17,6 +18,12 @@ export interface AgentCardResponse {
   body: string;
   sourceCardId?: string;
   sourceExcerpt?: string;
+  /**
+   * APA-formatted sources the model gave for this card. Always present on a model
+   * response (the contract requires the key) but legitimately empty — see
+   * {@link ApaReference} for why an empty list is a correct answer, not a failure.
+   */
+  references?: ApaReference[];
 }
 
 /**

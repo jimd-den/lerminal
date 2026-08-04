@@ -11,6 +11,7 @@ import {
 import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
 import { composeSystemPrompt } from "../../entities/agentPrompts";
 import { WebCitation } from "../../entities/webCitation";
+import { parseApaReferences } from "../../entities/apaReference";
 
 /**
  * Whether OpenRouter's own `web` plugin rides along with a request.
@@ -148,6 +149,12 @@ export class OpenRouterAgentGateway implements AgentGateway {
         body: String(item.body || "").substring(0, 1000),
         ...(item.sourceCardId ? { sourceCardId: String(item.sourceCardId) } : {}),
         ...(item.sourceExcerpt ? { sourceExcerpt: String(item.sourceExcerpt).substring(0, 300) } : {}),
+        // Unparseable or link-less entries are dropped rather than repaired: see
+        // `parseApaReferences`. A card with no references is a normal outcome.
+        ...(() => {
+          const references = parseApaReferences(item.references);
+          return references.length ? { references } : {};
+        })(),
       }));
 
       if (cards.length === 0) {

@@ -140,6 +140,7 @@ export class ChunkCommand implements PipelineCommand {
             sourceRef: item.sourceCardId?.trim() || fallbackSourceId,
             cite: item.sourceExcerpt?.trim() || fallbackCite,
             parentId: docGroup.id,
+            references: item.references,
             provenance: createProvenance({
               mode: "agent",
               sourceCardIds: [source.id],

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Alert,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -25,6 +26,7 @@ import {
 } from "../../../entities/cloze";
 import { resolveCardType } from "../../../entities/cardTypeDefinition";
 import { Card } from "../../../entities/card";
+import { ApaReference } from "../../../entities/apaReference";
 import { isFailedRunCard, readFailedRunCard } from "../../../entities/failedRun";
 import { TrashIcon } from "./Icons";
 import { GriotTheme } from "./theme";
@@ -444,6 +446,10 @@ export function CardDetailModal({
                   </View>
                 ) : null}
 
+                {card.references?.length ? (
+                  <References theme={theme} references={card.references} />
+                ) : null}
+
                 {state.linkedCardsForOpenCard.length > 0 ? (
                   <LinkedNotes
                     controller={controller}
@@ -736,6 +742,58 @@ function ClozeDetail({
           {card.answer}
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The card's sources, APA-formatted, at the foot of the card.
+ *
+ * Deliberately plain and last: this is the receipt, not the content. A reference with a
+ * known URL is tappable and marked as such; one without is shown exactly the same way
+ * minus the affordance, because "we know the work but not the address" is an honest and
+ * common answer, and styling it as degraded would push toward guessed links.
+ */
+function References({
+  references,
+  theme,
+}: {
+  references: ApaReference[];
+  theme: GriotTheme;
+}) {
+  return (
+    <View style={[styles.referencePanel, { borderColor: theme.line }]}>
+      <Text
+        style={[
+          styles.machineLabel,
+          { color: theme.textFaint, fontFamily: theme.fontMono },
+        ]}
+      >
+        REFERENCES // APA
+      </Text>
+      {references.map((reference, index) => {
+        const url = reference.url;
+        return (
+          <Pressable
+            key={`${reference.text}-${index}`}
+            accessibilityRole={url ? "link" : "text"}
+            disabled={!url}
+            onPress={() => {
+              if (url) void Linking.openURL(url).catch(() => {});
+            }}
+            style={styles.referenceRow}
+          >
+            <Text
+              style={[
+                styles.referenceText,
+                { color: url ? theme.accent : theme.textMuted },
+              ]}
+            >
+              {reference.text}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -1254,6 +1312,11 @@ const styles = StyleSheet.create({
   },
   score: { marginTop: 14, fontSize: 12, fontWeight: "900" },
   citation: { borderWidth: 1, borderRadius: 5, padding: 12, marginTop: 20 },
+  referencePanel: { borderTopWidth: 1, paddingTop: 12, marginTop: 20 },
+  // Hanging indent, as APA prints it: the first line sits flush and the wrap is inset,
+  // which is what makes a list of references scannable rather than a wall.
+  referenceRow: { minHeight: 44, justifyContent: "center", paddingVertical: 6 },
+  referenceText: { fontSize: 12, lineHeight: 18, paddingLeft: 16 },
   citationText: { fontSize: 12, lineHeight: 16 },
   linkedPanel: { borderWidth: 1, borderRadius: 7, padding: 12, marginTop: 20 },
   linkedRow: {

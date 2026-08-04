@@ -3,6 +3,46 @@ import { extractWebCitations, OpenRouterAgentGateway } from "../OpenRouterAgentG
 import { createCard } from "../../../entities/card";
 
 describe("OpenRouter Agent Gateway", () => {
+  it("carries a card's APA references through, and drops an unfollowable link", async () => {
+    const originalFetch = global.fetch;
+    global.fetch = mock(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify([
+                {
+                  title: "Spacing effect",
+                  body: "Delayed recall is harder, and difficulty is the mechanism.",
+                  references: [
+                    { text: "Bjork, R. A. (1994). Memory and metamemory.", url: "https://example.com/b" },
+                    { text: "Ebbinghaus, H. (1885). Uber das Gedachtnis.", url: "not-a-url" },
+                  ],
+                },
+                { title: "Uncited claim", body: "No source given.", references: [] },
+              ]),
+            },
+          },
+        ],
+      }),
+    } as Response));
+
+    try {
+      const gateway = new OpenRouterAgentGateway();
+      const result = await gateway.ask("spacing", [], "test-api-key");
+      expect(result.isLocalFallback).toBe(false);
+      expect(result.cards[0].references).toEqual([
+        { text: "Bjork, R. A. (1994). Memory and metamemory.", url: "https://example.com/b" },
+        { text: "Ebbinghaus, H. (1885). Uber das Gedachtnis." },
+      ]);
+      // An empty list is a legitimate answer, so no field is attached at all.
+      expect(result.cards[1].references).toBeUndefined();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("should format request body and parse response array correctly", async () => {
     // Mock global fetch
     const mockResponseCards = [

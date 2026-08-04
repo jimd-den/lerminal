@@ -51,6 +51,10 @@ export class CustomAgentCommand implements PipelineCommand {
         body: item.body,
         cite: arg.substring(0, 16),
         parentId: ctx.parentId ?? undefined,
+        // A user's own command gets citations on the same terms as the built-in ones:
+        // the contract that asks for them is appended below every instruction, custom
+        // or not, so there is no such thing as an uncited AI in this app.
+        references: item.references,
         provenance: createProvenance({
           mode: "agent",
           sourceCardIds: ctx.inputCards.map(card => card.id),

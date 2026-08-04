@@ -20,6 +20,29 @@ import type { OutputContractKind } from "./assistantProfile";
  */
 
 /**
+ * The `references` key, shared by every card-shaped contract.
+ *
+ * ## Why this lives in the contract layer
+ * It is the reason citations reach *every* AI in the app, including the user's own
+ * personas and custom commands. Instructions are the user's to rewrite; contracts are
+ * appended afterwards and marked as overriding, so a persona that never mentions sources
+ * still ships this clause and still returns the field.
+ *
+ * ## Why it is so insistent about not guessing
+ * The parent rules already forbid inventing a URL, and asking every card for a reference
+ * is exactly the pressure that would tempt a model to break that. So the clause states the
+ * honest outs plainly and more than once: a reference with no URL is fine, an empty list is
+ * fine, and a plausible-looking wrong link is the one unacceptable answer. A citation the
+ * user cannot follow is worse than none, because it looks like a receipt and is not one.
+ */
+export const REFERENCES_CONTRACT_CLAUSE = `- "references": array — the sources behind this card, in APA 7th edition format. Each entry is an object with:
+    - "text": string — the full APA reference, e.g. "Bjork, R. A. (1994). Memory and metamemory considerations in the training of human beings. In J. Metcalfe & A. Shimamura (Eds.), Metacognition: Knowing about knowing (pp. 185-205). MIT Press."
+    - "url": string — the source's address, included only when you are certain of it (a DOI, an official documentation page, a well-known permanent URL). Omit this key entirely when you are not certain.
+  Cite the real, checkable works the claims in this card actually rest on: the standard text, the canonical paper, the official documentation. When source material was supplied to you, cite that material.
+  NEVER guess, construct, or pattern-match a URL. A reference with "text" and no "url" is a good answer; a plausible-looking link that does not exist is the one answer that is never acceptable.
+  Return [] when you cannot name a real source for this card. An empty array is always preferable to an invented citation.`;
+
+/**
  * The strict output contract for the `cards-v1` capability (plain generate/ask cards).
  * Kept deliberately rigid so any instruction yields parseable cards. Must contain the
  * phrase "Respond ONLY with a valid JSON array" (relied on downstream).
@@ -29,6 +52,7 @@ Respond ONLY with a valid JSON array of objects. Output nothing else — no pros
 Each object MUST have exactly these keys:
 - "title": string — a specific, descriptive heading (max 8 words; never a generic label like "Card 1")
 - "body": string — the card's content as plain text or light markdown
+${REFERENCES_CONTRACT_CLAUSE}
 For every non-empty query, return at least one useful card. Return [] only when both the query and source context are empty.`;
 
 /**
@@ -42,6 +66,7 @@ Each object MUST have exactly these keys:
 - "body": string — a clear, self-contained explanation of this chunk as plain text or light markdown
 - "sourceCardId": string — the exact id of the source card this chunk was drawn from
 - "sourceExcerpt": string — a short supporting quote copied from that source card
+${REFERENCES_CONTRACT_CLAUSE}
 For every non-empty query, return at least one useful chunk. Return [] only when both the query and source context are empty.`;
 
 /** Maps each output contract kind to its strict format text. Empty string = no contract appended (e.g. free-text chat). */

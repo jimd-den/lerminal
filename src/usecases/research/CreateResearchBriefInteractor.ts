@@ -96,6 +96,7 @@ export class CreateResearchBriefInteractor {
         body: item.body,
         cite: retainedResult?.url,
         parentId: request.parentId ?? undefined,
+        references: item.references,
         sourceRef: sourceCard.id,
         provenance: createProvenance({
           mode: "search",

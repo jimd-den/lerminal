@@ -1,5 +1,6 @@
 import { Card, createCard } from "../../entities/card";
 import { createProvenance } from "../../entities/provenance";
+import { ApaReference } from "../../entities/apaReference";
 
 /**
  * # Grouped Cards — turning a flat model reply into a nested structure
@@ -29,6 +30,11 @@ import { createProvenance } from "../../entities/provenance";
 export interface GroupedCardInput {
   title: string;
   body: string;
+  /**
+   * The card's own sources. Carried per item rather than per tree because each leaf makes
+   * its own claims — a syllabus phase's container cites nothing itself.
+   */
+  references?: ApaReference[];
 }
 
 export interface GroupedCardsResult {
@@ -122,6 +128,7 @@ export function buildGroupedCards(params: BuildGroupedCardsParams): GroupedCards
         body: input.body.trim(),
         parentId: parent,
         provenance: provenance(),
+        references: input.references,
       })
     );
   }

@@ -98,6 +98,7 @@ export class AskCommand implements PipelineCommand {
         body: item.body,
         cite: query.substring(0, 16),
         parentId: ctx.parentId ?? undefined,
+        references: item.references,
         provenance: createProvenance({
           mode: "agent",
           sourceCardIds: ctx.inputCards.map(card => card.id),

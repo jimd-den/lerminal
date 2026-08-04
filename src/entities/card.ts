@@ -1,5 +1,6 @@
 import { ScheduleState } from "./schedule";
 import { Provenance } from "./provenance";
+import { ApaReference } from "./apaReference";
 
 /**
  * # Card Entity Domain Model
@@ -117,6 +118,13 @@ export interface Card {
    * feature existed or when creation didn't warrant one — never fabricate a value.
    */
   provenance?: Provenance;
+  /**
+   * APA-formatted sources for the claims in this card, with links where the model knew
+   * one. Present on model-written cards; absent on cards the user wrote and on model
+   * cards where nothing could honestly be cited — an empty or missing list is a normal
+   * outcome, never an error. See {@link ApaReference}.
+   */
+  references?: ApaReference[];
 }
 
 /**
@@ -140,6 +148,7 @@ export interface CreateCardParams {
   createdAt?: number;
   role?: SemanticRole;
   provenance?: Provenance;
+  references?: ApaReference[];
 }
 
 /**
@@ -172,6 +181,9 @@ export function createCard(params: CreateCardParams): Card {
     documentGroupFor: params.documentGroupFor,
     role: params.role,
     provenance: params.provenance,
+    // Omitted entirely when empty, so "no references" reads the same on a model card that
+    // could cite nothing as on a card the user typed themselves.
+    ...(params.references?.length ? { references: params.references } : {}),
   };
 
   return card;

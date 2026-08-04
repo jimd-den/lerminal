@@ -80,7 +80,11 @@ export class GenerateSyllabusInteractor {
     const { group, sections, items } = buildGroupedCards({
       workspaceId: request.workspaceId,
       groupTitle: `Syllabus: ${request.mission.goalTitle}`,
-      items: valid.map(item => ({ title: item.title, body: item.body })),
+      items: valid.map(item => ({
+        title: item.title,
+        body: item.body,
+        references: item.references,
+      })),
       model,
     });
 
