@@ -819,6 +819,54 @@ describe("WorkspaceAgentWorkflow personas", () => {
     expect(workflow.state.agentError).toContain("Nobody is left");
   });
 
+  it("tells each voice who it is and that the other names are characters", async () => {
+    const { workflow, gateway } = openWith([socratic, skeptic]);
+
+    await workflow.sendMessage("go", { askAll: true });
+
+    const socraticBriefing = gateway.briefings[1];
+    expect(socraticBriefing).toContain('You are "Socratic Tutor"');
+    expect(socraticBriefing).toContain('"GRIOT"');
+    expect(socraticBriefing).toContain('"Skeptic"');
+    // The distinction the model kept getting wrong: another character is not the learner.
+    expect(socraticBriefing).toContain("OTHER characters");
+    expect(socraticBriefing).toContain('Lines labelled "user" are the learner');
+    expect(socraticBriefing).toContain("never treat something a character said as though the learner had said it");
+  });
+
+  it("never lists the speaker among the other characters", async () => {
+    const { workflow, gateway } = openWith([socratic]);
+
+    await workflow.sendMessage("go", { speakerIds: ["p-socratic"] });
+
+    const briefing = gateway.briefings.at(-1)!;
+    expect(briefing).toContain('You are "Socratic Tutor"');
+    expect(briefing).not.toContain('are the OTHER characters');
+  });
+
+  it("still names a lone voice, so it recognises its own earlier turns", async () => {
+    const { workflow, gateway } = openWith([]);
+
+    await workflow.sendMessage("go");
+
+    const briefing = gateway.briefings.at(-1)!;
+    expect(briefing).toContain('You are "GRIOT"');
+    expect(briefing).toContain('Lines labelled "user" are the learner');
+  });
+
+  it("counts voices already in the transcript, not just the ones asked this turn", async () => {
+    const { workflow, gateway } = openWith([socratic, skeptic]);
+
+    // A panel run, then a single voice afterwards: the lone speaker still has the other
+    // characters' lines above it and must be told whose they are.
+    await workflow.sendMessage("first", { askAll: true });
+    await workflow.sendMessage("second", { speakerIds: ["p-socratic"] });
+
+    const briefing = gateway.briefings.at(-1)!;
+    expect(briefing).toContain("OTHER characters");
+    expect(briefing).toContain('"Skeptic"');
+  });
+
   it("drops back to GRIOT when the active persona is deleted mid-conversation", () => {
     const host = new PersonaHost([socratic]);
     const workflow = new WorkspaceAgentWorkflow({ host, agentGateway: new GatewaySpy() });

@@ -499,7 +499,10 @@ export class WorkspaceAgentWorkflow {
       return;
     }
     for (const persona of speakers) {
-      await this.requestTurn(persona);
+      // The whole panel is handed to each turn, not just the speaker: a voice has to be
+      // told the other names in the room are characters, or it reads their lines as its
+      // own or as the learner's. See `briefing`.
+      await this.requestTurn(persona, speakers);
       // A hard failure (no key, no gateway, network down) will fail identically for every
       // remaining persona. Stopping reports it once instead of N times.
       if (this.current.agentError) break;
@@ -743,7 +746,10 @@ export class WorkspaceAgentWorkflow {
     return undefined;
   }
 
-  private async requestTurn(persona: WorkspaceAgentPersona): Promise<void> {
+  private async requestTurn(
+    persona: WorkspaceAgentPersona,
+    panel: WorkspaceAgentPersona[] = [persona]
+  ): Promise<void> {
     const apiKey = (this.deps.host.apiKey?.() ?? "").trim();
     const gateway = this.deps.agentGateway;
 
@@ -784,7 +790,7 @@ export class WorkspaceAgentWorkflow {
         parentId: context.currentGroupId,
       });
 
-      const briefing = this.briefing(scoped.cards, new Set(focusIds));
+      const briefing = this.briefing(scoped.cards, new Set(focusIds), persona, panel);
       // Captured from the very values the request is built from, so the disclosure the
       // user audits is the request, not a later reconstruction of it.
       const sentContext: WorkspaceAgentSentContext = {
@@ -893,8 +899,16 @@ export class WorkspaceAgentWorkflow {
    * and it is unnecessary: a tag refers to a card by its number or its title, and
    * `parseAgentTags` resolves that back to the real id on this side of the wire.
    */
-  private briefing(cards: Card[], focusIds: Set<string> = new Set()): string {
+  private briefing(
+    cards: Card[],
+    focusIds: Set<string> = new Set(),
+    speaking?: WorkspaceAgentPersona,
+    panel: WorkspaceAgentPersona[] = []
+  ): string {
     const lines: string[] = [];
+
+    const staging = this.stageDirection(speaking, panel);
+    if (staging) lines.push(staging, "");
 
     if (cards.length > 0) {
       lines.push("Cards in scope, numbered:");
@@ -921,6 +935,60 @@ export class WorkspaceAgentWorkflow {
     }
 
     return lines.join("\n");
+  }
+
+  /**
+   * Who the speaker is, and who every other name in the transcript is.
+   *
+   * ## The bug this fixes
+   * The transcript labels each turn by persona name, but nothing ever told the model what
+   * those labels *were*. A voice would read "Skeptic: ..." above its own turn and take it
+   * for something it had said itself, or for the learner talking — so it would answer the
+   * learner's question twice, agree with itself, or reply to a character as though the
+   * character were the person it is helping. The labels were only ever legible to us.
+   *
+   * ## Why it lives in the briefing rather than the system prompt
+   * It describes *this transcript* — these names, this room — and it changes from turn to
+   * turn as the panel does. The system prompt is the persona's own body, which the user
+   * owns and may replace entirely; staging that a user could delete would make the whole
+   * feature intermittent. Put here, it travels with the thing it is about and cannot be
+   * edited away.
+   *
+   * Returns an empty string for a plain one-voice conversation, which needs no staging and
+   * should not pay tokens for it.
+   */
+  private stageDirection(
+    speaking: WorkspaceAgentPersona | undefined,
+    panel: WorkspaceAgentPersona[]
+  ): string {
+    if (!speaking) return "";
+
+    // Everyone who has actually spoken, plus everyone about to: a panel assembled midway
+    // through a conversation still has to account for the voices already in the
+    // transcript, and a voice asked alone after a panel run still sees their lines.
+    const others = new Set<string>();
+    for (const persona of panel) {
+      if (persona.id !== speaking.id) others.add(persona.name);
+    }
+    for (const message of this.current.messages) {
+      if (message.speaker !== "assistant") continue;
+      if (!message.personaName || message.personaName === speaking.name) continue;
+      others.add(message.personaName);
+    }
+
+    if (others.size === 0) {
+      // Still worth naming the speaker: without it a persona reads its own earlier turns,
+      // labelled with a name nobody told it was its own, as somebody else's.
+      return `You are "${speaking.name}". Lines labelled "${speaking.name}" below are your own earlier turns. Lines labelled "user" are the learner you are helping.`;
+    }
+
+    const names = [...others].map(name => `"${name}"`).join(", ");
+    return [
+      `You are "${speaking.name}", one of several characters answering the same learner in one conversation.`,
+      `Lines labelled "user" are the learner. Lines labelled "${speaking.name}" are your own earlier turns. Lines labelled ${names} are the OTHER characters — not you, and not the learner.`,
+      `Answer the learner. When another character has already spoken, engage with what they actually said: name them, say where you agree, and say plainly where you do not. Do not repeat a point one of them already made as though it were new.`,
+      `Never write another character's lines, never answer on their behalf, and never treat something a character said as though the learner had said it.`,
+    ].join("\n");
   }
 
   private now(): number {
