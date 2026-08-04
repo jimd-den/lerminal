@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { GriotController } from "../../adapters/presenters/GriotController";
 import {
   NATIVE_FONT_FORMATS,
@@ -20,6 +21,7 @@ import { AsyncStorageOperationLogRepository } from "../storage/AsyncStorageOpera
 import { AsyncStorageCardLinkRepository } from "../storage/AsyncStorageCardLinkRepository";
 import { AsyncStorageConversationRepository } from "../storage/AsyncStorageConversationRepository";
 import { ExpoNotificationGateway } from "../notifications/ExpoNotificationGateway";
+import { SilentNotificationGateway } from "../notifications/SilentNotificationGateway";
 import { OpenRouterAgentGateway } from "../network/OpenRouterAgentGateway";
 import { DuckDuckGoSearchGateway } from "../network/DuckDuckGoSearchGateway";
 import { WebExtractionGateway } from "../network/WebExtractionGateway";
@@ -42,6 +44,14 @@ export interface CompositionOptions {
   logger?: Logger;
 }
 
+/**
+ * True inside the Expo Go client, which ships a fixed set of native modules and does not
+ * include ours. `StoreClient` is the SDK's own name for "running in the downloaded Expo
+ * app" as opposed to a standalone or development build.
+ */
+const isExpoGo =
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
 export function composeController(options: CompositionOptions = {}): GriotController {
   const store = options.store ?? asyncStorageKeyValueStore;
   const logger = options.logger ?? new ConsoleLogger();
@@ -59,7 +69,12 @@ export function composeController(options: CompositionOptions = {}): GriotContro
     operationLogRepo: new AsyncStorageOperationLogRepository(store, storeOptions),
     cardLinkRepo: new AsyncStorageCardLinkRepository(store, storeOptions),
     conversationRepo: new AsyncStorageConversationRepository(store, storeOptions),
-    notifications: new ExpoNotificationGateway(logger),
+    // Expo Go has no native notification module, so it gets silence rather than a crash;
+    // every real build — EAS APK, dev build, `expo run:android` — gets the real thing.
+    // Nothing else about the app changes between the two.
+    notifications: isExpoGo
+      ? new SilentNotificationGateway(logger)
+      : new ExpoNotificationGateway(logger),
     agentGateway: new OpenRouterAgentGateway(),
     searchGateway: new DuckDuckGoSearchGateway(),
     extractionGateway: new WebExtractionGateway(),
