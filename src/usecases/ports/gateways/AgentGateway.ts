@@ -45,6 +45,12 @@ export interface AgentModel {
   id: string;
   name: string;
   free: boolean;
+  /**
+   * When the provider first published the model, in seconds since the epoch. Newest-first
+   * is the only ordering that matters here — a months-old list buries whatever just shipped.
+   * Absent when the provider does not say, which sorts last.
+   */
+  created?: number;
 }
 
 /** A single turn in a chat conversation. */

@@ -296,55 +296,69 @@ export function SettingsScreen({
         {state.isLoadingModels ? (
           <ActivityIndicator color={theme.accent} />
         ) : null}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.modelRow}
-        >
-          {state.availableModels.map((model) => (
-            <Pressable
-              key={model.id}
-              onPress={() => {
-                controller.setSelectedModel(model.id);
-                setCustomModel(model.id);
-              }}
-              style={[
-                styles.model,
-                {
-                  borderColor:
-                    state.selectedModel === model.id
-                      ? theme.accent
-                      : theme.line,
-                  backgroundColor:
-                    state.selectedModel === model.id
-                      ? theme.accentSoft
-                      : theme.panelMuted,
-                },
-              ]}
-            >
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.modelName,
-                  { color: theme.text, fontFamily: theme.fontMono },
-                ]}
+        {/* Free and paid are different decisions, so they get different lists: the free
+            row is the one a user without credit can actually act on, and burying it
+            inside a single mixed row made it look like the app had nothing to offer. */}
+        {([true, false] as const).map((free) => {
+          const models = state.availableModels.filter((m) => m.free === free);
+          if (models.length === 0) return null;
+          return (
+            <View key={free ? "free" : "paid"} style={styles.modelGroup}>
+              <FieldLabel theme={theme}>
+                {free ? "FREE" : "PAID"} · NEWEST FIRST
+              </FieldLabel>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.modelRow}
               >
-                {model.name}
-              </Text>
-              <Text
-                style={[
-                  styles.modelMeta,
-                  {
-                    color: model.free ? theme.accent : theme.warning,
-                    fontFamily: theme.fontMono,
-                  },
-                ]}
-              >
-                {model.free ? "FREE" : "PAID"}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+                {models.map((model) => (
+                  <Pressable
+                    key={model.id}
+                    onPress={() => {
+                      controller.setSelectedModel(model.id);
+                      setCustomModel(model.id);
+                    }}
+                    style={[
+                      styles.model,
+                      {
+                        borderColor:
+                          state.selectedModel === model.id
+                            ? theme.accent
+                            : theme.line,
+                        backgroundColor:
+                          state.selectedModel === model.id
+                            ? theme.accentSoft
+                            : theme.panelMuted,
+                      },
+                    ]}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.modelName,
+                        { color: theme.text, fontFamily: theme.fontMono },
+                      ]}
+                    >
+                      {model.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.modelMeta,
+                        {
+                          color: free ? theme.accent : theme.warning,
+                          fontFamily: theme.fontMono,
+                        },
+                      ]}
+                    >
+                      {free ? "FREE" : "PAID"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          );
+        })}
         <TextInput
           value={customModel}
           onChangeText={setCustomModel}
@@ -1693,6 +1707,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     marginBottom: 9,
   },
+  modelGroup: { marginTop: 4 },
   modelRow: { gap: 7, paddingVertical: 8 },
   model: {
     width: 150,

@@ -538,12 +538,18 @@ export class OpenRouterAgentGateway implements AgentGateway {
           m.id.endsWith(":free") || 
           (m.pricing && parseFloat(m.pricing.prompt) === 0 && parseFloat(m.pricing.completion) === 0)
         );
+        const created = Number(m.created);
         return {
           id: m.id,
           name: m.name || m.id,
           free: isFree,
+          created: Number.isFinite(created) ? created : undefined,
         };
       });
+
+      // Newest first, so the lists in settings open on what the provider just shipped
+      // rather than on whatever happens to sit at the top of the API's own ordering.
+      models.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
 
       console.log(`[${logTimestamp}] [OpenRouterAgentGateway.fetchModels] Retrieved ${models.length} models dynamically`);
       return models;

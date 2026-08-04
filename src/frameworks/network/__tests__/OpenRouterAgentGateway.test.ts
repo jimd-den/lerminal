@@ -277,6 +277,36 @@ describe("OpenRouter Agent Gateway - fetchModels", () => {
     }
   });
 
+  it("should sort models newest first, with undated models last", async () => {
+    const mockModelsResponse = {
+      data: [
+        { id: "model/old", name: "Old", created: 1000 },
+        { id: "model/undated", name: "Undated" },
+        { id: "model/new", name: "New", created: 2000 },
+      ]
+    };
+
+    const originalFetch = global.fetch;
+    global.fetch = mock(async () => ({
+      ok: true,
+      json: async () => mockModelsResponse
+    } as Response));
+
+    try {
+      const gateway = new OpenRouterAgentGateway();
+      const models = await gateway.fetchModels();
+      expect(models.map((m) => m.id)).toEqual([
+        "model/new",
+        "model/old",
+        "model/undated",
+      ]);
+      expect(models[0].created).toBe(2000);
+      expect(models[2].created).toBeUndefined();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("should log a warning and return an empty list on fetch failure (no hardcoded models)", async () => {
     const originalFetch = global.fetch;
     const originalWarn = console.warn;
