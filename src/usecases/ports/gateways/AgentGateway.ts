@@ -225,4 +225,37 @@ export interface AgentGateway {
     /** The user's edited "prompt-architect" prompt body, if any. */
     systemPrompt?: string;
   }): Promise<PromptDesignResponse>;
+
+  /**
+   * Designs a whole panel of chat personas from one plain-English brief.
+   *
+   * Separate from {@link designAssistantProfile} because a panel is not N independent
+   * profiles: the characters have to be written against each other — who pushes back on
+   * whom, who concedes what — and that is only possible in a single turn that sees them
+   * all. Asking the architect once per name would produce voices that agree.
+   *
+   * Optional like its sibling: a gateway that cannot do this simply doesn't offer it, and
+   * the feature reports that honestly rather than degrading into something else.
+   */
+  designRoundtable?(input: {
+    /** What the user typed: the characters they want, in their own words. */
+    brief: string;
+    apiKey: string;
+    model: string;
+    /** The user's edited "roundtable-architect" prompt body, if any. */
+    systemPrompt?: string;
+  }): Promise<RoundtableDesignResponse>;
+}
+
+/** One character the architect designed, ready to become a chat profile. */
+export interface RoundtableMemberDesign {
+  name: string;
+  description: string;
+  systemPrompt: string;
+}
+
+export interface RoundtableDesignResponse {
+  /** The architect's name for the panel. The user's own name wins when they gave one. */
+  nameSuggestion: string;
+  members: RoundtableMemberDesign[];
 }

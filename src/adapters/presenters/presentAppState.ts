@@ -71,6 +71,7 @@ export function presentAppState(input: PresentAppStateInput): AppState {
     cardTypes: [...domain.cardTypes],
     promptPresets: [...domain.promptPresets],
     assistantProfiles: [...domain.assistantProfiles],
+    roundtables: [...domain.roundtables],
     activeProfileIds: { ...domain.activeProfileIds },
     agentPromptOverrides: { ...domain.agentPromptOverrides },
     webSearchEnabled: domain.webSearchEnabled,
@@ -154,6 +155,7 @@ export function presentAppState(input: PresentAppStateInput): AppState {
       input.workspaceAgentGroupTitle,
       input.workspaceAgentFocusCardTitle ?? null,
       domain.cards,
+      domain.roundtables,
     ),
   };
 }

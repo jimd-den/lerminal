@@ -1,5 +1,6 @@
 import { Card } from "../../entities/card";
 import { Workspace } from "../../entities/workspace";
+import { Roundtable } from "../../entities/roundtable";
 import { AppearanceSettings } from "../../entities/appearance";
 import { AgentPromptOverrides } from "../../entities/agentPrompts";
 import { FontCategory, RankedFontFamily } from "../../entities/fontCatalog";
@@ -58,6 +59,7 @@ export interface DomainState {
   cardTypes: CardTypeDefinition[];
   promptPresets: PromptPreset[];
   assistantProfiles: AssistantProfile[];
+  roundtables: Roundtable[];
   activeProfileIds: Partial<Record<AssistantCapability, string>>;
   searchSiteFlags: Record<string, string>;
   /** User-edited agent prompt bodies (see `entities/agentPrompts.ts`). Empty = all defaults. */
@@ -136,6 +138,7 @@ export function createInitialDomainState(): DomainState {
     cardTypes: [...BUILTIN_CARD_TYPES],
     promptPresets: [...BUILTIN_PROMPT_PRESETS],
     assistantProfiles: [...BUILTIN_ASSISTANT_PROFILES],
+    roundtables: [],
     agentPromptOverrides: {},
     webSearchEnabled: true,
     activeProfileIds: {

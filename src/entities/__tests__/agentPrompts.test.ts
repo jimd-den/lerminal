@@ -15,6 +15,7 @@ const ALL_IDS: AgentPromptId[] = [
   "card-generation",
   "workspace-agent",
   "prompt-architect",
+  "roundtable-architect",
   "next-action-suggestion",
   "search-query-suggestion",
 ];

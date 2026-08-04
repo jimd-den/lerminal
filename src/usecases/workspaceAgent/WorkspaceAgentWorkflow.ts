@@ -390,6 +390,26 @@ export class WorkspaceAgentWorkflow {
     return [griot, ...configured];
   }
 
+  /**
+   * Who answers this message, in order.
+   *
+   * The three cases are deliberately not blended: an explicit panel, everyone, or the one
+   * active voice. In particular a panel whose members have all been deleted resolves to
+   * nobody — the caller reports that rather than quietly widening the question.
+   */
+  private resolveSpeakers(options: {
+    askAll?: boolean;
+    speakerIds?: string[];
+  }): WorkspaceAgentPersona[] {
+    if (options.speakerIds) {
+      const byId = new Map(this.resolvePersonas().map(persona => [persona.id, persona]));
+      return options.speakerIds
+        .map(id => byId.get(id))
+        .filter((persona): persona is WorkspaceAgentPersona => persona !== undefined);
+    }
+    return options.askAll ? this.resolvePersonas() : [this.activePersona()];
+  }
+
   /** The persona that answers next. Falls back to GRIOT if the active id has gone away. */
   private activePersona(): WorkspaceAgentPersona {
     const personas = this.resolvePersonas();
@@ -445,6 +465,15 @@ export class WorkspaceAgentWorkflow {
        * voices can see — and argue with — what the earlier ones said.
        */
       askAll?: boolean;
+      /**
+       * Put the question to exactly these personas, in this order — a saved roundtable.
+       *
+       * Takes precedence over `askAll`, because it is the more specific request: a user
+       * who chose a panel chose it *instead of* everyone. Ids that no longer resolve are
+       * dropped, and a list that resolves to nobody asks nobody rather than falling back
+       * to the whole roster, which would put the question to voices they did not pick.
+       */
+      speakerIds?: string[];
     } = {}
   ): Promise<void> {
     const trimmed = text.trim();
@@ -462,7 +491,13 @@ export class WorkspaceAgentWorkflow {
     // Saved before the reply is requested, so a turn that fails still keeps the question.
     await this.persist();
 
-    const speakers = options.askAll ? this.resolvePersonas() : [this.activePersona()];
+    const speakers = this.resolveSpeakers(options);
+    if (speakers.length === 0) {
+      this.patch({
+        agentError: "Nobody is left on that roundtable — its voices have been deleted.",
+      });
+      return;
+    }
     for (const persona of speakers) {
       await this.requestTurn(persona);
       // A hard failure (no key, no gateway, network down) will fail identically for every

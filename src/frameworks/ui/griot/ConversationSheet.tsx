@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Modal,
   Pressable,
@@ -20,6 +21,7 @@ import {
 } from "../../../adapters/presenters/GriotController";
 import { GriotTheme, Structure, TypeScale } from "./theme";
 import { modalAnimation, useReducedMotion } from "../useReducedMotion";
+import { RoundtableSheet } from "./RoundtableSheet";
 
 /**
  * # Conversation Sheet ("Ask GRIOT")
@@ -76,6 +78,14 @@ export function ConversationSheet({
 }) {
   const view = state.workspaceAgent;
   const [draft, setDraft] = useState("");
+  /**
+   * The panel the next message goes to, or null for the single active persona. Held here
+   * rather than in the controller because it is a property of *this* composer, not of the
+   * conversation: closing the sheet and coming back should not silently still be aimed at
+   * a table the user chose ten minutes ago.
+   */
+  const [targetRoundtableId, setTargetRoundtableId] = useState<string | null>(null);
+  const [roundtableSheetOpen, setRoundtableSheetOpen] = useState(false);
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
@@ -83,8 +93,37 @@ export function ConversationSheet({
   const submit = () => {
     const text = draft.trim();
     if (!text) return;
-    controller.sendWorkspaceAgentMessage(text);
+    // One send button, three possible audiences. The armed panel wins over the active
+    // persona because arming it was the more recent, more specific choice.
+    if (targetRoundtableId) {
+      controller.askRoundtable(targetRoundtableId, text);
+    } else {
+      controller.sendWorkspaceAgentMessage(text);
+    }
     setDraft("");
+  };
+
+  /**
+   * Clearing a table removes the grouping only — the personas on it are ordinary profiles
+   * and stay in the user's list. The wording says so, because "delete" on a thing
+   * containing four voices reads like it takes the voices with it.
+   */
+  const confirmDeleteRoundtable = (id: string, name: string) => {
+    Alert.alert(
+      `Clear the "${name}" table?`,
+      "The personas seated at it stay in your list and can still be asked on their own.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear table",
+          style: "destructive",
+          onPress: () => {
+            if (id === targetRoundtableId) setTargetRoundtableId(null);
+            void controller.deleteRoundtable(id);
+          },
+        },
+      ],
+    );
   };
 
   /** Puts the same question to every persona, so the reply is a discussion, not an answer. */
@@ -244,6 +283,71 @@ export function ConversationSheet({
               ))}
             </ScrollView>
           ) : null}
+
+          {/* The panels, under the individual voices: choosing one aims the composer at
+              exactly its members. Always rendered, because the row is also the only way to
+              build the first one. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.personaRow}
+          >
+            {view.roundtables.map((roundtable) => {
+              const armed = roundtable.id === targetRoundtableId;
+              return (
+                <Pressable
+                  key={roundtable.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: armed, disabled: roundtable.isEmpty }}
+                  accessibilityLabel={`Ask the ${roundtable.name} roundtable`}
+                  accessibilityHint={
+                    roundtable.isEmpty
+                      ? "Every voice on this table has been deleted"
+                      : roundtable.memberNames.join(", ")
+                  }
+                  disabled={roundtable.isEmpty}
+                  onPress={() => setTargetRoundtableId(armed ? null : roundtable.id)}
+                  onLongPress={() => confirmDeleteRoundtable(roundtable.id, roundtable.name)}
+                  style={[
+                    styles.persona,
+                    {
+                      borderColor: armed ? theme.accent : theme.line,
+                      backgroundColor: armed ? theme.accentSoft : theme.panelMuted,
+                      opacity: roundtable.isEmpty ? 0.5 : 1,
+                    },
+                  ]}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.personaName, { color: theme.text, fontFamily: theme.fontMono }]}
+                  >
+                    {roundtable.name.toUpperCase()}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.personaModel, { color: theme.textMuted, fontFamily: theme.fontMono }]}
+                  >
+                    {roundtable.isEmpty
+                      ? "EMPTY"
+                      : roundtable.memberNames.join(" \u00b7 ")}
+                  </Text>
+                </Pressable>
+              );
+            })}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="New roundtable"
+              onPress={() => setRoundtableSheetOpen(true)}
+              style={[styles.persona, { borderColor: theme.line, backgroundColor: theme.panelMuted }]}
+            >
+              <Text style={[styles.personaName, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                + TABLE
+              </Text>
+              <Text style={[styles.personaModel, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
+                DESCRIBE A PANEL
+              </Text>
+            </Pressable>
+          </ScrollView>
 
           {view.isHistoryOpen ? (
             <ScrollView
@@ -456,7 +560,9 @@ export function ConversationSheet({
                     { color: draft.trim() ? theme.accentInk : theme.textMuted, fontFamily: theme.fontMono },
                   ]}
                 >
-                  SEND
+                  {/* The button says who is about to answer, so an armed panel can never
+                      be a surprise the user only discovers from the replies. */}
+                  {targetRoundtableId ? "TABLE" : "SEND"}
                 </Text>
               )}
             </Pressable>
@@ -464,6 +570,14 @@ export function ConversationSheet({
         </View>
         </KeyboardAvoidingView>
       </View>
+      {/* Inside the conversation's own Modal: on Android a sibling modal would be a second
+          window stacked behind this one and would simply not be visible. */}
+      <RoundtableSheet
+        visible={roundtableSheetOpen}
+        controller={controller}
+        theme={theme}
+        onClose={() => setRoundtableSheetOpen(false)}
+      />
     </Modal>
   );
 }

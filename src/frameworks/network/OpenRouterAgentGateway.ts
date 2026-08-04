@@ -6,6 +6,8 @@ import {
   AgentModel,
   ChatMessage,
   PromptDesignResponse,
+  RoundtableDesignResponse,
+  RoundtableMemberDesign,
   WorkspaceAgentTurnResult,
 } from "../../usecases/ports/gateways/AgentGateway";
 import { AssistantCapability, OutputContractKind } from "../../entities/assistantProfile";
@@ -450,6 +452,97 @@ export class OpenRouterAgentGateway implements AgentGateway {
         systemPrompt: content,
       };
     }
+  }
+
+  /**
+   * Asks the roundtable architect to write a whole panel from one brief.
+   *
+   * One request, not one per character: the members are written against each other, and a
+   * per-name loop would produce voices with no idea the others exist.
+   */
+  async designRoundtable(input: {
+    brief: string;
+    apiKey: string;
+    model: string;
+    systemPrompt?: string;
+  }): Promise<RoundtableDesignResponse> {
+    const logTimestamp = new Date().toISOString();
+    const cleanKey = input.apiKey?.trim();
+    if (!cleanKey) {
+      throw new Error("API key is required to design a roundtable");
+    }
+
+    console.log(
+      `[${logTimestamp}] [OpenRouterAgentGateway.designRoundtable] model=${input.model} | briefChars=${input.brief.length}`
+    );
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${cleanKey}`,
+        "HTTP-Referer": "https://github.com/dbslim/lerminal",
+        "X-Title": "GRIOT",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages: [
+          {
+            role: "system",
+            content: composeSystemPrompt("roundtable-architect", input.systemPrompt),
+          },
+          { role: "user", content: input.brief },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      let errMsg = `HTTP error: ${response.status} ${response.statusText}`;
+      try {
+        const errData = await response.json();
+        if (errData?.error?.message) errMsg += ` - ${errData.error.message}`;
+      } catch (_) {}
+      throw new Error(errMsg);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim() || "{}";
+    const cleanJson = content
+      .replace(/^```json/i, "")
+      .replace(/^```/, "")
+      .replace(/```$/, "")
+      .trim();
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleanJson);
+    } catch {
+      // No salvage attempt here, unlike `designAssistantProfile`: a single prompt can be
+      // recovered from raw prose, but a panel cannot — we would not know where one
+      // character ends and the next begins, and guessing would invent a voice.
+      throw new Error("The model's reply wasn't a usable panel. Nothing was created.");
+    }
+
+    const members: RoundtableMemberDesign[] = Array.isArray(parsed.members)
+      ? parsed.members
+          .map((member: any) => ({
+            name: String(member?.name ?? "").trim().substring(0, 24),
+            description: String(member?.description ?? "").trim().substring(0, 200),
+            systemPrompt: String(member?.systemPrompt ?? "").trim(),
+          }))
+          // A character with no name or no instructions is not a voice. Dropping it beats
+          // creating a persona that would answer as "" with no behaviour of its own.
+          .filter((member: RoundtableMemberDesign) => member.name && member.systemPrompt)
+      : [];
+
+    if (members.length === 0) {
+      throw new Error("The model didn't return any usable characters. Nothing was created.");
+    }
+
+    return {
+      nameSuggestion: String(parsed.nameSuggestion ?? "").trim() || "Roundtable",
+      members,
+    };
   }
 
   /**

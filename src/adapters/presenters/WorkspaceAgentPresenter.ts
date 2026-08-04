@@ -1,4 +1,5 @@
 import { Card } from "../../entities/card";
+import { Roundtable, resolveRoundtableMembers } from "../../entities/roundtable";
 import { WebCitation } from "../../entities/webCitation";
 import { Workspace } from "../../entities/workspace";
 import { toolIntentItems } from "../../entities/workspaceAgent";
@@ -203,6 +204,21 @@ export interface WorkspaceAgentViewModel {
   isHistoryOpen: boolean;
   /** Saved conversations for this workspace, newest first. */
   history: WorkspaceAgentHistoryEntryViewModel[];
+  /** The user's saved panels, each already narrowed to members that still exist. */
+  roundtables: WorkspaceAgentRoundtableViewModel[];
+}
+
+export interface WorkspaceAgentRoundtableViewModel {
+  id: string;
+  name: string;
+  /** The voices that will actually answer, in speaking order. */
+  memberNames: string[];
+  /**
+   * True when every member has been deleted. Kept in the list rather than hidden: a panel
+   * that silently vanished would look like data loss, and the user is the one who should
+   * decide whether to rebuild it or clear it away.
+   */
+  isEmpty: boolean;
 }
 
 const EMPTY_CONTEXT_VIEW: WorkspaceAgentContextViewModel = {
@@ -223,6 +239,7 @@ export function presentWorkspaceAgent(
   groupTitle: string | null,
   focusCardTitle: string | null = null,
   cards: Card[] = [],
+  roundtables: Roundtable[] = [],
 ): WorkspaceAgentViewModel {
   const cardTitles = new Map(cards.map((card) => [card.id, card]));
   const workspace = workspaces.find((ws) => ws.id === state.workspaceId);
@@ -261,6 +278,17 @@ export function presentWorkspaceAgent(
     // One voice is not a choice: with only GRIOT configured the sheet looks exactly as it
     // did before personas existed.
     hasMultiplePersonas: personas.length > 1,
+    // Resolved against the personas actually available, so a panel naming a deleted
+    // voice shows the voices that remain rather than a name that answers nothing.
+    roundtables: roundtables.map(roundtable => {
+      const members = resolveRoundtableMembers(roundtable, personas);
+      return {
+        id: roundtable.id,
+        name: roundtable.name,
+        memberNames: members.map(member => member.name),
+        isEmpty: members.length === 0,
+      };
+    }),
     isHistoryOpen: state.isHistoryOpen ?? false,
     history: (state.history ?? []).map(conversation => ({
       id: conversation.id,

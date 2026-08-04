@@ -11,6 +11,9 @@ import {
   SettingsRepository,
 } from "../../usecases/ports/repositories/SettingsRepository";
 import { AgentGateway, AgentModel } from "../../usecases/ports/gateways/AgentGateway";
+import { Roundtable, resolveRoundtableMembers } from "../../entities/roundtable";
+import { RoundtableRepository } from "../../usecases/ports/repositories/RoundtableRepository";
+import { CreateRoundtableInteractor } from "../../usecases/workspaceAgent/CreateRoundtableInteractor";
 import { UseCaseError } from "../../usecases/errors";
 import { PipelineOutcome, PipelineRunner } from "../../usecases/pipeline/PipelineRunner";
 import {
@@ -216,6 +219,7 @@ export interface AppState {
   promptPresets: PromptPreset[];
   /** Goal-specific AI Assistance Profiles. */
   assistantProfiles: AssistantProfile[];
+  roundtables: Roundtable[];
   /** Active assistant profile ID per capability. */
   activeProfileIds: Partial<Record<AssistantCapability, string>>;
   /**
@@ -343,6 +347,8 @@ export interface GriotControllerDeps {
   cardTypeRepo: CardTypeRepository;
   promptPresetRepo: PromptPresetRepository;
   assistantProfileRepo: AssistantProfileRepository;
+  /** Optional: without it, saved roundtables are simply unavailable. */
+  roundtableRepo?: RoundtableRepository;
   /** Where the controller reports failures; defaults to saying nothing. */
   logger?: Logger;
   searchGateway: SearchGateway;
@@ -385,6 +391,8 @@ export class GriotController {
   private cardTypeRepo: CardTypeRepository;
   private promptPresetRepo: PromptPresetRepository;
   private assistantProfileRepo: AssistantProfileRepository;
+  private roundtableRepo?: RoundtableRepository;
+  private createRoundtableInteractor?: CreateRoundtableInteractor;
   private logger: Logger;
 
   private pipeline: PipelineRunner;
@@ -474,6 +482,16 @@ export class GriotController {
     this.cardTypeRepo = deps.cardTypeRepo;
     this.promptPresetRepo = deps.promptPresetRepo;
     this.assistantProfileRepo = deps.assistantProfileRepo;
+    this.roundtableRepo = deps.roundtableRepo;
+    // Built only when a store exists, so "roundtables aren't available here" is a
+    // structural fact the UI can read rather than a call that fails at the last moment.
+    this.createRoundtableInteractor = deps.roundtableRepo
+      ? new CreateRoundtableInteractor({
+          agentGateway: deps.agentGateway,
+          profileRepo: deps.assistantProfileRepo,
+          roundtableRepo: deps.roundtableRepo,
+        })
+      : undefined;
     this.logger = deps.logger ?? silentLogger;
 
     // Which commands exist, and how a runner is built from them, belongs to the
@@ -849,6 +867,7 @@ export class GriotController {
       this.domain.cardTypes = await this.loadCardTypes();
       this.domain.promptPresets = await this.loadPromptPresets();
       this.domain.assistantProfiles = await this.loadAssistantProfiles();
+      this.domain.roundtables = (await this.roundtableRepo?.getRoundtables()) ?? [];
 
       // Captured before the default workspace is created, so "nothing here yet" is
       // distinguishable from "a workspace was just made for you". A storage failure
@@ -2563,6 +2582,61 @@ export class GriotController {
    */
   askAllWorkspaceAgentPersonas(text: string): void {
     void this.workspaceAgent.sendMessage(text, { askAll: true });
+  }
+
+  /**
+   * Puts one message to a saved panel: exactly its members, in the order it names them.
+   *
+   * Members that have since been deleted are dropped by the workflow rather than here, so
+   * the "nobody is left" case is reported once, in the conversation, where the user is.
+   */
+  askRoundtable(roundtableId: string, text: string): void {
+    const roundtable = this.domain.roundtables.find(rt => rt.id === roundtableId);
+    if (!roundtable) return;
+    void this.workspaceAgent.sendMessage(text, { speakerIds: roundtable.memberIds });
+  }
+
+  /**
+   * Designs a panel from a plain-English brief and saves it with its new personas.
+   *
+   * Reports failures as a toast and returns null rather than throwing: this is invoked
+   * from a sheet the user is sitting in, and a rejected promise there would surface as an
+   * unhandled error instead of something they can read and retry.
+   */
+  async createRoundtable(name: string, brief: string): Promise<Roundtable | null> {
+    const interactor = this.createRoundtableInteractor;
+    if (!interactor) {
+      this.showToast("Roundtables aren't available in this build");
+      return null;
+    }
+    try {
+      const { roundtable, members } = await interactor.execute({
+        name,
+        brief,
+        apiKey: this.domain.openRouterKey,
+        model: this.domain.selectedModel,
+        architectPrompt: this.agentPromptBody("roundtable-architect"),
+      });
+      this.domain.assistantProfiles = await this.loadAssistantProfiles();
+      this.domain.roundtables = (await this.roundtableRepo?.getRoundtables()) ?? [];
+      this.emit();
+      this.showToast(`Seated ${members.length} at "${roundtable.name}"`);
+      return roundtable;
+    } catch (error: any) {
+      this.logger.warn("roundtable.create_failed", { error: String(error) });
+      this.showToast(error?.message ?? "That roundtable couldn't be created");
+      return null;
+    }
+  }
+
+  /** Removes a panel. Its personas are ordinary profiles and are deliberately left alone. */
+  async deleteRoundtable(id: string): Promise<void> {
+    const target = this.domain.roundtables.find(rt => rt.id === id);
+    if (!target || !this.roundtableRepo) return;
+    await this.roundtableRepo.deleteRoundtable(id);
+    this.domain.roundtables = await this.roundtableRepo.getRoundtables();
+    this.emit();
+    this.showToast(`Cleared the "${target.name}" table`);
   }
 
   /**

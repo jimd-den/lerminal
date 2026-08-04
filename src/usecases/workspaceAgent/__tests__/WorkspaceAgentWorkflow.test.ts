@@ -777,6 +777,48 @@ describe("WorkspaceAgentWorkflow personas", () => {
     expect(workflow.state.agentError).toContain("network down");
   });
 
+  it("a roundtable asks exactly its members, in its own order", async () => {
+    const { workflow, gateway } = openWith([socratic, skeptic]);
+
+    // Deliberately not the roster order, and deliberately excluding GRIOT: the panel is a
+    // choice, so its order and its omissions both have to survive.
+    await workflow.sendMessage("go", { speakerIds: ["p-skeptic", "p-socratic"] });
+
+    expect(
+      workflow.state.messages.filter(m => m.speaker === "assistant").map(m => m.personaName)
+    ).toEqual(["Skeptic", "Socratic Tutor"]);
+    expect(gateway.models).toEqual(["fast/model", "big/model"]);
+  });
+
+  it("a roundtable outranks askAll, because choosing a panel excludes everyone else", async () => {
+    const { workflow } = openWith([socratic, skeptic]);
+
+    await workflow.sendMessage("go", { askAll: true, speakerIds: ["p-socratic"] });
+
+    expect(
+      workflow.state.messages.filter(m => m.speaker === "assistant").map(m => m.personaName)
+    ).toEqual(["Socratic Tutor"]);
+  });
+
+  it("skips members that no longer exist rather than asking a stranger", async () => {
+    const { workflow } = openWith([socratic]);
+
+    await workflow.sendMessage("go", { speakerIds: ["p-deleted", "p-socratic"] });
+
+    expect(
+      workflow.state.messages.filter(m => m.speaker === "assistant").map(m => m.personaName)
+    ).toEqual(["Socratic Tutor"]);
+  });
+
+  it("says so when every member is gone, instead of quietly asking everybody", async () => {
+    const { workflow, gateway } = openWith([socratic]);
+
+    await workflow.sendMessage("go", { speakerIds: ["p-deleted"] });
+
+    expect(gateway.turnCalls).toBe(0);
+    expect(workflow.state.agentError).toContain("Nobody is left");
+  });
+
   it("drops back to GRIOT when the active persona is deleted mid-conversation", () => {
     const host = new PersonaHost([socratic]);
     const workflow = new WorkspaceAgentWorkflow({ host, agentGateway: new GatewaySpy() });
