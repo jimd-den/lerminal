@@ -1,5 +1,13 @@
 import React from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Text } from "../Typography";
 import {
   AppState,
@@ -116,9 +124,21 @@ export function BridgeScreen({
   };
 
   return (
+    // The think tank board put a real composer — a `TextInput` and a POST button — inside
+    // what used to be a read-only instrument panel, and this screen never got the keyboard
+    // handling every other screen with an input already has (see `CaptureScreen`, the same
+    // routed-screen pattern this mirrors). Without it, the composer sits wherever it fell
+    // in the scroll content and the keyboard covers it outright. iOS needs `padding`
+    // pushed by this view; Android resizes the window itself, so `undefined` is correct
+    // there, not a gap — see `CaptureScreen`'s identical split.
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
     <ScrollView
       style={styles.screen}
       contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
       <View style={[styles.topBar, { borderBottomColor: theme.line }]}>
@@ -232,6 +252,7 @@ export function BridgeScreen({
         onClose={() => setThinkTankOpen(false)}
       />
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
