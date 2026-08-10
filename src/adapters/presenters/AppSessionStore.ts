@@ -77,6 +77,14 @@ export interface UiState {
   isSettingsSheetOpen: boolean;
   /** Capture is a floating modal, not a routed place — see `openCaptureSheet`/`closeCaptureSheet`. */
   isCaptureSheetOpen: boolean;
+  /**
+   * Whether the Ask GRIOT `Modal` window itself is showing — separate from
+   * `WorkspaceAgentState.isOpen`, which means "there is a live conversation" (sends work,
+   * persistence runs) and stays true for a think tank convened on the Bridge board, which
+   * deliberately never raises this flag. Two questions, two flags: is there a
+   * conversation, and is a modal window currently drawn over the screen for it.
+   */
+  isAskGriotSheetOpen: boolean;
   isInputSheetOpen: boolean;
   inputSheetMode: "source" | "ask" | "note";
   activePreflightPresetId: string | null;
@@ -92,13 +100,13 @@ export interface UiState {
   captureIntent: "note" | "paste" | "link" | "ask" | null;
   pendingGroupNavigation: string | null;
   /**
-   * A table the conversation composer should aim itself at, set when a think tank is just
-   * convened. The sheet decides *how* to arm itself (local state — see `ConversationSheet`);
-   * this only carries the one-time signal that it should. Consumed once, the same way
-   * {@link pendingGroupNavigation} is, so reopening the sheet later never silently still
-   * points at a table chosen minutes ago.
+   * The table the Bridge's inline think-tank board is currently showing, or null when
+   * none has been convened yet. Unlike a consume-once signal, this simply *is* the
+   * board's state — set by {@link GriotController.conveneThinkTank}, cleared by
+   * {@link GriotController.dismissThinkTank}, and otherwise left alone so the board keeps
+   * showing the same table across re-renders.
    */
-  pendingArmedRoundtableId: string | null;
+  activeThinkTankRoundtableId: string | null;
   isInstallingFont: boolean;
   /** Font-browser query, filter, results, and load state — see the controller's search. */
   fontQuery: string;
@@ -170,6 +178,7 @@ export function createInitialUiState(): UiState {
     isWorkspaceSheetOpen: false,
     isSettingsSheetOpen: false,
     isCaptureSheetOpen: false,
+    isAskGriotSheetOpen: false,
     isInputSheetOpen: false,
     inputSheetMode: "source",
     activePreflightPresetId: null,
@@ -183,7 +192,7 @@ export function createInitialUiState(): UiState {
     suggestedActionError: null,
     captureIntent: null,
     pendingGroupNavigation: null,
-    pendingArmedRoundtableId: null,
+    activeThinkTankRoundtableId: null,
     isInstallingFont: false,
     fontQuery: "",
     fontCategory: null,

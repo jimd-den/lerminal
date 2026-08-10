@@ -255,6 +255,12 @@ export interface AppState {
   isSettingsSheetOpen: boolean;
   /** Capture is a floating modal, not a routed place — see `openCaptureSheet`/`closeCaptureSheet`. */
   isCaptureSheetOpen: boolean;
+  /**
+   * Whether the Ask GRIOT modal window is showing — distinct from
+   * `workspaceAgent.isOpen` (a live conversation exists). See `AppSessionStore`'s field
+   * for why the two must never be the same flag.
+   */
+  isAskGriotSheetOpen: boolean;
   isInputSheetOpen: boolean;
   inputSheetMode: "source" | "ask" | "note";
   /** The operation preset id currently shown in the AI preflight sheet (null = closed). */
@@ -273,11 +279,11 @@ export interface AppState {
    */
   pendingGroupNavigation: string | null;
   /**
-   * A table the conversation composer should arm itself to, set once by
-   * {@link GriotController.conveneThinkTank}. Consumed via
-   * {@link GriotController.consumeArmedRoundtable} — see that method's note.
+   * The table the Bridge's inline think-tank board is showing, or null. Set by
+   * {@link GriotController.conveneThinkTank}, cleared by
+   * {@link GriotController.dismissThinkTank}.
    */
-  pendingArmedRoundtableId: string | null;
+  activeThinkTankRoundtableId: string | null;
   /** True while a Google font download is in flight. */
   isInstallingFont: boolean;
   /** The current font-browser query, owned here so results and query never disagree. */
@@ -2628,15 +2634,51 @@ export class GriotController {
     };
   }
 
-  /** Opens the "Ask GRIOT" sheet scoped to the active workspace and current selection. */
+  /** Opens the "Ask GRIOT" modal, scoped to the active workspace and current selection. */
   openWorkspaceAgent(): void {
-    const workspaceId = this.domain.activeWorkspaceId;
-    if (!workspaceId) return;
-
-    this.workspaceAgent.openConversation(workspaceId, this.workspaceAgentContext());
+    if (!this.ensureWorkspaceAgentConversation()) return;
+    this.ui.isAskGriotSheetOpen = true;
+    this.emit();
   }
 
+  /**
+   * Makes sure a live conversation exists — the part of "opening" that `sendMessage`
+   * actually needs (an open `WorkspaceAgentState`, so it isn't turned away by its own
+   * `isOpen` guard) — **without** raising the modal flag. This is what
+   * {@link conveneThinkTank} calls: the board needs a real, sendable conversation, and
+   * must never make the Ask GRIOT window appear over it to get one.
+   *
+   * Safe to call repeatedly: `WorkspaceAgentWorkflow.openConversation` just re-scopes an
+   * already-open conversation to the current context rather than restarting it.
+   */
+  private ensureWorkspaceAgentConversation(): boolean {
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) return false;
+    this.workspaceAgent.openConversation(workspaceId, this.workspaceAgentContext());
+    return true;
+  }
+
+  /**
+   * Closes the Ask GRIOT modal.
+   *
+   * Ordinarily this also ends the conversation — `WorkspaceAgentWorkflow.closeConversation`
+   * persists it and clears the transcript, so reopening starts fresh. But the modal and the
+   * Bridge board can point at the same live transcript (there is one conversation slot,
+   * not one per surface), so closing the modal *while a think tank is active on the board*
+   * must only hide the window: wiping the transcript here would empty the board out from
+   * under the captain over something they did in a different window entirely.
+   */
   closeWorkspaceAgent(): void {
+    // Set before either branch's own emit, not after: `closeConversation()` (and the
+    // early-return branch's own `emit()`) broadcast a snapshot the instant they run, and a
+    // mutation made afterwards would miss that broadcast entirely, silently stale until
+    // some unrelated later emit happened to carry it.
+    this.ui.isAskGriotSheetOpen = false;
+
+    if (this.ui.activeThinkTankRoundtableId) {
+      this.emit();
+      return;
+    }
     this.workspaceAgent.closeConversation();
   }
 
@@ -2728,6 +2770,13 @@ export class GriotController {
    * table" order (a topic seeded from what a station found), which is why this takes a
    * topic and not a roundtable id: there is no existing table to reuse, on purpose — each
    * convening is a fresh room suited to what is being discussed *now*.
+   *
+   * Deliberately does **not** open the Ask GRIOT modal. That sheet is a `Modal` — its own
+   * window, with its own keyboard-inset handling — and on some phones a modal stacked on
+   * top of the Bridge is exactly the friction a message board avoids: the discussion
+   * lands inline, in `AppState.activeThinkTankRoundtableId`, for the Bridge's own board to
+   * render as posts. The transcript underneath is the same `WorkspaceAgentWorkflow` either
+   * surface would use — only where it is shown has changed.
    */
   async conveneThinkTank(topic: string): Promise<void> {
     const trimmed = topic.trim();
@@ -2736,25 +2785,39 @@ export class GriotController {
     const roundtable = await this.createRoundtable("", trimmed);
     if (!roundtable) return;
 
-    this.openWorkspaceAgent();
-    // The signal is one-shot: the composer arms itself to it once, then behaves exactly
-    // as it would for any other table — including the user un-arming it.
-    this.ui.pendingArmedRoundtableId = roundtable.id;
+    // A live conversation is what lets a send actually go anywhere — `sendMessage`
+    // refuses to run against one that was never opened. `ensureWorkspaceAgentConversation`
+    // is the same call `openWorkspaceAgent` makes, minus the modal flag it also raises.
+    this.ensureWorkspaceAgentConversation();
+    this.ui.activeThinkTankRoundtableId = roundtable.id;
     this.askRoundtable(roundtable.id, trimmed);
+    this.emit();
   }
 
   /**
-   * Reads and clears the pending armed-table signal — the same consume-once shape as
-   * {@link consumeGroupNavigation}. A composer that never asks is a composer that never
-   * clears it, which is fine: the signal only matters to whichever surface is watching.
+   * Hides the think-tank board. The transcript itself is untouched — this only stops the
+   * Bridge from showing it, the same way closing a browser tab doesn't delete the page.
    */
-  consumeArmedRoundtable(): string | null {
-    const id = this.ui.pendingArmedRoundtableId;
-    if (id !== null) {
-      this.ui.pendingArmedRoundtableId = null;
-      this.emit();
-    }
-    return id;
+  dismissThinkTank(): void {
+    if (this.ui.activeThinkTankRoundtableId === null) return;
+    this.ui.activeThinkTankRoundtableId = null;
+    this.emit();
+  }
+
+  /**
+   * Re-asks a reply's own persona the same question that produced it — a fresh, second
+   * attempt when the first one didn't hold up. See `WorkspaceAgentWorkflow.retryReply`.
+   */
+  retryReply(messageId: string): void {
+    void this.workspaceAgent.retryReply(messageId);
+  }
+
+  /**
+   * The "thinking" follow-up: asks a reply's own persona to look at what it just said
+   * again. See `WorkspaceAgentWorkflow.rethinkReply`.
+   */
+  rethinkReply(messageId: string): void {
+    void this.workspaceAgent.rethinkReply(messageId);
   }
 
   /**

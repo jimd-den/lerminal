@@ -10,6 +10,7 @@ import { GriotTheme, Structure, TypeScale } from "../theme";
 import { SituationStrip, StationRail } from "./instruments";
 import { ContactPanel } from "./ContactPanel";
 import { ThinkTankSheet } from "./ThinkTankSheet";
+import { ThinkTankBoard } from "./ThinkTankBoard";
 
 /**
  * # Bridge Screen — the master situation display
@@ -152,6 +153,10 @@ export function BridgeScreen({
           CONVENE A THINK TANK →
         </Text>
       </Pressable>
+
+      {/* Renders inline, no modal — see `conveneThinkTank`'s own note on why. Nothing here
+          until a table actually exists. */}
+      <ThinkTankBoard controller={controller} state={state} theme={theme} />
 
       <SituationStrip view={view.situation} theme={theme} scanning={view.scanning} />
 

@@ -105,6 +105,8 @@ export interface WorkspaceAgentMessageViewModel {
    * after the user switches persona or re-pins a model.
    */
   personaName?: string;
+  /** The same voice's id — what {@link retryReply}/{@link rethinkReply} target. */
+  personaId?: string;
   model?: string;
 }
 
@@ -321,6 +323,7 @@ function toMessageViewModel(
     ),
     streaming: message.streaming ?? false,
     ...(message.personaName ? { personaName: message.personaName } : {}),
+    ...(message.personaId ? { personaId: message.personaId } : {}),
     ...(message.model ? { model: message.model } : {}),
   };
 }

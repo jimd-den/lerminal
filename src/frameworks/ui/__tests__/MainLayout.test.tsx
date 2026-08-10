@@ -120,7 +120,7 @@ describe("Ask affordance", () => {
   });
 
   it("stands down for the sheet it opens, for the capture sheet, and for the selection tray", () => {
-    expect(shell).toContain("!state.workspaceAgent.isOpen && !state.isCaptureSheetOpen && state.selection.size === 0");
+    expect(shell).toContain("!state.isAskGriotSheetOpen && !state.isCaptureSheetOpen && state.selection.size === 0");
   });
 
   it("is positioned relative to the bottom cluster, not to the nav's items", () => {
@@ -168,7 +168,7 @@ describe("Capture affordance", () => {
   });
 
   it("stands down alongside Ask — both float in the same slot", () => {
-    expect(shell).toContain("!state.workspaceAgent.isOpen && !state.isCaptureSheetOpen && state.selection.size === 0");
+    expect(shell).toContain("!state.isAskGriotSheetOpen && !state.isCaptureSheetOpen && state.selection.size === 0");
     expect(shell).toContain("floatingSlot");
   });
 

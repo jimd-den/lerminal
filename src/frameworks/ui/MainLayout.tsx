@@ -236,9 +236,12 @@ export function MainLayout({ controller }: { controller: GriotController }) {
             <ActivityBanner controller={controller} state={state} theme={theme} />
             <WorkspacePulse controller={controller} state={state} theme={theme} />
 
-            {/* Hidden while either sheet is up (they would be stranded under the modal)
-                and while cards are selected, where the tray owns the bottom of the screen. */}
-            {!state.workspaceAgent.isOpen && !state.isCaptureSheetOpen && state.selection.size === 0 ? (
+            {/* Hidden while either modal is up (they would be stranded under it) and while
+                cards are selected, where the tray owns the bottom of the screen.
+                Deliberately `isAskGriotSheetOpen`, not `workspaceAgent.isOpen` — a think
+                tank convened on the Bridge board keeps a conversation live without ever
+                raising the modal, and these buttons have nothing to do with that. */}
+            {!state.isAskGriotSheetOpen && !state.isCaptureSheetOpen && state.selection.size === 0 ? (
               <View style={styles.floatingSlot} pointerEvents="box-none">
                 <CaptureAffordance
                   theme={theme}

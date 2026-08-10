@@ -91,19 +91,6 @@ export function ConversationSheet({
   const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
 
   /**
-   * A think tank convened from the Bridge (or from a contact's "to the table" order)
-   * arrives here already talking — see `GriotController.conveneThinkTank`. This is what
-   * arms the composer to it the same way tapping the table's own pill would, so the very
-   * next thing the user types keeps talking to the room that was just assembled rather
-   * than to the single active persona.
-   */
-  React.useEffect(() => {
-    if (!state.pendingArmedRoundtableId) return;
-    setTargetRoundtableId(state.pendingArmedRoundtableId);
-    controller.consumeArmedRoundtable();
-  }, [controller, state.pendingArmedRoundtableId]);
-
-  /**
    * Sentences the user has picked out of a reply to push back on — see {@link MessageBody}.
    * Keyed by message id, then by `${segmentIndex}-${sentenceIndex}`; the map's value is
    * the sentence text itself, so building the critique never has to re-derive it from the
@@ -199,7 +186,10 @@ export function ConversationSheet({
 
   return (
     <Modal
-      visible={view.isOpen}
+      // Distinct from `view.isOpen`, which only means "there is a live conversation" — a
+      // think tank convened from the Bridge keeps that true without ever raising this
+      // window. See `AppSessionStore`'s note on the two flags.
+      visible={state.isAskGriotSheetOpen}
       animationType={modalAnimation(reducedMotion, "slide")}
       transparent
       // A Modal is its own Android window, and by default that window is *not* laid out
@@ -717,8 +707,9 @@ function relativeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
-type MessageViewModel = AppState["workspaceAgent"]["messages"][number];
-type TagViewModel = Extract<
+/** Exported for `griot/bridge/ThinkTankBoard`, which renders the same replies inline. */
+export type MessageViewModel = AppState["workspaceAgent"]["messages"][number];
+export type TagViewModel = Extract<
   MessageViewModel["segments"][number],
   { kind: "tag" }
 >["tag"];
@@ -947,8 +938,12 @@ function MessageBody({
  * own completion message, or "FAILED" with its reason. A chip with nothing addable behind
  * it (an unresolvable card reference, a link that isn't a URL) shows no `+` at all and
  * says why, rather than offering a button that would quietly do nothing.
+ *
+ * Exported: `ThinkTankBoard` renders the same replies inline on the Bridge and reuses
+ * this rather than a second copy — a chip that added a card correctly in one surface and
+ * not the other would be a bug two implementations could silently disagree about.
  */
-function TagChip({
+export function TagChip({
   theme,
   tag,
   controller,
@@ -1034,8 +1029,10 @@ function TagChip({
  * switched on. The wording is deliberately "consulted", not "found" or "saved": these
  * are the model's own reading, not research candidates the user kept, which still come
  * only from the app's own search path.
+ *
+ * Exported for `ThinkTankBoard`, which owes the same truthfulness to its posts.
  */
-function SourceReceipts({
+export function SourceReceipts({
   theme,
   citations,
 }: {

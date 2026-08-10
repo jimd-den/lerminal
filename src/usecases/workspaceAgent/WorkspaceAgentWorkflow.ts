@@ -737,6 +737,50 @@ export class WorkspaceAgentWorkflow {
     });
   }
 
+  /**
+   * Asks the same persona the same question again, producing a fresh, independent reply
+   * rather than editing the old one — a second attempt is a new post, not a correction of
+   * the transcript, so the first reply stays exactly as it was said.
+   *
+   * Finds the nearest preceding `user` message and resends it to just this reply's
+   * persona. A message with no persona (GRIOT, the single default voice, always carries
+   * one) or no preceding question has nothing to retry.
+   */
+  async retryReply(messageId: string): Promise<void> {
+    const message = this.current.messages.find(m => m.id === messageId);
+    if (!message || message.speaker !== "assistant" || !message.personaId) return;
+    const priorQuestion = this.nearestPrecedingUserText(messageId);
+    if (!priorQuestion) return;
+    await this.sendMessage(priorQuestion, { speakerIds: [message.personaId] });
+  }
+
+  /**
+   * Asks the persona that wrote a reply to look at it again — the "thinking" follow-up.
+   * Built the same way {@link retryReply} is: a specially-worded message to exactly one
+   * speaker, through the same `sendMessage` every other send goes through. Nothing new is
+   * created by this; it is a question like any other, and the answer is a new post.
+   */
+  async rethinkReply(messageId: string): Promise<void> {
+    const message = this.current.messages.find(m => m.id === messageId);
+    if (!message || message.speaker !== "assistant" || !message.personaId) return;
+    const said = message.rawText ?? message.text;
+    await this.sendMessage(
+      `Look again at what you just said: "${said}". Is it actually right? Reconsider it and say plainly if you'd revise anything, and what.`,
+      { speakerIds: [message.personaId] }
+    );
+  }
+
+  /** The nearest `user` message before this one — what a reply was actually answering. */
+  private nearestPrecedingUserText(messageId: string): string | null {
+    const index = this.current.messages.findIndex(m => m.id === messageId);
+    if (index === -1) return null;
+    for (let i = index - 1; i >= 0; i -= 1) {
+      const candidate = this.current.messages[i];
+      if (candidate.speaker === "user") return candidate.text;
+    }
+    return null;
+  }
+
   /** The tag a `+` belongs to, or undefined — never a tag from a different message. */
   private findTag(messageId: string, tagId: string): ParsedAgentTag | undefined {
     const message = this.current.messages.find(m => m.id === messageId);
