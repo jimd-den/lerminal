@@ -28,6 +28,7 @@ import {
   SpaceScreen,
 } from "./griot/screens";
 import { SettingsScreen } from "./griot/SettingsScreen";
+import { BridgeScreen } from "./griot/bridge";
 import { resolveGriotTheme } from "./griot/theme";
 import { useReducedMotion } from "./useReducedMotion";
 
@@ -127,6 +128,12 @@ export function MainLayout({ controller }: { controller: GriotController }) {
           onOpenSettings={nav.openSettings}
         />
       );
+    }
+
+    // The master situation display. A place, not a sheet: it is the state of the whole
+    // workspace rather than something scoped to the screen you came from.
+    if (nav.place === "bridge") {
+      return <BridgeScreen controller={controller} state={state} theme={theme} />;
     }
 
     // Settings is a full screen rather than a sheet, so it occupies the slot like any place.

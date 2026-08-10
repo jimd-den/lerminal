@@ -13,6 +13,7 @@ import { MissionEditorSheet } from "./MissionEditorSheet";
 import { GapReportSheet } from "./GapReportSheet";
 import { ConversationSheet } from "./ConversationSheet";
 import { CaptureSheet } from "./CaptureSheet";
+import { CommissionSheet } from "./bridge";
 
 /**
  * # Modal Stack
@@ -63,6 +64,7 @@ export function ModalStack({
       <MissionEditorSheet controller={controller} state={state} theme={theme} />
       <GapReportSheet controller={controller} state={state} theme={theme} />
       <ConversationSheet controller={controller} state={state} theme={theme} />
+      <CommissionSheet controller={controller} state={state} theme={theme} />
       <CaptureSheet
         controller={controller}
         state={state}

@@ -8,6 +8,7 @@ import { ReviewSessionState } from "../../usecases/review/ReviewSession";
 import { GapReport } from "../../usecases/report/GapReportInteractor";
 import { WorkspaceAgentState } from "../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
 import { WorkspacePulseObservation } from "../../usecases/workspaceAgent/observeWorkspace";
+import { BridgeState } from "../../usecases/bridge/BridgeWorkflow";
 import { presentWorkspaceAgent, presentWorkspacePulse } from "./WorkspaceAgentPresenter";
 
 /**
@@ -43,6 +44,8 @@ export interface PresentAppStateInput {
   workspaceAgentFocusCardTitle?: string | null;
   /** Compact "Linked notes" list for the currently open card — see `AppState`. */
   linkedCardsForOpenCard: Array<{ cardId: string; title: string; relation?: string }>;
+  /** The watch rotation's own state, passed through — see `AppState.bridge`. */
+  bridge: BridgeState;
 }
 
 export function presentAppState(input: PresentAppStateInput): AppState {
@@ -157,5 +160,11 @@ export function presentAppState(input: PresentAppStateInput): AppState {
       domain.cards,
       domain.roundtables,
     ),
+
+    // --- Owned by BridgeWorkflow ---
+    // Passed through rather than projected: the panel's projection needs a `now` to
+    // compute contact ages against, and this function must stay free of the clock so the
+    // same inputs always yield the same view model. See `BridgePresenter.presentBridge`.
+    bridge: input.bridge,
   };
 }

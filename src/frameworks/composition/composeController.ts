@@ -21,6 +21,7 @@ import { AsyncStorageOperationLogRepository } from "../storage/AsyncStorageOpera
 import { AsyncStorageCardLinkRepository } from "../storage/AsyncStorageCardLinkRepository";
 import { AsyncStorageConversationRepository } from "../storage/AsyncStorageConversationRepository";
 import { AsyncStorageRoundtableRepository } from "../storage/AsyncStorageRoundtableRepository";
+import { AsyncStorageBridgeRepository } from "../storage/AsyncStorageBridgeRepository";
 import { ExpoNotificationGateway } from "../notifications/ExpoNotificationGateway";
 import { SilentNotificationGateway } from "../notifications/SilentNotificationGateway";
 import { OpenRouterAgentGateway } from "../network/OpenRouterAgentGateway";
@@ -71,6 +72,7 @@ export function composeController(options: CompositionOptions = {}): GriotContro
     cardLinkRepo: new AsyncStorageCardLinkRepository(store, storeOptions),
     conversationRepo: new AsyncStorageConversationRepository(store, storeOptions),
     roundtableRepo: new AsyncStorageRoundtableRepository(store, storeOptions),
+    bridgeRepo: new AsyncStorageBridgeRepository(store, storeOptions),
     // Expo Go has no native notification module, so it gets silence rather than a crash;
     // every real build — EAS APK, dev build, `expo run:android` — gets the real thing.
     // Nothing else about the app changes between the two.

@@ -8,12 +8,16 @@ import { Text } from "./Typography";
 import { GriotTheme } from "./theme";
 
 /**
- * Capture used to be a fourth member of this union; it is now a floating modal (see
- * `CaptureAffordance` below), for the same reason the assistant is not a fifth one — a
+ * Capture used to be a member of this union; it is now a floating modal (see
+ * `CaptureAffordance` below), for the same reason the *conversation* is not a member — a
  * modal is scoped to whatever screen it was opened from, and routing to it would mean
  * leaving that scope behind.
+ *
+ * `bridge` is a place rather than a modal for exactly the opposite reason: it is not
+ * scoped to anything you were looking at. It is the state of the whole workspace, standing
+ * on its own, and something you go *to* and stay in while your crew works.
  */
-export type CorePlace = "deck" | "library" | "more";
+export type CorePlace = "deck" | "library" | "bridge" | "more";
 
 export function TextButton({ label, onPress, theme }: { label: string; onPress: () => void; theme: GriotTheme }) {
   return (
@@ -209,6 +213,8 @@ export function BottomNavigation({ place, theme, onChange }: { place: CorePlace;
   const items: { id: CorePlace; label: string; glyph: string }[] = [
     { id: "deck", label: "Deck", glyph: ">_" },
     { id: "library", label: "Library", glyph: "[]" },
+    // A scope, because that is what the place is: readings on a display.
+    { id: "bridge", label: "Bridge", glyph: "()" },
     { id: "more", label: "More", glyph: "::" },
   ];
   return (

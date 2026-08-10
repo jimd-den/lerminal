@@ -145,6 +145,13 @@ import {
   WorkspaceAgentWorkflow,
 } from "../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
 import { observeWorkspace } from "../../usecases/workspaceAgent/observeWorkspace";
+import {
+  BridgeState,
+  BridgeWorkflow,
+  StationDraft,
+} from "../../usecases/bridge/BridgeWorkflow";
+import { StationDuty } from "../../entities/bridge";
+import { BridgeRepository } from "../../usecases/ports/repositories/BridgeRepository";
 import { WorkspaceAgentViewModel, WorkspacePulseViewModel } from "./WorkspaceAgentPresenter";
 import {
   FontCategory,
@@ -329,6 +336,14 @@ export interface AppState {
   workspacePulse: WorkspacePulseViewModel | null;
   /** The "Ask GRIOT" conversation sheet's full view model. */
   workspaceAgent: WorkspaceAgentViewModel;
+  /**
+   * The bridge: who is on watch, what they have found, and the ship's counted vitals.
+   *
+   * Passed through raw rather than pre-projected, because the panel's projection needs a
+   * `now` to compute ages against and `getState` has no business reading the clock — see
+   * `BridgePresenter.presentBridge`.
+   */
+  bridge: BridgeState;
 }
 
 /** What a completed run hands to the undo log once its cards have settled. */
@@ -359,6 +374,8 @@ export interface GriotControllerDeps {
   /** Persists card-to-card links created via the Workspace Agent's `link_cards` tool. */
   cardLinkRepo?: CardLinkRepository;
   conversationRepo?: ConversationRepository;
+  /** Optional: without one the bridge still works, but the crew resets every launch. */
+  bridgeRepo?: BridgeRepository;
   /** Optional: without one, long jobs finish quietly instead of notifying. */
   notifications?: NotificationGateway;
   /** Resolves a font family name to a downloadable file. Optional so tests can omit it. */
@@ -455,6 +472,7 @@ export class GriotController {
   private operations: OperationsWorkflow;
   private review: ReviewSession;
   private workspaceAgent: WorkspaceAgentWorkflow;
+  private bridge: BridgeWorkflow;
 
   /** The session's two state halves, addressed directly for readability at call sites. */
   private get domain() {
@@ -616,7 +634,56 @@ export class GriotController {
     this.operations = this.buildOperationsWorkflow(deps);
     this.review = this.buildReviewSession(deps);
     this.workspaceAgent = this.buildWorkspaceAgentWorkflow(deps);
+    this.bridge = this.buildBridgeWorkflow(deps);
 
+  }
+
+  /**
+   * Wires the bridge's watch rotation.
+   *
+   * Two things it deliberately shares with the Workspace Agent, and one it does not:
+   *
+   * - It dispatches through the **same** `dispatchWorkspaceAgentTool`, so an order given
+   *   on the scope lands on the same interactors, writes the same operation receipts, and
+   *   is undone by the same undo as everything else. There is no second way to change the
+   *   card graph.
+   * - It observes with the **same** `observeWorkspace`, so the pulse banner and the sensor
+   *   station can never disagree about the same workspace.
+   * - It does **not** share the conversation's context. A watch is about the workspace, not
+   *   about whatever card happens to be open, so its dispatch context is deliberately the
+   *   plain workspace root.
+   */
+  private buildBridgeWorkflow(deps: GriotControllerDeps): BridgeWorkflow {
+    return new BridgeWorkflow({
+      host: {
+        onChange: () => this.emit(),
+        activeWorkspaceId: () => this.domain.activeWorkspaceId,
+        cards: () => this.domain.cards,
+        apiKey: () => this.domain.openRouterKey ?? "",
+        model: () => this.domain.selectedModel,
+        systemPrompt: () => this.agentPromptBody("workspace-agent"),
+        personaFor: (id) => {
+          const profile = this.domain.assistantProfiles.find((p) => p.id === id);
+          if (!profile) return undefined;
+          return {
+            name: profile.name,
+            model: resolveProfileModel(profile, this.domain.selectedModel),
+            systemPrompt: profile.systemPrompt,
+          };
+        },
+        // The workspace root, not the open card: a watch reports on the workspace, and
+        // scoping its orders to whatever the captain last tapped would put a station's
+        // findings somewhere they were never about.
+        dispatchContext: () => ({
+          selectedCardIds: [],
+          currentGroupId: null,
+        }),
+      },
+      repo: deps.bridgeRepo,
+      agentGateway: deps.agentGateway,
+      observe: observeWorkspace,
+      dispatchTool: (tool, context) => this.dispatchWorkspaceAgentTool(tool, context),
+    });
   }
 
   /**
@@ -960,6 +1027,7 @@ export class GriotController {
           (card) => card.id === this.workspaceAgent.state.context.openCardId,
         )?.title ?? null,
       linkedCardsForOpenCard: this.computeLinkedCardsForOpenCard(),
+      bridge: this.bridge.state,
     });
   }
 
@@ -2669,6 +2737,93 @@ export class GriotController {
   /** Chooses which persona answers the next message. */
   setWorkspaceAgentPersona(personaId: string): void {
     this.workspaceAgent.setActivePersona(personaId);
+  }
+
+  // --- The Bridge (delegated to BridgeWorkflow) ---
+
+  /**
+   * Come to the bridge: load the crew and the scope, then run whatever watch is due.
+   *
+   * Safe to call on every visit and on every workspace change — `on-report` watches are
+   * cooldown-gated in the domain, so arriving repeatedly costs nothing.
+   */
+  async openBridge(): Promise<void> {
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) return;
+    await this.bridge.open(workspaceId);
+  }
+
+  /**
+   * One tick of the watch rotation. Called on an interval by the bridge screen; the
+   * workflow decides what, if anything, is actually due.
+   */
+  async runDueWatches(): Promise<void> {
+    await this.bridge.runDueWatches(false);
+  }
+
+  /** Stands one station's watch immediately, whatever its cadence. */
+  async standWatch(stationId: string): Promise<void> {
+    await this.bridge.runWatch(stationId);
+  }
+
+  /**
+   * The captain gave an order on a contact. This is the only path from the scope to the
+   * card graph, and it lands on the same interactors as everything else — see
+   * {@link dispatchWorkspaceAgentTool}.
+   */
+  async giveOrder(contactId: string, orderId: string): Promise<void> {
+    await this.bridge.giveOrder(contactId, orderId);
+  }
+
+  /** Clears a reading, and everything expanded from it, off the scope. */
+  async dismissContact(contactId: string): Promise<void> {
+    await this.bridge.dismissContact(contactId);
+  }
+
+  /** Marks a reading seen, so it stops being escalated as ignored. */
+  async acknowledgeContact(contactId: string): Promise<void> {
+    await this.bridge.acknowledge(contactId);
+  }
+
+  /** Shows only one station's readings, or all of them again. Tapping the same one clears it. */
+  focusStation(stationId: string | null): void {
+    this.bridge.focusStation(stationId);
+  }
+
+  openCommission(duty?: StationDuty): void {
+    this.bridge.openCommission(duty);
+  }
+
+  closeCommission(): void {
+    this.bridge.closeCommission();
+  }
+
+  updateStationDraft(changes: Partial<StationDraft>): void {
+    this.bridge.updateDraft(changes);
+  }
+
+  /** Puts the drafted post on watch. It reports at once, so commissioning visibly lands. */
+  async commissionStation(): Promise<void> {
+    const station = await this.bridge.commission();
+    if (station) this.showToast(`${station.name} is on watch`);
+  }
+
+  async relieveStation(stationId: string): Promise<void> {
+    await this.bridge.relieve(stationId);
+  }
+
+  async resumeStation(stationId: string): Promise<void> {
+    await this.bridge.resume(stationId);
+  }
+
+  /** Removes a post and every reading it ever raised. Nothing in the workspace is touched. */
+  async decommissionStation(stationId: string): Promise<void> {
+    await this.bridge.decommission(stationId);
+    this.showToast("Station decommissioned");
+  }
+
+  clearBridgeError(): void {
+    this.bridge.clearError();
   }
 
   // --- Conversation history ---

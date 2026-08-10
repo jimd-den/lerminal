@@ -108,10 +108,15 @@ describe("Ask affordance", () => {
     expect(shell).toContain("controller.openWorkspaceAgent()");
   });
 
-  it("is not a fifth navigation place", () => {
-    // The routing union now has three members; nothing routes to the agent.
-    expect(components).toContain('export type CorePlace = "deck" | "library" | "more";');
+  it("is not a navigation place", () => {
+    // The union gained `bridge`, which *is* a place: it shows the state of the whole
+    // workspace and is not scoped to the screen you came from. The conversation still is
+    // not one, and nothing routes to the agent.
+    expect(components).toContain(
+      'export type CorePlace = "deck" | "library" | "bridge" | "more";'
+    );
     expect(components).not.toContain('id: "agent"');
+    expect(components).not.toContain('id: "conversation"');
   });
 
   it("stands down for the sheet it opens, for the capture sheet, and for the selection tray", () => {
