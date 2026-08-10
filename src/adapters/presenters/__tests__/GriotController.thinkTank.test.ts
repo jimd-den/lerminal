@@ -8,6 +8,7 @@ import { MemoryCardTypeRepository } from "../../repositories/MemoryCardTypeRepos
 import { MemoryPromptPresetRepository } from "../../repositories/MemoryPromptPresetRepository";
 import { MemoryAssistantProfileRepository } from "../../repositories/MemoryAssistantProfileRepository";
 import { MemoryRoundtableRepository } from "../../repositories/MemoryRoundtableRepository";
+import { MemoryConversationRepository } from "../../repositories/MemoryConversationRepository";
 import {
   AgentGateway,
   AgentModel,
@@ -20,21 +21,30 @@ import { ExtractionGateway } from "../../../usecases/ports/gateways/ExtractionGa
 import { Card } from "../../../entities/card";
 
 /**
- * # Think Tank — convening a table from a topic, not a cast, and the board it lives on
+ * # Think Tank — a separate history, proved by actually switching between two of them
  *
  * `conveneThinkTank` is the Bridge's front door onto the table: one topic in, and the
- * whole "design a panel, ask it, make it the board's active table" sequence runs without
- * the caller having to orchestrate any of it — and, deliberately, without opening the Ask
- * GRIOT modal at all, since the whole point is an inline message board on some phones a
- * modal is real friction on. These tests drive it through the real `GriotController`, the
- * same way the existing Workspace Agent tests do, so the roundtable and transcript that
- * come back are what a real send would produce.
+ * whole "design a panel, ask it, make it the board's active thread" sequence runs without
+ * the caller orchestrating any of it — and, deliberately, without touching the ambient Ask
+ * GRIOT conversation or its modal at all. `ThinkTankWorkflow` is its own store, over the
+ * same `ConversationRepository` the ambient conversation persists through, tagged with a
+ * `roundtableId` so the two never collide in the same records.
+ *
+ * The suite's centrepiece is "convening a second table leaves the first exactly as it
+ * was" — that is the actual claim "separate history" makes, and the only way to know it
+ * holds is to convene two, switch between them, and check.
  */
 
 class StubAgentGateway implements AgentGateway {
   designCalls: { brief: string; systemPrompt?: string }[] = [];
-  turnCalls: { briefing: string }[] = [];
+  turnCalls: { briefing: string; model: string }[] = [];
   nextTurnText = "A reply.";
+  /** Lets a test script different replies for consecutive turns. */
+  turnTextQueue: string[] = [];
+  members: { name: string; systemPrompt: string }[] = [
+    { name: "Advocate", systemPrompt: "Argue for the idea." },
+    { name: "Skeptic", systemPrompt: "Push back on the idea." },
+  ];
 
   async ask(query: string, contextCards: Card[], apiKey: string, model: string): Promise<AgentAskResult> {
     return { cards: [], isLocalFallback: true };
@@ -42,18 +52,19 @@ class StubAgentGateway implements AgentGateway {
   async fetchModels(): Promise<AgentModel[]> {
     return [];
   }
-  async designWorkspaceAgentTurn(input: { briefing: string }): Promise<WorkspaceAgentTurnResult> {
-    this.turnCalls.push({ briefing: input.briefing });
-    return { text: this.nextTurnText, webCitations: [] };
+  async designWorkspaceAgentTurn(input: {
+    briefing: string;
+    model: string;
+  }): Promise<WorkspaceAgentTurnResult> {
+    this.turnCalls.push({ briefing: input.briefing, model: input.model });
+    const text = this.turnTextQueue.shift() ?? this.nextTurnText;
+    return { text, webCitations: [] };
   }
   async designRoundtable(input: { brief: string; systemPrompt?: string }): Promise<RoundtableDesignResponse> {
     this.designCalls.push(input);
     return {
-      nameSuggestion: "The panel",
-      members: [
-        { name: "Advocate", description: "Argues for it", systemPrompt: "Argue for the idea." },
-        { name: "Skeptic", description: "Argues against it", systemPrompt: "Push back on the idea." },
-      ],
+      nameSuggestion: `Table for "${input.brief.slice(0, 20)}"`,
+      members: this.members.map(m => ({ ...m, description: m.name })),
     };
   }
 }
@@ -83,6 +94,7 @@ async function buildController() {
     promptPresetRepo: new MemoryPromptPresetRepository(),
     assistantProfileRepo: new MemoryAssistantProfileRepository(),
     roundtableRepo: new MemoryRoundtableRepository(),
+    conversationRepo: new MemoryConversationRepository(),
     searchGateway: new StubSearchGateway(),
     extractionGateway: new StubExtractionGateway(),
   });
@@ -90,9 +102,12 @@ async function buildController() {
   await controller.init();
   controller.setOpenRouterKey("sk-test-key");
   controller.setSelectedModel("test/model");
+  await controller.openThinkTank();
 
   return { controller, agentGateway };
 }
+
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
 describe("conveneThinkTank", () => {
   it("designs a panel from a bare topic, no cast required", async () => {
@@ -104,68 +119,43 @@ describe("conveneThinkTank", () => {
     expect(agentGateway.designCalls[0].brief).toBe(
       "Whether spaced repetition beats massed practice"
     );
-    expect(controller.getState().roundtables).toHaveLength(1);
   });
 
-  it("puts the topic to the new table without opening the Ask GRIOT modal", async () => {
+  it("becomes the board's active thread and asks every member once", async () => {
     const { controller, agentGateway } = await buildController();
-    // A first launch opens the sheet by itself; close it so the assertion below covers
-    // `conveneThinkTank`'s own behaviour, not that one-off.
+
+    await controller.conveneThinkTank("A random topic");
+
+    const active = controller.getState().thinkTank.active;
+    expect(active).not.toBeNull();
+    expect(active!.roundtableName).toContain("A random topic");
+    expect(active!.messages.some(m => m.speaker === "user" && m.text === "A random topic")).toBe(true);
+    expect(agentGateway.turnCalls).toHaveLength(2);
+    expect(agentGateway.turnCalls.every(call => call.briefing.includes("A random topic"))).toBe(true);
+  });
+
+  it("never opens the Ask GRIOT modal, or its conversation", async () => {
+    const { controller } = await buildController();
     controller.closeWorkspaceAgent();
 
     await controller.conveneThinkTank("A random topic");
-    // `askRoundtable` is fire-and-forget by design — see its own doc comment — so the
-    // model turns it triggers are still in flight when `conveneThinkTank` returns.
-    await new Promise(resolve => setTimeout(resolve, 0));
 
     const state = controller.getState();
-    // The conversation is genuinely live — sends need that — but the modal window that
-    // shows it never opens. That split is the whole point.
-    expect(state.workspaceAgent.isOpen).toBe(true);
     expect(state.isAskGriotSheetOpen).toBe(false);
-    // The opening question still reached both members, in one turn each.
-    expect(agentGateway.turnCalls).toHaveLength(2);
-    expect(agentGateway.turnCalls.every(call => call.briefing.includes("A random topic"))).toBe(
-      true
-    );
-  });
-
-  it("becomes the Bridge board's active table", async () => {
-    const { controller } = await buildController();
-
-    await controller.conveneThinkTank("A random topic");
-
-    const roundtableId = controller.getState().roundtables[0].id;
-    expect(controller.getState().activeThinkTankRoundtableId).toBe(roundtableId);
-  });
-
-  it("dismissing the board clears the active table without touching the transcript", async () => {
-    const { controller, agentGateway } = await buildController();
-
-    await controller.conveneThinkTank("A random topic");
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    controller.dismissThinkTank();
-
-    expect(controller.getState().activeThinkTankRoundtableId).toBeNull();
-    // The transcript itself survives — dismissing hides the board, it doesn't delete
-    // anything.
-    expect(controller.getState().workspaceAgent.messages.length).toBeGreaterThan(0);
+    expect(state.workspaceAgent.isOpen).toBe(false);
+    expect(state.workspaceAgent.messages).toHaveLength(0);
   });
 
   it("does nothing for a blank topic", async () => {
     const { controller, agentGateway } = await buildController();
-    controller.closeWorkspaceAgent();
 
     await controller.conveneThinkTank("   ");
 
     expect(agentGateway.designCalls).toHaveLength(0);
-    expect(controller.getState().workspaceAgent.isOpen).toBe(false);
+    expect(controller.getState().thinkTank.active).toBeNull();
   });
 
   it("reports, rather than throws, when the provider can't design a panel", async () => {
-    // A gateway with no `designRoundtable` at all — the honest "this build can't do that"
-    // case `CreateRoundtableInteractor` is built to report.
     const bareGateway: AgentGateway = {
       async ask() {
         return { cards: [], isLocalFallback: true };
@@ -184,77 +174,207 @@ describe("conveneThinkTank", () => {
       promptPresetRepo: new MemoryPromptPresetRepository(),
       assistantProfileRepo: new MemoryAssistantProfileRepository(),
       roundtableRepo: new MemoryRoundtableRepository(),
+      conversationRepo: new MemoryConversationRepository(),
       searchGateway: new StubSearchGateway(),
       extractionGateway: new StubExtractionGateway(),
     });
     await controller.init();
     controller.setOpenRouterKey("sk-test-key");
-    controller.closeWorkspaceAgent();
 
     await controller.conveneThinkTank("Anything");
 
-    expect(controller.getState().roundtables).toHaveLength(0);
-    expect(controller.getState().workspaceAgent.isOpen).toBe(false);
+    expect(controller.getState().thinkTank.active).toBeNull();
     expect(controller.getState().toastMessage).toBeTruthy();
   });
 });
 
-describe("retryReply and rethinkReply", () => {
-  it("retry re-asks the same persona the same question, as a new post", async () => {
+describe("a separate history — the actual claim", () => {
+  it("convening a second table leaves the first exactly as it was", async () => {
     const { controller, agentGateway } = await buildController();
-    await controller.conveneThinkTank("A random topic");
-    await new Promise(resolve => setTimeout(resolve, 0));
 
-    const before = controller.getState().workspaceAgent.messages;
-    const firstReply = before.find(m => m.speaker === "assistant")!;
-    const messagesBeforeRetry = before.length;
-    agentGateway.turnCalls = [];
+    await controller.conveneThinkTank("First topic");
+    const firstId = controller.getState().thinkTank.active!.roundtableId;
+    const firstMessagesBefore = controller.getState().thinkTank.active!.messages;
 
-    controller.retryReply(firstReply.id);
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await controller.conveneThinkTank("Second topic");
+    const secondId = controller.getState().thinkTank.active!.roundtableId;
 
-    const after = controller.getState().workspaceAgent.messages;
-    // A retry is an ordinary send: the question is re-posted, then the new reply — two
-    // new posts, and the original reply is untouched rather than edited in place.
-    expect(after.length).toBe(messagesBeforeRetry + 2);
-    expect(after.find(m => m.id === firstReply.id)?.text).toBe(firstReply.text);
-    // Only the one persona was re-asked, not the whole panel.
-    expect(agentGateway.turnCalls).toHaveLength(1);
-    expect(agentGateway.turnCalls[0].briefing).toContain("A random topic");
+    expect(secondId).not.toBe(firstId);
+    expect(controller.getState().thinkTank.active!.roundtableId).toBe(secondId);
+    // Two distinct rows in history, not one overwritten by the other.
+    expect(controller.getState().thinkTank.history.map(h => h.roundtableId).sort()).toEqual(
+      [firstId, secondId].sort()
+    );
+
+    await controller.setActiveThinkTank(firstId);
+
+    const restoredFirst = controller.getState().thinkTank.active!;
+    expect(restoredFirst.roundtableId).toBe(firstId);
+    expect(restoredFirst.messages.map(m => m.text)).toEqual(
+      firstMessagesBefore.map(m => m.text)
+    );
   });
 
-  it("rethink asks the persona to look at its own reply again", async () => {
+  it("posting to one active thread never reaches another", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    await controller.conveneThinkTank("First topic");
+    const firstId = controller.getState().thinkTank.active!.roundtableId;
+
+    await controller.conveneThinkTank("Second topic");
+    const secondId = controller.getState().thinkTank.active!.roundtableId;
+
+    controller.postToThinkTank(secondId, "more for the second table");
+    await flush();
+
+    await controller.setActiveThinkTank(firstId);
+    const first = controller.getState().thinkTank.active!;
+    expect(first.messages.some(m => m.text === "more for the second table")).toBe(false);
+  });
+
+  it("dismissing hides the board without touching the thread", async () => {
+    const { controller } = await buildController();
+    await controller.conveneThinkTank("A random topic");
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
+
+    controller.dismissThinkTank();
+
+    expect(controller.getState().thinkTank.active).toBeNull();
+    // Still in history, still reopenable with everything intact.
+    expect(controller.getState().thinkTank.history.some(h => h.roundtableId === roundtableId)).toBe(
+      true
+    );
+    await controller.setActiveThinkTank(roundtableId);
+    expect(controller.getState().thinkTank.active!.messages.length).toBeGreaterThan(0);
+  });
+
+  it("deleting a thread removes it from history and, if active, from the board", async () => {
+    const { controller } = await buildController();
+    await controller.conveneThinkTank("A random topic");
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
+
+    await controller.deleteThinkTankThread(roundtableId);
+
+    expect(controller.getState().thinkTank.active).toBeNull();
+    expect(controller.getState().thinkTank.history).toHaveLength(0);
+  });
+
+  it("survives a fresh controller reading the same store — real persistence, not just memory", async () => {
+    const conversationRepo = new MemoryConversationRepository();
+    const roundtableRepo = new MemoryRoundtableRepository();
+    const assistantProfileRepo = new MemoryAssistantProfileRepository();
+    const agentGateway = new StubAgentGateway();
+
+    const first = new GriotController({
+      cardRepo: new MemoryCardRepository(),
+      workspaceRepo: new MemoryWorkspaceRepository(),
+      settingsRepo: new MemorySettingsRepository(),
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
+      cardTypeRepo: new MemoryCardTypeRepository(),
+      promptPresetRepo: new MemoryPromptPresetRepository(),
+      assistantProfileRepo,
+      roundtableRepo,
+      conversationRepo,
+      searchGateway: new StubSearchGateway(),
+      extractionGateway: new StubExtractionGateway(),
+    });
+    await first.init();
+    first.setOpenRouterKey("sk-test-key");
+    await first.openThinkTank();
+    await first.conveneThinkTank("A random topic");
+    const workspaceId = first.getState().activeWorkspaceId!;
+
+    const second = new GriotController({
+      cardRepo: new MemoryCardRepository(),
+      workspaceRepo: new MemoryWorkspaceRepository(),
+      settingsRepo: new MemorySettingsRepository(),
+      agentGateway,
+      commandDefinitionRepo: new MemoryCommandDefinitionRepository(),
+      cardTypeRepo: new MemoryCardTypeRepository(),
+      promptPresetRepo: new MemoryPromptPresetRepository(),
+      assistantProfileRepo,
+      roundtableRepo,
+      conversationRepo,
+      searchGateway: new StubSearchGateway(),
+      extractionGateway: new StubExtractionGateway(),
+    });
+    await second.init();
+    await second.switchWorkspace(workspaceId);
+    await second.openThinkTank();
+
+    expect(second.getState().thinkTank.history).toHaveLength(1);
+    expect(second.getState().thinkTank.history[0].title).toContain("A random topic");
+  });
+});
+
+describe("retryThinkTankReply and rethinkThinkTankReply", () => {
+  it("retry re-asks the same voice the same question, as a new post", async () => {
     const { controller, agentGateway } = await buildController();
     await controller.conveneThinkTank("A random topic");
-    await new Promise(resolve => setTimeout(resolve, 0));
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
 
-    const firstReply = controller.getState().workspaceAgent.messages.find(
+    const before = controller.getState().thinkTank.active!.messages;
+    const firstReply = before.find(m => m.speaker === "assistant")!;
+    const countBefore = before.length;
+    agentGateway.turnCalls = [];
+
+    controller.retryThinkTankReply(roundtableId, firstReply.id);
+    await flush();
+
+    const after = controller.getState().thinkTank.active!.messages;
+    // A retry re-posts the question, then the new reply — the original stays verbatim.
+    expect(after.length).toBe(countBefore + 2);
+    expect(after.find(m => m.id === firstReply.id)?.text).toBe(firstReply.text);
+    expect(agentGateway.turnCalls).toHaveLength(1);
+  });
+
+  it("rethink asks the voice to look at its own reply again", async () => {
+    const { controller, agentGateway } = await buildController();
+    await controller.conveneThinkTank("A random topic");
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
+
+    const firstReply = controller.getState().thinkTank.active!.messages.find(
       m => m.speaker === "assistant"
     )!;
     agentGateway.turnCalls = [];
 
-    controller.rethinkReply(firstReply.id);
-    await new Promise(resolve => setTimeout(resolve, 0));
+    controller.rethinkThinkTankReply(roundtableId, firstReply.id);
+    await flush();
 
     expect(agentGateway.turnCalls).toHaveLength(1);
-    // The follow-up quotes what was actually said, not a generic "try again".
     expect(agentGateway.turnCalls[0].briefing).toContain(firstReply.text);
   });
 
   it("does nothing for a message with no persona", async () => {
     const { controller, agentGateway } = await buildController();
     await controller.conveneThinkTank("A random topic");
-    await new Promise(resolve => setTimeout(resolve, 0));
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
 
-    const userMessage = controller.getState().workspaceAgent.messages.find(
+    const userMessage = controller.getState().thinkTank.active!.messages.find(
       m => m.speaker === "user"
     )!;
     agentGateway.turnCalls = [];
 
-    controller.retryReply(userMessage.id);
-    controller.rethinkReply(userMessage.id);
-    await new Promise(resolve => setTimeout(resolve, 0));
+    controller.retryThinkTankReply(roundtableId, userMessage.id);
+    controller.rethinkThinkTankReply(roundtableId, userMessage.id);
+    await flush();
 
     expect(agentGateway.turnCalls).toHaveLength(0);
+  });
+});
+
+describe("postToThinkTank", () => {
+  it("asks every member of the thread's own panel again, in order", async () => {
+    const { controller, agentGateway } = await buildController();
+    await controller.conveneThinkTank("A random topic");
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
+    agentGateway.turnCalls = [];
+
+    controller.postToThinkTank(roundtableId, "a follow-up");
+    await flush();
+
+    expect(agentGateway.turnCalls).toHaveLength(2);
+    expect(agentGateway.turnCalls.every(call => call.briefing.includes("a follow-up"))).toBe(true);
   });
 });

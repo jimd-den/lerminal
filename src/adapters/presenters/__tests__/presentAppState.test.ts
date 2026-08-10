@@ -6,6 +6,7 @@ import {
 } from "../AppSessionStore";
 import { Card, createCard } from "../../../entities/card";
 import { EMPTY_BRIDGE_STATE } from "../../../usecases/bridge/BridgeWorkflow";
+import { EMPTY_THINK_TANK_STATE } from "../../../usecases/thinkTank/ThinkTankWorkflow";
 
 const card = (id: string, parentId?: string, type: Card["type"] = "note"): Card => ({
   ...createCard({ workspaceId: "w1", type, title: id, body: "b", parentId }),
@@ -55,6 +56,7 @@ function input(overrides: Partial<PresentAppStateInput> = {}): PresentAppStateIn
     workspaceAgentGroupTitle: null,
     linkedCardsForOpenCard: [],
     bridge: EMPTY_BRIDGE_STATE,
+    thinkTank: EMPTY_THINK_TANK_STATE,
     ...overrides,
   };
 }

@@ -63,6 +63,22 @@ export interface Conversation {
   tagActions: Record<string, ConversationTagAction>;
   createdAt: number;
   updatedAt: number;
+  /**
+   * The panel this conversation belongs to, when it is a think-tank thread rather than
+   * the ambient Ask GRIOT conversation — see `usecases/thinkTank/ThinkTankWorkflow`.
+   *
+   * Both live in the same store: a think tank *is* a conversation, just one that always
+   * has a fixed panel and never a per-turn card selection. Giving it a parallel entity
+   * and a parallel repository would duplicate the exact same "messages, tags, title,
+   * timestamps" shape for no reason a real difference justifies. This field is the only
+   * thing that actually distinguishes the two, and it is optional precisely because it is
+   * meaningless for every conversation that came before it.
+   *
+   * `roundtableName` is a snapshot, not a live lookup: a roundtable the user later
+   * deletes must not turn a saved thread's history entry into "Unknown table".
+   */
+  roundtableId?: string;
+  roundtableName?: string;
 }
 
 /** Longest title the history list can show without truncating mid-row. */
@@ -100,6 +116,9 @@ export interface CreateConversationParams {
   messages?: ConversationMessage[];
   tagActions?: Record<string, ConversationTagAction>;
   now?: number;
+  /** Set only for a think-tank thread — see {@link Conversation.roundtableId}. */
+  roundtableId?: string;
+  roundtableName?: string;
 }
 
 export function createConversation(params: CreateConversationParams): Conversation {
@@ -113,6 +132,8 @@ export function createConversation(params: CreateConversationParams): Conversati
     tagActions: params.tagActions ?? {},
     createdAt: now,
     updatedAt: now,
+    ...(params.roundtableId ? { roundtableId: params.roundtableId } : {}),
+    ...(params.roundtableName ? { roundtableName: params.roundtableName } : {}),
   };
 }
 
@@ -149,6 +170,19 @@ export function withMessages(
 /** Newest first — the order the history list reads in. */
 export function sortByRecency(conversations: Conversation[]): Conversation[] {
   return [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** Every think-tank thread among a workspace's conversations — see {@link Conversation.roundtableId}. */
+export function thinkTankThreads(conversations: Conversation[]): Conversation[] {
+  return conversations.filter(conversation => conversation.roundtableId !== undefined);
+}
+
+/** The one thread a specific roundtable has produced, if it has ever been asked anything. */
+export function threadForRoundtable(
+  conversations: Conversation[],
+  roundtableId: string
+): Conversation | undefined {
+  return conversations.find(conversation => conversation.roundtableId === roundtableId);
 }
 
 /**

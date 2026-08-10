@@ -99,14 +99,6 @@ export interface UiState {
   suggestedActionError: string | null;
   captureIntent: "note" | "paste" | "link" | "ask" | null;
   pendingGroupNavigation: string | null;
-  /**
-   * The table the Bridge's inline think-tank board is currently showing, or null when
-   * none has been convened yet. Unlike a consume-once signal, this simply *is* the
-   * board's state — set by {@link GriotController.conveneThinkTank}, cleared by
-   * {@link GriotController.dismissThinkTank}, and otherwise left alone so the board keeps
-   * showing the same table across re-renders.
-   */
-  activeThinkTankRoundtableId: string | null;
   isInstallingFont: boolean;
   /** Font-browser query, filter, results, and load state — see the controller's search. */
   fontQuery: string;
@@ -192,7 +184,6 @@ export function createInitialUiState(): UiState {
     suggestedActionError: null,
     captureIntent: null,
     pendingGroupNavigation: null,
-    activeThinkTankRoundtableId: null,
     isInstallingFont: false,
     fontQuery: "",
     fontCategory: null,

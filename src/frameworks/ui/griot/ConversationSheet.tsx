@@ -911,7 +911,7 @@ function MessageBody({
             key={segment.tag.id}
             theme={theme}
             tag={segment.tag}
-            controller={controller}
+            onAdd={() => void controller.addWorkspaceAgentTag(segment.tag.messageId, segment.tag.id)}
           />
         )
       )}
@@ -942,15 +942,21 @@ function MessageBody({
  * Exported: `ThinkTankBoard` renders the same replies inline on the Bridge and reuses
  * this rather than a second copy — a chip that added a card correctly in one surface and
  * not the other would be a bug two implementations could silently disagree about.
+ *
+ * Takes `onAdd` rather than a `controller` and dispatching itself: the ambient
+ * conversation adds a tag via `addWorkspaceAgentTag(messageId, tagId)`, a think-tank
+ * thread via `addThinkTankTag(roundtableId, messageId, tagId)` — different shapes on the
+ * same controller. A chip that called one of them by name could never render the other's
+ * tags; a chip that is handed "what pressing `+` does" can render either.
  */
 export function TagChip({
   theme,
   tag,
-  controller,
+  onAdd,
 }: {
   theme: GriotTheme;
   tag: TagViewModel;
-  controller: GriotController;
+  onAdd: () => void;
 }) {
   const settled = tag.status === "done" || tag.status === "failed";
   const disabled = !tag.canAdd || tag.status !== "offered";
@@ -976,7 +982,7 @@ export function TagChip({
           accessibilityHint="Creates this in your workspace. Nothing is created until you press this."
           accessibilityState={{ disabled }}
           disabled={disabled}
-          onPress={() => void controller.addWorkspaceAgentTag(tag.messageId, tag.id)}
+          onPress={onAdd}
           hitSlop={8}
           style={styles.tagAdd}
         >

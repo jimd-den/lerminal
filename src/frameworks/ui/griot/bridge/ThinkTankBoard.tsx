@@ -1,47 +1,42 @@
 import React, { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "../Typography";
 import {
   AppState,
   GriotController,
 } from "../../../../adapters/presenters/GriotController";
 import {
-  MessageViewModel,
-  SourceReceipts,
-  TagChip,
-} from "../ConversationSheet";
+  ThinkTankHistoryEntryViewModel,
+  ThinkTankMessageViewModel,
+} from "../../../../adapters/presenters/ThinkTankPresenter";
+import { SourceReceipts, TagChip, TagViewModel } from "../ConversationSheet";
 import { GriotTheme, Structure, TypeScale } from "../theme";
 import { ArrivalView } from "../../motion/communicative";
 
 /**
- * # Think Tank Board — the table, rendered inline
+ * # Think Tank Board — the table, rendered inline, with its own history
  *
  * ## Business Value & Purpose
- * `conveneThinkTank` used to hand its result to the Ask GRIOT `Modal`. On some phones a
- * modal stacked over the Bridge is real friction — its own window, its own keyboard
- * inset, one more layer between the captain and what the table just said. This renders
- * the same conversation as a strip of posts on the Bridge itself: no modal, nothing to
- * dismiss before you can see the next thing.
+ * A strip of posts on the Bridge itself: no modal, nothing to dismiss before you can see
+ * the next thing. `conveneThinkTank` never touches the Ask GRIOT modal at all — see
+ * `GriotController`'s own note on that.
  *
- * It is a **second view of the same data**, not a second conversation mechanism. Every
- * post here is a `WorkspaceAgentMessage` the workflow already produced; sending, tag
- * chips, and receipts all reuse exactly what `ConversationSheet` uses (`TagChip`,
- * `SourceReceipts`) so a card added from a board post and one added from the modal go
- * through the identical dispatch.
+ * ## A separate history, for real
+ * Every think tank is its own thread — `ThinkTankWorkflow`'s own store, keyed by the
+ * roundtable that produced it, persisted independently of the ambient conversation and of
+ * every other thread. That is what makes the history strip below honest: switching to a
+ * past table reopens *that* transcript, exactly as it was left, and the one you switched
+ * away from is still there, untouched, the next time you switch back.
  *
  * ## Groups and hashtags — what they actually are here
- * The board does not invent a topic-classification feature. A **group** is the table
- * itself — its name is the board's own header, and convening a different topic starts a
- * new one. A **hashtag** is `#PersonaName`: real, derived from who is actually speaking,
- * not a keyword guess. Both read as a message board without claiming structure the data
- * doesn't have.
+ * A **group** is a thread — the table's own name is the board's header, and switching
+ * threads switches groups. A **hashtag** is `#PersonaName`: real, derived from who is
+ * actually speaking, not a keyword guess.
  *
  * ## What "retry" and "rethink" are
- * Neither edits a reply in place — a second attempt is a new post, so the first answer
- * stays exactly as it was said:
- * - **RETRY** re-asks the same persona the same question, for an independent second take.
- * - **🤔 RETHINK** asks the persona to look at what it just said again and revise if it
- *   needs to. Both are ordinary sends — see `WorkspaceAgentWorkflow.retryReply`/`rethinkReply`.
+ * Neither edits a reply in place — a second attempt is a new post:
+ * - **RETRY** re-asks the same voice the same question, for an independent second take.
+ * - **🤔 RETHINK** asks the voice to look at what it just said again and revise if needed.
  */
 export function ThinkTankBoard({
   controller,
@@ -52,17 +47,11 @@ export function ThinkTankBoard({
   state: AppState;
   theme: GriotTheme;
 }) {
-  const activeId = state.activeThinkTankRoundtableId;
+  const thinkTank = state.thinkTank;
   const [draft, setDraft] = useState("");
   const [selected, setSelected] = useState<Record<string, Map<string, string>>>({});
 
-  // Nothing is shown until a table has actually been convened — an empty board would be
-  // one more thing to scroll past on a screen that is already an instrument panel.
-  if (!activeId) return null;
-
-  const view = state.workspaceAgent;
-  const table = view.roundtables.find(rt => rt.id === activeId);
-  const tableName = table?.name ?? "The table";
+  const active = thinkTank.active;
 
   const toggleSentence = (messageId: string, key: string, text: string) => {
     setSelected(prev => {
@@ -74,10 +63,14 @@ export function ThinkTankBoard({
   };
 
   const critique = (messageId: string) => {
+    if (!active) return;
     const picked = selected[messageId];
     if (!picked || picked.size === 0) return;
     const quoted = [...picked.values()].map(sentence => `"${sentence.trim()}"`).join(" ");
-    controller.askRoundtable(activeId, `Push back on this — is it actually right, and why or why not? ${quoted}`);
+    controller.postToThinkTank(
+      active.roundtableId,
+      `Push back on this — is it actually right, and why or why not? ${quoted}`
+    );
     setSelected(prev => {
       const next = { ...prev };
       delete next[messageId];
@@ -87,119 +80,218 @@ export function ThinkTankBoard({
 
   const post = () => {
     const text = draft.trim();
-    if (!text) return;
-    controller.askRoundtable(activeId, text);
+    if (!active || !text) return;
+    controller.postToThinkTank(active.roundtableId, text);
     setDraft("");
   };
 
   const pushDeeper = () => {
-    controller.askRoundtable(
-      activeId,
+    if (!active) return;
+    controller.postToThinkTank(
+      active.roundtableId,
       "Push this further — what specifically is worth researching next to settle it, and why?"
     );
   };
 
+  const confirmDelete = (entry: ThinkTankHistoryEntryViewModel) => {
+    Alert.alert(
+      `Delete "${entry.roundtableName}"?`,
+      "The transcript goes with it. The personas seated at it stay in your list.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => void controller.deleteThinkTankThread(entry.roundtableId),
+        },
+      ]
+    );
+  };
+
+  // Nothing active and nothing in history — the board has genuinely nothing to show, and
+  // stays out of the way rather than being one more empty panel to scroll past.
+  if (!active && thinkTank.history.length === 0) return null;
+
   return (
     <View style={[styles.board, { borderColor: theme.line, backgroundColor: theme.panelStrong }]}>
-      <View style={styles.head}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
-            THINK TANK
-          </Text>
-          <Text style={[styles.tableName, { color: theme.text, fontFamily: theme.fontSans }]}>
-            {tableName}
-          </Text>
-          <Text style={[styles.hashtag, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
-            #{hashtag(tableName)}
-          </Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss the think tank board"
-          accessibilityHint="Hides the board. Nothing said is deleted."
-          onPress={() => controller.dismissThinkTank()}
-          hitSlop={8}
-          style={styles.dismiss}
-        >
-          <Text style={[styles.dismissText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
-            ✕
-          </Text>
-        </Pressable>
-      </View>
+      <HistoryStrip
+        history={thinkTank.history}
+        theme={theme}
+        onSelect={id => void controller.setActiveThinkTank(id)}
+        onDelete={confirmDelete}
+      />
 
-      {view.isEmpty ? (
-        <Text style={[styles.empty, { color: theme.textMuted, fontFamily: theme.fontSans }]}>
-          Convening…
-        </Text>
+      {active ? (
+        <>
+          <View style={styles.head}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                THINK TANK
+              </Text>
+              <Text style={[styles.tableName, { color: theme.text, fontFamily: theme.fontSans }]}>
+                {active.roundtableName}
+              </Text>
+              <Text style={[styles.hashtag, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+                #{hashtag(active.roundtableName)}
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss the think tank board"
+              accessibilityHint="Hides the board. Nothing said is deleted."
+              onPress={() => controller.dismissThinkTank()}
+              hitSlop={8}
+              style={styles.dismiss}
+            >
+              <Text style={[styles.dismissText, { color: theme.textFaint, fontFamily: theme.fontMono }]}>
+                ✕
+              </Text>
+            </Pressable>
+          </View>
+
+          {active.isEmpty ? (
+            <Text style={[styles.empty, { color: theme.textMuted, fontFamily: theme.fontSans }]}>
+              Convening…
+            </Text>
+          ) : (
+            active.messages.map((message, index) => (
+              <Post
+                key={message.id}
+                roundtableId={active.roundtableId}
+                message={message}
+                theme={theme}
+                controller={controller}
+                index={index}
+                selected={selected[message.id]}
+                onToggleSentence={
+                  message.speaker === "assistant"
+                    ? (key, text) => toggleSentence(message.id, key, text)
+                    : undefined
+                }
+                onCritique={() => critique(message.id)}
+              />
+            ))
+          )}
+
+          {active.error ? (
+            <Text style={[styles.error, { color: theme.danger, fontFamily: theme.fontSans }]}>
+              {active.error}
+            </Text>
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Push the table to research further"
+            accessibilityState={{ disabled: active.isThinking }}
+            disabled={active.isThinking}
+            onPress={pushDeeper}
+            style={styles.pushDeeper}
+          >
+            <Text style={[styles.pushDeeperText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+              PUSH DEEPER — WHAT SHOULD WE RESEARCH NEXT? →
+            </Text>
+          </Pressable>
+
+          <View style={[styles.composer, { borderTopColor: theme.line }]}>
+            <TextInput
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="Post to the table…"
+              placeholderTextColor={theme.textFaint}
+              accessibilityLabel="Post to the think tank"
+              style={[styles.input, { color: theme.text, borderColor: theme.line, fontFamily: theme.fontSans }]}
+              multiline
+              onSubmitEditing={post}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={active.isThinking ? "Waiting for a reply" : "Post"}
+              accessibilityState={{ disabled: !draft.trim() || active.isThinking, busy: active.isThinking }}
+              onPress={post}
+              disabled={!draft.trim() || active.isThinking}
+              style={[
+                styles.postButton,
+                { backgroundColor: draft.trim() && !active.isThinking ? theme.accent : theme.panelMuted },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.postButtonText,
+                  {
+                    color: draft.trim() && !active.isThinking ? theme.accentInk : theme.textMuted,
+                    fontFamily: theme.fontMono,
+                  },
+                ]}
+              >
+                {active.isThinking ? "…" : "POST"}
+              </Text>
+            </Pressable>
+          </View>
+        </>
       ) : (
-        view.messages.map((message, index) => (
-          <Post
-            key={message.id}
-            message={message}
-            theme={theme}
-            controller={controller}
-            index={index}
-            selected={selected[message.id]}
-            onToggleSentence={
-              message.speaker === "assistant"
-                ? (key, text) => toggleSentence(message.id, key, text)
-                : undefined
-            }
-            onCritique={() => critique(message.id)}
-          />
-        ))
+        <Text style={[styles.empty, { color: theme.textMuted, fontFamily: theme.fontSans }]}>
+          Pick a past think tank above, or convene a new one.
+        </Text>
       )}
+    </View>
+  );
+}
 
-      {view.agentError ? (
-        <Text style={[styles.error, { color: theme.danger, fontFamily: theme.fontSans }]}>
-          {view.agentError}
-        </Text>
-      ) : null}
+/**
+ * The separate history, made visible: every table ever convened for this workspace, newest
+ * first, each one reopenable without disturbing whichever one is currently active. Always
+ * rendered when there is any history at all, even with nothing active — history you can
+ * only reach after convening something new isn't really separate from that new thing.
+ */
+function HistoryStrip({
+  history,
+  theme,
+  onSelect,
+  onDelete,
+}: {
+  history: ThinkTankHistoryEntryViewModel[];
+  theme: GriotTheme;
+  onSelect: (roundtableId: string) => void;
+  onDelete: (entry: ThinkTankHistoryEntryViewModel) => void;
+}) {
+  if (history.length === 0) return null;
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Push the table to research further"
-        accessibilityState={{ disabled: view.isThinking }}
-        disabled={view.isThinking}
-        onPress={pushDeeper}
-        style={styles.pushDeeper}
-      >
-        <Text style={[styles.pushDeeperText, { color: theme.accent, fontFamily: theme.fontMono }]}>
-          PUSH DEEPER — WHAT SHOULD WE RESEARCH NEXT? →
-        </Text>
-      </Pressable>
-
-      <View style={[styles.composer, { borderTopColor: theme.line }]}>
-        <TextInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="Post to the table…"
-          placeholderTextColor={theme.textFaint}
-          accessibilityLabel="Post to the think tank"
-          style={[styles.input, { color: theme.text, borderColor: theme.line, fontFamily: theme.fontSans }]}
-          multiline
-          onSubmitEditing={post}
-        />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={view.isThinking ? "Waiting for a reply" : "Post"}
-          accessibilityState={{ disabled: !draft.trim() || view.isThinking, busy: view.isThinking }}
-          onPress={post}
-          disabled={!draft.trim() || view.isThinking}
-          style={[
-            styles.postButton,
-            { backgroundColor: draft.trim() && !view.isThinking ? theme.accent : theme.panelMuted },
-          ]}
-        >
-          <Text
+  return (
+    <View style={styles.historyBlock}>
+      <Text style={[styles.eyebrow, { color: theme.accent, fontFamily: theme.fontMono }]}>
+        {history.length === 1 ? "1 THINK TANK" : `${history.length} THINK TANKS`}
+      </Text>
+      <View style={styles.historyRow}>
+        {history.map(entry => (
+          <Pressable
+            key={entry.roundtableId}
+            accessibilityRole="button"
+            accessibilityLabel={`Open "${entry.roundtableName}"`}
+            accessibilityState={{ selected: entry.active }}
+            onPress={() => onSelect(entry.roundtableId)}
+            onLongPress={() => onDelete(entry)}
+            delayLongPress={320}
             style={[
-              styles.postButtonText,
-              { color: draft.trim() && !view.isThinking ? theme.accentInk : theme.textMuted, fontFamily: theme.fontMono },
+              styles.historyChip,
+              {
+                borderColor: entry.active ? theme.accent : theme.line,
+                backgroundColor: entry.active ? theme.accentSoft : theme.panel,
+              },
             ]}
           >
-            {view.isThinking ? "…" : "POST"}
-          </Text>
-        </Pressable>
+            <Text
+              numberOfLines={1}
+              style={[styles.historyChipName, { color: theme.text, fontFamily: theme.fontMono }]}
+            >
+              {entry.roundtableName}
+            </Text>
+            <Text
+              style={[styles.historyChipMeta, { color: theme.textFaint, fontFamily: theme.fontMono }]}
+            >
+              {entry.messageCount} {entry.messageCount === 1 ? "post" : "posts"}
+            </Text>
+          </Pressable>
+        ))}
       </View>
     </View>
   );
@@ -230,6 +322,7 @@ function hashtag(name: string): string {
 }
 
 function Post({
+  roundtableId,
   message,
   theme,
   controller,
@@ -238,7 +331,8 @@ function Post({
   onToggleSentence,
   onCritique,
 }: {
-  message: MessageViewModel;
+  roundtableId: string;
+  message: ThinkTankMessageViewModel;
   theme: GriotTheme;
   controller: GriotController;
   index: number;
@@ -304,7 +398,14 @@ function Post({
                   </Text>
                 )
               ) : (
-                <TagChip key={segment.tag.id} theme={theme} tag={segment.tag} controller={controller} />
+                <TagChip
+                  key={segment.tag.id}
+                  theme={theme}
+                  tag={segment.tag as TagViewModel}
+                  onAdd={() =>
+                    void controller.addThinkTankTag(roundtableId, segment.tag.messageId, segment.tag.id)
+                  }
+                />
               )
             )}
             {message.streaming ? (
@@ -343,7 +444,7 @@ function Post({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Retry — ask the same question again"
-              onPress={() => controller.retryReply(message.id)}
+              onPress={() => controller.retryThinkTankReply(roundtableId, message.id)}
               style={[styles.postAction, { borderColor: theme.line }]}
             >
               <Text style={[styles.postActionText, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
@@ -353,7 +454,7 @@ function Post({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Ask this voice to reconsider what it just said"
-              onPress={() => controller.rethinkReply(message.id)}
+              onPress={() => controller.rethinkThinkTankReply(roundtableId, message.id)}
               style={[styles.postAction, { borderColor: theme.line }]}
             >
               <Text style={[styles.postActionText, { color: theme.textMuted, fontFamily: theme.fontMono }]}>
@@ -375,6 +476,19 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 10,
   },
+  historyBlock: { gap: 8 },
+  historyRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  historyChip: {
+    minHeight: Structure.tap,
+    borderWidth: 1,
+    borderRadius: Structure.radiusControl,
+    paddingHorizontal: 10,
+    justifyContent: "center",
+    maxWidth: 180,
+  },
+  historyChipName: { fontSize: TypeScale.meta, fontWeight: "800" },
+  historyChipMeta: { fontSize: TypeScale.label, fontWeight: "700", marginTop: 1 },
+
   head: { flexDirection: "row", alignItems: "flex-start" },
   eyebrow: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
   tableName: { fontSize: TypeScale.bodyStrong, fontWeight: "800", marginTop: 2 },

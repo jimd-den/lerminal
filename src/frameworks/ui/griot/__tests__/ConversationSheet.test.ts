@@ -52,7 +52,11 @@ describe("conversation sheet — inline tag chips", () => {
   const chip = slice("function TagChip", "function SourceReceipts");
 
   it("the chip's + is the only thing that can create anything", () => {
-    expect(chip).toContain("controller.addWorkspaceAgentTag(tag.messageId, tag.id)");
+    // `TagChip` itself never names a dispatch method — it only ever presses whatever
+    // `onAdd` it was handed, which is what lets `ThinkTankBoard` reuse it with a
+    // different dispatcher and still keep this exact same invariant.
+    expect(chip).toContain("onPress={onAdd}");
+    expect(chip).not.toMatch(/controller\./);
     // Exactly one dispatch call site in the whole sheet: rendering, streaming and
     // parsing a tag must all remain incapable of changing the workspace.
     expect(sheet.match(/controller\.addWorkspaceAgentTag\(/g)).toHaveLength(1);

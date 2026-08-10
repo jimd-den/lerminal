@@ -60,6 +60,8 @@ export function BridgeScreen({
   // workflow cooldown-gates `on-report` watches, so arriving repeatedly costs nothing.
   React.useEffect(() => {
     void controller.openBridge();
+    // The think tank board's own history — a separate load, from a separate workflow.
+    void controller.openThinkTank();
   }, [controller, state.activeWorkspaceId]);
 
   // The watch rotation. One coarse tick; the workflow decides what, if anything, is due.

@@ -1,10 +1,6 @@
 import { Card } from "../../entities/card";
 import { AgentToolIntent } from "../../entities/workspaceAgent";
-import {
-  AgentMessageSegment,
-  ParsedAgentTag,
-  parseAgentTags,
-} from "../../entities/agentTags";
+import { ParsedAgentTag, parseAgentTags } from "../../entities/agentTags";
 import { AgentGateway } from "../ports/gateways/AgentGateway";
 import { ConversationRepository } from "../ports/repositories/ConversationRepository";
 import {
@@ -16,7 +12,7 @@ import {
   sortByRecency,
   withMessages,
 } from "../../entities/conversation";
-import { WebCitation } from "../../entities/webCitation";
+import { AgentTurnMessage, AgentTagAction, AgentVoice } from "../../entities/agentMessage";
 import { resolveScopedContext } from "../agent/AgentScope";
 
 /**
@@ -85,78 +81,24 @@ export interface WorkspaceAgentSentContext {
  * reaches here is only what a turn actually needs, which keeps "who is talking" a
  * conversation concept rather than a settings one.
  */
-export interface WorkspaceAgentPersona {
-  id: string;
-  name: string;
-  /** Already resolved: the persona's pinned model, or the app's current selection. */
-  model: string;
-  /**
-   * The persona's behaviour body, replacing the user's `workspace-agent` body for this
-   * turn. Undefined means "speak as plain GRIOT". Only the *body* — the parent rules and
-   * the tag contract are appended downstream either way, so a persona can change the
-   * voice and never the trust boundary or what the app can parse.
-   */
-  systemPrompt?: string;
-}
+export type WorkspaceAgentPersona = AgentVoice;
 
 /** The always-present first voice: the user's own `workspace-agent` prompt, unmodified. */
 export const DEFAULT_PERSONA_ID = "griot";
 
-/** One line of the conversation. `pending` marks a user message with no reply yet. */
-export interface WorkspaceAgentMessage {
-  id: string;
-  speaker: "user" | "assistant";
-  text: string;
-  createdAt: number;
-  /** True for a just-sent user message while its reply is still in flight. */
-  pending?: boolean;
-  /**
-   * Who said it and on what model. Assistant messages only, and recorded from the persona
-   * the turn was actually sent as — never relabelled afterwards, so a transcript with
-   * three voices in it stays honest about which one said what, even after the user
-   * switches personas or re-pins a model.
-   */
-  personaId?: string;
-  personaName?: string;
-  model?: string;
-  /**
-   * Sources the model's provider actually consulted for *this* reply — the receipts.
-   *
-   * Attached to the message rather than held once per conversation so a later turn that
-   * consulted nothing cannot inherit an earlier turn's sources. Present only when real
-   * citations came back; never derived from the web-search toggle.
-   */
-  webCitations?: WebCitation[];
+/**
+ * One line of the conversation. `pending` marks a user message with no reply yet.
+ *
+ * Built on {@link AgentTurnMessage} — the shape every agent conversation shares, including
+ * the Bridge's think-tank threads (`usecases/thinkTank`) — plus the one thing specific to
+ * an *ambient*, selection-scoped conversation: what was actually sent with a turn.
+ */
+export interface WorkspaceAgentMessage extends AgentTurnMessage {
   /**
    * The bounded context that produced this reply. Set on assistant messages only, and
    * only from the values actually sent — see {@link WorkspaceAgentSentContext}.
    */
   sentContext?: WorkspaceAgentSentContext;
-  /**
-   * The model's own intermediate thinking for this reply, when the provider returned
-   * any. Absent for the overwhelming majority of models, and never filled in from the
-   * answer: no reasoning means no reasoning UI, not a placeholder.
-   */
-  reasoning?: string;
-  /**
-   * The reply split into prose and tags, re-parsed on every streamed update.
-   *
-   * Assistant messages only. Prose with no tags — the overwhelmingly common case for a
-   * small model — yields a single text segment and renders as plain conversation.
-   */
-  segments?: AgentMessageSegment[];
-  /**
-   * True while tokens are still arriving for this message. The sheet renders the partial
-   * text live; it never fabricates one, so a gateway that cannot stream simply leaves
-   * this false and the message appears complete when it appears at all.
-   */
-  streaming?: boolean;
-  /**
-   * The reply exactly as the model wrote it, tags and all — the string {@link segments}
-   * was parsed from. Kept so persistence stores the source rather than the rendering, and
-   * a conversation reopened from history re-parses into the same chips it had live.
-   */
-  rawText?: string;
 }
 
 /**
@@ -164,11 +106,7 @@ export interface WorkspaceAgentMessage {
  * {@link WorkspaceAgentState.tagActions}; absent means untouched, which is the only state
  * in which anything can be dispatched.
  */
-export interface WorkspaceAgentTagAction {
-  status: "pending" | "done" | "failed";
-  /** Truthful, factual outcome once the dispatch settles. */
-  resultMessage?: string;
-}
+export type WorkspaceAgentTagAction = AgentTagAction;
 
 /**
  * What the conversation is scoped to *right now* — informs the context chips and the

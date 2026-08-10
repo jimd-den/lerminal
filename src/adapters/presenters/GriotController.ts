@@ -152,6 +152,8 @@ import {
 } from "../../usecases/bridge/BridgeWorkflow";
 import { StationDuty } from "../../entities/bridge";
 import { BridgeRepository } from "../../usecases/ports/repositories/BridgeRepository";
+import { ThinkTankHost, ThinkTankWorkflow } from "../../usecases/thinkTank/ThinkTankWorkflow";
+import { ThinkTankViewModel } from "./ThinkTankPresenter";
 import { WorkspaceAgentViewModel, WorkspacePulseViewModel } from "./WorkspaceAgentPresenter";
 import {
   FontCategory,
@@ -278,12 +280,6 @@ export interface AppState {
    * *which* group; navigating there is the shell's job, so this is consumed once.
    */
   pendingGroupNavigation: string | null;
-  /**
-   * The table the Bridge's inline think-tank board is showing, or null. Set by
-   * {@link GriotController.conveneThinkTank}, cleared by
-   * {@link GriotController.dismissThinkTank}.
-   */
-  activeThinkTankRoundtableId: string | null;
   /** True while a Google font download is in flight. */
   isInstallingFont: boolean;
   /** The current font-browser query, owned here so results and query never disagree. */
@@ -356,6 +352,12 @@ export interface AppState {
    * `BridgePresenter.presentBridge`.
    */
   bridge: BridgeState;
+  /**
+   * The Bridge's think-tank board: whichever thread is active, plus the history of every
+   * table ever convened — its own store, its own repository reads, entirely separate from
+   * `workspaceAgent` above. See `usecases/thinkTank/ThinkTankWorkflow`'s doc for why.
+   */
+  thinkTank: ThinkTankViewModel;
 }
 
 /** What a completed run hands to the undo log once its cards have settled. */
@@ -485,6 +487,7 @@ export class GriotController {
   private review: ReviewSession;
   private workspaceAgent: WorkspaceAgentWorkflow;
   private bridge: BridgeWorkflow;
+  private thinkTank: ThinkTankWorkflow;
 
   /** The session's two state halves, addressed directly for readability at call sites. */
   private get domain() {
@@ -647,7 +650,32 @@ export class GriotController {
     this.review = this.buildReviewSession(deps);
     this.workspaceAgent = this.buildWorkspaceAgentWorkflow(deps);
     this.bridge = this.buildBridgeWorkflow(deps);
+    this.thinkTank = this.buildThinkTankWorkflow(deps);
 
+  }
+
+  /**
+   * Wires the think tank's own workflow — a separate store from the ambient
+   * `WorkspaceAgentWorkflow`, over the *same* `conversationRepo` (threads are
+   * `Conversation` records tagged with a `roundtableId`) and the *same*
+   * `dispatchWorkspaceAgentTool` every other tag in the app dispatches through.
+   */
+  private buildThinkTankWorkflow(deps: GriotControllerDeps): ThinkTankWorkflow {
+    const host: ThinkTankHost = {
+      onChange: () => this.emit(),
+      apiKey: () => this.domain.openRouterKey ?? "",
+      model: () => this.domain.selectedModel,
+      systemPrompt: () => this.agentPromptBody("workspace-agent"),
+      webSearchEnabled: () => this.domain.webSearchEnabled,
+      allCards: () => this.domain.cards,
+    };
+    return new ThinkTankWorkflow({
+      host,
+      agentGateway: deps.agentGateway,
+      conversationRepo: this.conversationRepo,
+      dispatchTool: tool =>
+        this.dispatchWorkspaceAgentTool(tool, { selectedCardIds: [], currentGroupId: null }),
+    });
   }
 
   /**
@@ -1040,6 +1068,7 @@ export class GriotController {
         )?.title ?? null,
       linkedCardsForOpenCard: this.computeLinkedCardsForOpenCard(),
       bridge: this.bridge.state,
+      thinkTank: this.thinkTank.state,
     });
   }
 
@@ -2659,26 +2688,17 @@ export class GriotController {
   }
 
   /**
-   * Closes the Ask GRIOT modal.
-   *
-   * Ordinarily this also ends the conversation — `WorkspaceAgentWorkflow.closeConversation`
-   * persists it and clears the transcript, so reopening starts fresh. But the modal and the
-   * Bridge board can point at the same live transcript (there is one conversation slot,
-   * not one per surface), so closing the modal *while a think tank is active on the board*
-   * must only hide the window: wiping the transcript here would empty the board out from
-   * under the captain over something they did in a different window entirely.
+   * Closes the Ask GRIOT modal. Also ends the ambient conversation —
+   * `WorkspaceAgentWorkflow.closeConversation` persists it and clears the transcript, so
+   * reopening starts fresh. Safe to do unconditionally: the Bridge's think-tank threads
+   * live in their own workflow entirely now (see `ThinkTankWorkflow`), so nothing here can
+   * reach across and wipe one out from under the board.
    */
   closeWorkspaceAgent(): void {
-    // Set before either branch's own emit, not after: `closeConversation()` (and the
-    // early-return branch's own `emit()`) broadcast a snapshot the instant they run, and a
-    // mutation made afterwards would miss that broadcast entirely, silently stale until
-    // some unrelated later emit happened to carry it.
+    // Set before `closeConversation()`'s own emit, not after — a mutation made afterwards
+    // would miss that broadcast entirely, silently stale until some unrelated later emit
+    // happened to carry it.
     this.ui.isAskGriotSheetOpen = false;
-
-    if (this.ui.activeThinkTankRoundtableId) {
-      this.emit();
-      return;
-    }
     this.workspaceAgent.closeConversation();
   }
 
@@ -2755,6 +2775,16 @@ export class GriotController {
     this.showToast(`Cleared the "${target.name}" table`);
   }
 
+  // --- Think Tank (delegated to ThinkTankWorkflow — its own history, separate from the
+  // ambient Ask GRIOT conversation and from the modal entirely) ---
+
+  /** Loads this workspace's think-tank history. Call when the Bridge comes on screen. */
+  async openThinkTank(): Promise<void> {
+    const workspaceId = this.domain.activeWorkspaceId;
+    if (!workspaceId) return;
+    await this.thinkTank.open(workspaceId);
+  }
+
   /**
    * Convenes a think tank: designs a panel suited to a *topic* rather than a named cast,
    * and immediately puts that topic to it — one prompt in, a table already talking.
@@ -2771,12 +2801,9 @@ export class GriotController {
    * topic and not a roundtable id: there is no existing table to reuse, on purpose — each
    * convening is a fresh room suited to what is being discussed *now*.
    *
-   * Deliberately does **not** open the Ask GRIOT modal. That sheet is a `Modal` — its own
-   * window, with its own keyboard-inset handling — and on some phones a modal stacked on
-   * top of the Bridge is exactly the friction a message board avoids: the discussion
-   * lands inline, in `AppState.activeThinkTankRoundtableId`, for the Bridge's own board to
-   * render as posts. The transcript underneath is the same `WorkspaceAgentWorkflow` either
-   * surface would use — only where it is shown has changed.
+   * Never touches the Ask GRIOT modal or its conversation. The thread this creates lives
+   * in `ThinkTankWorkflow`'s own store, with its own history — see that class's doc for
+   * why a separate workflow, not a mode of the ambient one.
    */
   async conveneThinkTank(topic: string): Promise<void> {
     const trimmed = topic.trim();
@@ -2785,39 +2812,70 @@ export class GriotController {
     const roundtable = await this.createRoundtable("", trimmed);
     if (!roundtable) return;
 
-    // A live conversation is what lets a send actually go anywhere — `sendMessage`
-    // refuses to run against one that was never opened. `ensureWorkspaceAgentConversation`
-    // is the same call `openWorkspaceAgent` makes, minus the modal flag it also raises.
-    this.ensureWorkspaceAgentConversation();
-    this.ui.activeThinkTankRoundtableId = roundtable.id;
-    this.askRoundtable(roundtable.id, trimmed);
-    this.emit();
+    const members = resolveRoundtableMembers(roundtable, this.domain.assistantProfiles)
+      .filter(profile => profile.capability === "chat")
+      .map(profile => ({
+        id: profile.id,
+        name: profile.name,
+        model: resolveProfileModel(profile, this.domain.selectedModel),
+        systemPrompt: profile.systemPrompt,
+      }));
+
+    await this.thinkTank.convene(roundtable.id, roundtable.name, members, trimmed);
+  }
+
+  /** Puts a new message to an already-live thread — the board's own composer. */
+  postToThinkTank(roundtableId: string, text: string): void {
+    void this.thinkTank.post(roundtableId, text);
   }
 
   /**
-   * Hides the think-tank board. The transcript itself is untouched — this only stops the
-   * Bridge from showing it, the same way closing a browser tab doesn't delete the page.
+   * Re-asks a reply's own voice the same question that produced it — a fresh, second
+   * attempt when the first one didn't hold up.
+   */
+  retryThinkTankReply(roundtableId: string, messageId: string): void {
+    void this.thinkTank.retryReply(roundtableId, messageId);
+  }
+
+  /** The "thinking" follow-up: asks a reply's own voice to look at what it just said again. */
+  rethinkThinkTankReply(roundtableId: string, messageId: string): void {
+    void this.thinkTank.rethinkReply(roundtableId, messageId);
+  }
+
+  /** The captain pressed `+` on a tag in a think-tank reply. */
+  async addThinkTankTag(roundtableId: string, messageId: string, tagId: string): Promise<void> {
+    await this.thinkTank.addTag(roundtableId, messageId, tagId);
+  }
+
+  /**
+   * Switches which thread the board shows — loading it from storage first if it is not
+   * already live this session. Every other thread stays exactly as it was; this is the
+   * whole point of a separate history.
+   */
+  async setActiveThinkTank(roundtableId: string): Promise<void> {
+    await this.thinkTank.setActive(roundtableId);
+  }
+
+  /**
+   * Hides the board. The active thread is untouched — this only stops the Bridge from
+   * showing it, the same way closing a browser tab doesn't delete the page.
    */
   dismissThinkTank(): void {
-    if (this.ui.activeThinkTankRoundtableId === null) return;
-    this.ui.activeThinkTankRoundtableId = null;
-    this.emit();
+    this.thinkTank.dismiss();
   }
 
-  /**
-   * Re-asks a reply's own persona the same question that produced it — a fresh, second
-   * attempt when the first one didn't hold up. See `WorkspaceAgentWorkflow.retryReply`.
-   */
-  retryReply(messageId: string): void {
-    void this.workspaceAgent.retryReply(messageId);
+  openThinkTankHistory(): void {
+    this.thinkTank.openHistory();
   }
 
-  /**
-   * The "thinking" follow-up: asks a reply's own persona to look at what it just said
-   * again. See `WorkspaceAgentWorkflow.rethinkReply`.
-   */
-  rethinkReply(messageId: string): void {
-    void this.workspaceAgent.rethinkReply(messageId);
+  closeThinkTankHistory(): void {
+    this.thinkTank.closeHistory();
+  }
+
+  /** Forgets a saved think tank entirely — the transcript, not the personas seated at it. */
+  async deleteThinkTankThread(roundtableId: string): Promise<void> {
+    await this.thinkTank.deleteThread(roundtableId);
+    this.showToast("Think tank deleted");
   }
 
   /**

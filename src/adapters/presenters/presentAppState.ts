@@ -9,7 +9,9 @@ import { GapReport } from "../../usecases/report/GapReportInteractor";
 import { WorkspaceAgentState } from "../../usecases/workspaceAgent/WorkspaceAgentWorkflow";
 import { WorkspacePulseObservation } from "../../usecases/workspaceAgent/observeWorkspace";
 import { BridgeState } from "../../usecases/bridge/BridgeWorkflow";
+import { ThinkTankState } from "../../usecases/thinkTank/ThinkTankWorkflow";
 import { presentWorkspaceAgent, presentWorkspacePulse } from "./WorkspaceAgentPresenter";
+import { presentThinkTank } from "./ThinkTankPresenter";
 
 /**
  * # App State Presenter
@@ -46,6 +48,8 @@ export interface PresentAppStateInput {
   linkedCardsForOpenCard: Array<{ cardId: string; title: string; relation?: string }>;
   /** The watch rotation's own state, passed through — see `AppState.bridge`. */
   bridge: BridgeState;
+  /** The think tank's own state — see `AppState.thinkTank`. */
+  thinkTank: ThinkTankState;
 }
 
 export function presentAppState(input: PresentAppStateInput): AppState {
@@ -112,7 +116,6 @@ export function presentAppState(input: PresentAppStateInput): AppState {
     isSuggestingQueries: ui.isSuggestingQueries,
     captureIntent: ui.captureIntent,
     pendingGroupNavigation: ui.pendingGroupNavigation,
-    activeThinkTankRoundtableId: ui.activeThinkTankRoundtableId,
     isInstallingFont: ui.isInstallingFont,
     fontQuery: ui.fontQuery,
     fontCategory: ui.fontCategory,
@@ -168,5 +171,8 @@ export function presentAppState(input: PresentAppStateInput): AppState {
     // compute contact ages against, and this function must stay free of the clock so the
     // same inputs always yield the same view model. See `BridgePresenter.presentBridge`.
     bridge: input.bridge,
+
+    // --- Owned by ThinkTankWorkflow — a separate history from the ambient conversation ---
+    thinkTank: presentThinkTank(input.thinkTank, domain.cards),
   };
 }
