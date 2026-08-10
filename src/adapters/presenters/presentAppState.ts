@@ -111,6 +111,7 @@ export function presentAppState(input: PresentAppStateInput): AppState {
     isSuggestingQueries: ui.isSuggestingQueries,
     captureIntent: ui.captureIntent,
     pendingGroupNavigation: ui.pendingGroupNavigation,
+    pendingArmedRoundtableId: ui.pendingArmedRoundtableId,
     isInstallingFont: ui.isInstallingFont,
     fontQuery: ui.fontQuery,
     fontCategory: ui.fontCategory,

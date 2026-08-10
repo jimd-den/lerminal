@@ -9,6 +9,7 @@ import { presentBridge, ContactViewModel } from "../../../../adapters/presenters
 import { GriotTheme, Structure, TypeScale } from "../theme";
 import { SituationStrip, StationRail } from "./instruments";
 import { ContactPanel } from "./ContactPanel";
+import { ThinkTankSheet } from "./ThinkTankSheet";
 
 /**
  * # Bridge Screen — the master situation display
@@ -46,6 +47,13 @@ export function BridgeScreen({
   theme: GriotTheme;
 }) {
   const view = presentBridge(state.bridge, Date.now());
+
+  /**
+   * The think tank's topic prompt. Local to this screen, the same way `RoundtableSheet`
+   * is local to `ConversationSheet` — it is a property of *this* entry point, not of the
+   * bridge's own domain state, which only ever knows stations and contacts.
+   */
+  const [thinkTankOpen, setThinkTankOpen] = React.useState(false);
 
   // Coming to the bridge: load the crew and the scope, and run whatever is due. The
   // workflow cooldown-gates `on-report` watches, so arriving repeatedly costs nothing.
@@ -126,6 +134,25 @@ export function BridgeScreen({
         ) : null}
       </View>
 
+      {/* The Bridge's own front door onto the table — no need to go find "Ask GRIOT" and
+          "Roundtable" first. Reachable the instant the panel opens, with nothing on the
+          scope required: this is where "just see a table discuss something" starts. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Convene a think tank"
+        accessibilityHint="Names a topic and starts a panel of voices discussing it."
+        onPress={() => setThinkTankOpen(true)}
+        style={({ pressed }) => [
+          styles.convene,
+          { borderColor: theme.accent, backgroundColor: theme.panel },
+          pressed && { opacity: 0.75 },
+        ]}
+      >
+        <Text style={[styles.conveneText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+          CONVENE A THINK TANK →
+        </Text>
+      </Pressable>
+
       <SituationStrip view={view.situation} theme={theme} scanning={view.scanning} />
 
       <StationRail
@@ -190,6 +217,13 @@ export function BridgeScreen({
           />
         ))
       )}
+
+      <ThinkTankSheet
+        visible={thinkTankOpen}
+        controller={controller}
+        theme={theme}
+        onClose={() => setThinkTankOpen(false)}
+      />
     </ScrollView>
   );
 }
@@ -197,17 +231,16 @@ export function BridgeScreen({
 /**
  * Takes a reading to the table.
  *
- * The bridge is where the captain sees; the table is where they deliberate. Opening the
- * conversation *from a specific contact*, with the reading already stated, is the version
- * of chat that was always worth keeping — a discussion you chose to have about something
- * concrete, rather than a blank box that makes you supply the context yourself. Once it is
- * open the captain can put the same question to a whole roundtable.
+ * The bridge is where the captain sees; the table is where they deliberate. This convenes
+ * a fresh think tank *about* the reading — a panel `roundtable-architect` designs to suit
+ * this specific finding, not a message to whichever single persona happened to be active —
+ * so what opens is the same "a room already talking" experience as convening one from
+ * scratch, just seeded with the contact's own content instead of a topic the captain typed.
  */
 function openTable(controller: GriotController) {
   return (contact: ContactViewModel) => {
-    controller.openWorkspaceAgent();
-    controller.sendWorkspaceAgentMessage(
-      `${contact.stationName} raised this: “${contact.title}”. ${summarize(contact)} Let's talk it through.`
+    void controller.conveneThinkTank(
+      `${contact.stationName} raised this: "${contact.title}". ${summarize(contact)}`
     );
   };
 }
@@ -346,6 +379,16 @@ const styles = StyleSheet.create({
   title: { fontSize: TypeScale.title, fontWeight: "800", letterSpacing: -0.4 },
   subtitle: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 1.2, marginTop: 3 },
   alertPip: { width: 10, height: 10, borderRadius: 5 },
+  convene: {
+    minHeight: Structure.tap,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderRadius: Structure.radiusControl,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+  },
+  conveneText: { fontSize: TypeScale.meta, fontWeight: "900", letterSpacing: 1 },
   eyebrow: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
   scopeHead: {
     flexDirection: "row",

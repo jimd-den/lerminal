@@ -272,6 +272,12 @@ export interface AppState {
    * *which* group; navigating there is the shell's job, so this is consumed once.
    */
   pendingGroupNavigation: string | null;
+  /**
+   * A table the conversation composer should arm itself to, set once by
+   * {@link GriotController.conveneThinkTank}. Consumed via
+   * {@link GriotController.consumeArmedRoundtable} — see that method's note.
+   */
+  pendingArmedRoundtableId: string | null;
   /** True while a Google font download is in flight. */
   isInstallingFont: boolean;
   /** The current font-browser query, owned here so results and query never disagree. */
@@ -2705,6 +2711,50 @@ export class GriotController {
     this.domain.roundtables = await this.roundtableRepo.getRoundtables();
     this.emit();
     this.showToast(`Cleared the "${target.name}" table`);
+  }
+
+  /**
+   * Convenes a think tank: designs a panel suited to a *topic* rather than a named cast,
+   * and immediately puts that topic to it — one prompt in, a table already talking.
+   *
+   * This is deliberately the same {@link createRoundtable} the manual "describe a panel"
+   * sheet uses, not a parallel mechanism. `roundtable-architect`'s own output contract
+   * already covers this case ("if they named none, infer a panel that genuinely serves
+   * the subject they described"), so a bare topic — "the ethics of gene editing", a
+   * finding a station raised — designs a fitting panel without the user ever having to
+   * describe characters.
+   *
+   * Reachable from the Bridge screen (a free-standing topic) and from a contact's "to the
+   * table" order (a topic seeded from what a station found), which is why this takes a
+   * topic and not a roundtable id: there is no existing table to reuse, on purpose — each
+   * convening is a fresh room suited to what is being discussed *now*.
+   */
+  async conveneThinkTank(topic: string): Promise<void> {
+    const trimmed = topic.trim();
+    if (!trimmed) return;
+
+    const roundtable = await this.createRoundtable("", trimmed);
+    if (!roundtable) return;
+
+    this.openWorkspaceAgent();
+    // The signal is one-shot: the composer arms itself to it once, then behaves exactly
+    // as it would for any other table — including the user un-arming it.
+    this.ui.pendingArmedRoundtableId = roundtable.id;
+    this.askRoundtable(roundtable.id, trimmed);
+  }
+
+  /**
+   * Reads and clears the pending armed-table signal — the same consume-once shape as
+   * {@link consumeGroupNavigation}. A composer that never asks is a composer that never
+   * clears it, which is fine: the signal only matters to whichever surface is watching.
+   */
+  consumeArmedRoundtable(): string | null {
+    const id = this.ui.pendingArmedRoundtableId;
+    if (id !== null) {
+      this.ui.pendingArmedRoundtableId = null;
+      this.emit();
+    }
+    return id;
   }
 
   /**

@@ -91,6 +91,14 @@ export interface UiState {
   suggestedActionError: string | null;
   captureIntent: "note" | "paste" | "link" | "ask" | null;
   pendingGroupNavigation: string | null;
+  /**
+   * A table the conversation composer should aim itself at, set when a think tank is just
+   * convened. The sheet decides *how* to arm itself (local state — see `ConversationSheet`);
+   * this only carries the one-time signal that it should. Consumed once, the same way
+   * {@link pendingGroupNavigation} is, so reopening the sheet later never silently still
+   * points at a table chosen minutes ago.
+   */
+  pendingArmedRoundtableId: string | null;
   isInstallingFont: boolean;
   /** Font-browser query, filter, results, and load state — see the controller's search. */
   fontQuery: string;
@@ -175,6 +183,7 @@ export function createInitialUiState(): UiState {
     suggestedActionError: null,
     captureIntent: null,
     pendingGroupNavigation: null,
+    pendingArmedRoundtableId: null,
     isInstallingFont: false,
     fontQuery: "",
     fontCategory: null,

@@ -6,5 +6,6 @@
  */
 export { BridgeScreen } from "./BridgeScreen";
 export { CommissionSheet } from "./CommissionSheet";
+export { ThinkTankSheet } from "./ThinkTankSheet";
 export { ContactPanel } from "./ContactPanel";
 export { SituationStrip, StationRail, dutyTone } from "./instruments";

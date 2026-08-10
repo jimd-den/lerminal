@@ -90,17 +90,80 @@ export function ConversationSheet({
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
 
-  const submit = () => {
-    const text = draft.trim();
-    if (!text) return;
-    // One send button, three possible audiences. The armed panel wins over the active
-    // persona because arming it was the more recent, more specific choice.
+  /**
+   * A think tank convened from the Bridge (or from a contact's "to the table" order)
+   * arrives here already talking — see `GriotController.conveneThinkTank`. This is what
+   * arms the composer to it the same way tapping the table's own pill would, so the very
+   * next thing the user types keeps talking to the room that was just assembled rather
+   * than to the single active persona.
+   */
+  React.useEffect(() => {
+    if (!state.pendingArmedRoundtableId) return;
+    setTargetRoundtableId(state.pendingArmedRoundtableId);
+    controller.consumeArmedRoundtable();
+  }, [controller, state.pendingArmedRoundtableId]);
+
+  /**
+   * Sentences the user has picked out of a reply to push back on — see {@link MessageBody}.
+   * Keyed by message id, then by `${segmentIndex}-${sentenceIndex}`; the map's value is
+   * the sentence text itself, so building the critique never has to re-derive it from the
+   * (possibly since-changed) message.
+   */
+  const [selectedSentences, setSelectedSentences] = useState<Record<string, Map<string, string>>>({});
+
+  const toggleSentence = (messageId: string, key: string, text: string) => {
+    setSelectedSentences(prev => {
+      const current = new Map(prev[messageId] ?? []);
+      if (current.has(key)) current.delete(key);
+      else current.set(key, text);
+      return { ...prev, [messageId]: current };
+    });
+  };
+
+  /** One send, three possible audiences — shared by the composer, critique, and push-deeper. */
+  const steer = (text: string) => {
+    if (!text.trim()) return;
+    // The armed panel wins over the active persona because arming it was the more recent,
+    // more specific choice.
     if (targetRoundtableId) {
       controller.askRoundtable(targetRoundtableId, text);
     } else {
       controller.sendWorkspaceAgentMessage(text);
     }
+  };
+
+  const submit = () => {
+    const text = draft.trim();
+    if (!text) return;
+    steer(text);
     setDraft("");
+  };
+
+  /**
+   * Sends the sentences the user picked back as a direct challenge, then clears the
+   * selection — a table that has just been pushed on a line should not still show it
+   * "selected" once the pushback is already on its way.
+   */
+  const critiqueSelection = (messageId: string) => {
+    const picked = selectedSentences[messageId];
+    if (!picked || picked.size === 0) return;
+    const quoted = [...picked.values()].map(sentence => `"${sentence.trim()}"`).join(" ");
+    steer(`Push back on this — is it actually right, and why or why not? ${quoted}`);
+    setSelectedSentences(prev => {
+      const next = { ...prev };
+      delete next[messageId];
+      return next;
+    });
+  };
+
+  /**
+   * The other steering shortcut: rather than quoting a line, ask whoever is currently
+   * being talked to what is worth digging into next. Phrased as research, not as "tell me
+   * more" — the point is a concrete next thing to go check, the same shape a Bridge
+   * station's "Sound deeper" order produces, reachable here without leaving the table.
+   */
+  const pushDeeper = () => {
+    steer("Push this further — what specifically is worth researching next to settle it, and why?");
   };
 
   /**
@@ -454,12 +517,37 @@ export function ConversationSheet({
                     </Text>
                   ) : null}
                   {message.segments.length > 0 ? (
-                    <MessageBody theme={theme} message={message} controller={controller} />
+                    <MessageBody
+                      theme={theme}
+                      message={message}
+                      controller={controller}
+                      selected={selectedSentences[message.id]}
+                      onToggleSentence={
+                        message.speaker === "assistant"
+                          ? (key, text) => toggleSentence(message.id, key, text)
+                          : undefined
+                      }
+                    />
                   ) : (
                     <Text style={[styles.bubbleText, { color: theme.text, fontFamily: theme.fontSans }]}>
                       {message.text}
                     </Text>
                   )}
+                  {/* Appears only once at least one sentence is picked, and only on the
+                      message it was picked from — a pill that lived in the composer would
+                      leave the reader guessing which reply it was even about. */}
+                  {selectedSentences[message.id]?.size ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Push back on ${selectedSentences[message.id]!.size} selected line${selectedSentences[message.id]!.size === 1 ? "" : "s"}`}
+                      onPress={() => critiqueSelection(message.id)}
+                      style={[styles.critiquePill, { borderColor: theme.danger }]}
+                    >
+                      <Text style={[styles.critiquePillText, { color: theme.danger, fontFamily: theme.fontMono }]}>
+                        CRITIQUE ({selectedSentences[message.id]!.size}) →
+                      </Text>
+                    </Pressable>
+                  ) : null}
                   {message.pending ? (
                     <Text
                       style={[styles.pendingText, { color: theme.textMuted, fontFamily: theme.fontMono }]}
@@ -487,6 +575,24 @@ export function ConversationSheet({
 
           </ScrollView>
           )}
+
+          {/* The other steering shortcut, alongside per-sentence critique: shown only while
+              a table is armed, because "push this further" is worded for a room, and a
+              single persona is already one plain sentence away from the same thing. */}
+          {targetRoundtableId ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Push the table to research further"
+              accessibilityState={{ disabled: view.isThinking }}
+              disabled={view.isThinking}
+              onPress={pushDeeper}
+              style={[styles.pushDeeperRow, { borderTopColor: theme.line }]}
+            >
+              <Text style={[styles.pushDeeperText, { color: theme.accent, fontFamily: theme.fontMono }]}>
+                PUSH DEEPER — WHAT SHOULD WE RESEARCH NEXT? →
+              </Text>
+            </Pressable>
+          ) : null}
 
           <View style={[styles.composer, { borderTopColor: theme.line }]}>
             <TextInput
@@ -735,25 +841,80 @@ function TurnDisclosure({
  * Nothing here can create anything. A chip's `+` calls `addWorkspaceAgentTag`, and that is
  * the only route from this file to a real card.
  */
+/**
+ * Splits a paragraph into whole sentences, terminator kept, trailing space dropped. The
+ * last "sentence" may have none at all — a streamed reply can simply stop mid-thought.
+ * Deliberately the same shape as `usecases/bridge/stationDuty.ts`'s splitter: both exist
+ * to turn free prose into pressable/quotable units, and there is no reason the two should
+ * disagree about what counts as one.
+ */
+const SENTENCE_PATTERN = /[^.!?]+[.!?]+["')\]]*|[^.!?]+$/g;
+
+function splitIntoSentences(text: string): string[] {
+  return (text.match(SENTENCE_PATTERN) ?? []).map(sentence => sentence.trim()).filter(Boolean);
+}
+
 function MessageBody({
   theme,
   message,
   controller,
+  selected,
+  onToggleSentence,
 }: {
   theme: GriotTheme;
   message: MessageViewModel;
   controller: GriotController;
+  /** Sentences already picked out of *this* message, keyed `${segmentIndex}-${sentenceIndex}`. */
+  selected?: Map<string, string>;
+  /**
+   * Present only for assistant messages — a user's own words are not something to push
+   * back on. See `ConversationSheet`'s selection state and `critiqueSelection`.
+   */
+  onToggleSentence?: (key: string, text: string) => void;
 }) {
   return (
     <View style={styles.body}>
       {message.segments.map((segment, index) =>
         segment.kind === "text" ? (
-          <Text
-            key={`text-${index}`}
-            style={[styles.bubbleText, { color: theme.text, fontFamily: theme.fontSans }]}
-          >
-            {segment.text}
-          </Text>
+          onToggleSentence ? (
+            // Sentence-by-sentence and individually pressable — RN has no real text
+            // selection to hook into, so a tap-to-pick sentence is the mobile-shaped
+            // equivalent of "highlight a line" the app can actually offer.
+            <Text
+              key={`text-${index}`}
+              style={[styles.bubbleText, { color: theme.text, fontFamily: theme.fontSans }]}
+            >
+              {splitIntoSentences(segment.text).map((sentence, sentenceIndex) => {
+                const key = `${index}-${sentenceIndex}`;
+                const isSelected = selected?.has(key) ?? false;
+                return (
+                  <Text
+                    key={key}
+                    accessibilityRole="button"
+                    accessibilityLabel={sentence}
+                    accessibilityHint="Selects this line to push back on."
+                    accessibilityState={{ selected: isSelected }}
+                    onPress={() => onToggleSentence(key, sentence)}
+                    style={
+                      isSelected
+                        ? { backgroundColor: theme.accentSoft, fontWeight: "700" }
+                        : undefined
+                    }
+                  >
+                    {sentenceIndex > 0 ? " " : ""}
+                    {sentence}
+                  </Text>
+                );
+              })}
+            </Text>
+          ) : (
+            <Text
+              key={`text-${index}`}
+              style={[styles.bubbleText, { color: theme.text, fontFamily: theme.fontSans }]}
+            >
+              {segment.text}
+            </Text>
+          )
         ) : (
           <TagChip
             key={segment.tag.id}
@@ -1128,6 +1289,23 @@ const styles = StyleSheet.create({
     fontSize: TypeScale.body,
     lineHeight: 18,
   },
+  critiquePill: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    minHeight: 30,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    justifyContent: "center",
+  },
+  critiquePillText: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 0.6 },
+  pushDeeperRow: {
+    minHeight: Structure.tap,
+    borderTopWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: Structure.gutter,
+  },
+  pushDeeperText: { fontSize: TypeScale.label, fontWeight: "800", letterSpacing: 0.6 },
   composer: {
     flexDirection: "row",
     alignItems: "flex-end",
