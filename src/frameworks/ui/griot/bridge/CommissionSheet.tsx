@@ -237,6 +237,23 @@ export function CommissionSheet({
               </Field>
             ) : null}
 
+            <Field label="WHEN IT FINDS SOMETHING NEW" theme={theme}>
+              <WatchOption
+                label="Raise it on the scope"
+                detail="A contact you can take to the table yourself, whenever you want to."
+                theme={theme}
+                selected={!draft.autoDiscuss}
+                onPress={() => controller.updateStationDraft({ autoDiscuss: false })}
+              />
+              <WatchOption
+                label="Open a discussion on its own"
+                detail="Also convenes a think tank about it, unattended — still only a conversation. Nothing reaches a card without your own tap on an order."
+                theme={theme}
+                selected={draft.autoDiscuss}
+                onPress={() => controller.updateStationDraft({ autoDiscuss: true })}
+              />
+            </Field>
+
             {bridge.error ? (
               <Text style={[styles.error, { color: theme.danger, fontFamily: theme.fontMono }]}>
                 {bridge.error}

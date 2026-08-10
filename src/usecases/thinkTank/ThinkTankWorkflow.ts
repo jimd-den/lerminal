@@ -67,6 +67,13 @@ export interface ThinkTankThread {
   error: string | null;
   /** The persisted record's id, once this thread has been saved at least once. */
   conversationId: string | null;
+  /**
+   * Whether a turn on this thread asks for the model's own extended reasoning. Defaults
+   * to on (matching every other agent call in the app) and lives per-thread rather than
+   * globally: a table convened "fast" stays fast for its own follow-ups without changing
+   * the setting for every other table.
+   */
+  reasoning: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -198,7 +205,8 @@ export class ThinkTankWorkflow {
     roundtableId: string,
     roundtableName: string,
     members: AgentVoice[],
-    topic: string
+    topic: string,
+    options: { reasoning?: boolean } = {}
   ): Promise<void> {
     if (members.length === 0) return;
     const now = this.now();
@@ -211,6 +219,7 @@ export class ThinkTankWorkflow {
       isThinking: false,
       error: null,
       conversationId: null,
+      reasoning: options.reasoning ?? true,
       createdAt: now,
       updatedAt: now,
     };
@@ -376,6 +385,9 @@ export class ThinkTankWorkflow {
       isThinking: false,
       error: null,
       conversationId: record.id,
+      // Not persisted — a live-session preference, not part of the transcript. A reopened
+      // thread starts back at the honest default rather than guessing what it was set to.
+      reasoning: true,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     };
@@ -390,6 +402,11 @@ export class ThinkTankWorkflow {
   dismiss(): void {
     if (this.current.activeRoundtableId === null) return;
     this.patch({ activeRoundtableId: null });
+  }
+
+  /** Toggles whether this thread's turns ask for extended reasoning. Applies from the next send on. */
+  setReasoning(roundtableId: string, enabled: boolean): void {
+    this.patchThread(roundtableId, { reasoning: enabled });
   }
 
   openHistory(): void {
@@ -461,6 +478,9 @@ export class ThinkTankWorkflow {
       });
       const tagCards = scoped.cards.map(card => ({ id: card.id, title: card.title }));
       const briefing = this.briefing(roundtableId, scoped.cards, voice, panel);
+      // Read once, before the thread's own `reasoning` name gets shadowed below by the
+      // accumulated reasoning *text* — the two are unrelated things sharing a word.
+      const wantsReasoning = this.current.threads[roundtableId]?.reasoning ?? true;
 
       let text = "";
       let reasoning = "";
@@ -496,6 +516,7 @@ export class ThinkTankWorkflow {
         model: voice.model || (this.deps.host.model?.() ?? ""),
         systemPrompt: voice.systemPrompt ?? this.deps.host.systemPrompt?.(),
         webSearchEnabled: this.deps.host.webSearchEnabled?.(),
+        reasoning: wantsReasoning,
         onDelta: delta => {
           if (delta.text) text += delta.text;
           if (delta.reasoning) reasoning += delta.reasoning;

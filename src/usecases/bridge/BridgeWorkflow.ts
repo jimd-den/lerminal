@@ -95,6 +95,14 @@ export interface BridgeWorkflowDeps {
    * to the workspace.
    */
   dispatchTool?: (tool: AgentToolIntent, context: WorkspaceAgentContext) => Promise<string>;
+  /**
+   * Opens a board topic for a station whose `autoDiscuss` is on — the one path by which a
+   * station originates a discussion unattended rather than waiting for the captain's own
+   * "to the table" tap. Still bounded the same way every other autonomy in this file is:
+   * it starts a *conversation*, never a workspace change — nothing here can reach a card
+   * without the captain's own order on whatever the topic produces.
+   */
+  autoConvene?: (topic: string) => void;
   now?: () => number;
   generateId?: () => string;
 }
@@ -107,6 +115,7 @@ export interface StationDraft {
   personaId?: string;
   watch: Watch;
   depthCap: number;
+  autoDiscuss: boolean;
 }
 
 export const EMPTY_DRAFT: StationDraft = {
@@ -115,6 +124,7 @@ export const EMPTY_DRAFT: StationDraft = {
   subject: "",
   watch: { kind: "on-report" },
   depthCap: 2,
+  autoDiscuss: false,
 };
 
 export interface BridgeState {
@@ -297,6 +307,14 @@ export class BridgeWorkflow {
         lastError: undefined,
         contactsRaised: station.contactsRaised + 1,
       });
+
+      // The station originates a discussion itself, rather than waiting for the captain's
+      // own "to the table" tap — only when they opted this specific post into it, and
+      // only for a reading that is genuinely new (the re-found/escalation branch above
+      // already returned, so this line is never reached for a repeat).
+      if (station.autoDiscuss) {
+        this.deps.autoConvene?.(topicFor(station, contact));
+      }
 
       raised = contact;
     } catch (error: any) {
@@ -607,6 +625,7 @@ export class BridgeWorkflow {
       personaId: draft.personaId,
       watch: draft.watch,
       depthCap: draft.depthCap,
+      autoDiscuss: draft.autoDiscuss,
       now: this.now(),
     });
 
@@ -760,4 +779,30 @@ function truthfulError(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error) return error;
   return "That didn't complete. Nothing was changed.";
+}
+
+/**
+ * The topic a station opens the board with when it originates a discussion itself.
+ * Deliberately the same phrasing `BridgeScreen`'s own "to the table" order builds from a
+ * contact by hand — a topic reads the same whether the captain tapped for it or a station
+ * with `autoDiscuss` on raised it unattended.
+ */
+function topicFor(station: Station, contact: Contact): string {
+  return `${station.name} raised this: "${contact.title}". ${summarizeReadout(contact.readout)}`;
+}
+
+/** One honest sentence about what a reading actually said — never more than it holds. */
+function summarizeReadout(readout: Contact["readout"]): string {
+  switch (readout.shape) {
+    case "finding":
+      return readout.detail ?? "";
+    case "manifest":
+      return `It proposed: ${readout.entries.map(entry => entry.title).join(", ")}.`;
+    case "plan":
+      return `It plotted a route toward ${readout.goal}.`;
+    case "drill":
+      return `${readout.dueCount} cards are due.`;
+    case "signal":
+      return readout.text;
+  }
 }

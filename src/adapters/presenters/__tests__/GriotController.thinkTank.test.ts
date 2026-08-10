@@ -37,7 +37,7 @@ import { Card } from "../../../entities/card";
 
 class StubAgentGateway implements AgentGateway {
   designCalls: { brief: string; systemPrompt?: string }[] = [];
-  turnCalls: { briefing: string; model: string }[] = [];
+  turnCalls: { briefing: string; model: string; reasoning?: boolean }[] = [];
   nextTurnText = "A reply.";
   /** Lets a test script different replies for consecutive turns. */
   turnTextQueue: string[] = [];
@@ -55,8 +55,9 @@ class StubAgentGateway implements AgentGateway {
   async designWorkspaceAgentTurn(input: {
     briefing: string;
     model: string;
+    reasoning?: boolean;
   }): Promise<WorkspaceAgentTurnResult> {
-    this.turnCalls.push({ briefing: input.briefing, model: input.model });
+    this.turnCalls.push({ briefing: input.briefing, model: input.model, reasoning: input.reasoning });
     const text = this.turnTextQueue.shift() ?? this.nextTurnText;
     return { text, webCitations: [] };
   }
@@ -376,5 +377,113 @@ describe("postToThinkTank", () => {
 
     expect(agentGateway.turnCalls).toHaveLength(2);
     expect(agentGateway.turnCalls.every(call => call.briefing.includes("a follow-up"))).toBe(true);
+  });
+});
+
+describe("seating the Skeptic", () => {
+  it("adds the built-in Skeptic to the designed panel when asked", async () => {
+    const { controller } = await buildController();
+
+    await controller.conveneThinkTank("A random topic", { includeSkeptic: true });
+
+    const active = controller.getState().thinkTank.active!;
+    expect(active.messages.some(m => m.personaName === "The Skeptic")).toBe(true);
+    // Written back into the saved roundtable, not just this one convening.
+    const roundtable = controller.getState().roundtables.find(rt => rt.id === active.roundtableId)!;
+    expect(roundtable.memberIds).toContain("builtin-skeptic");
+  });
+
+  it("does not seat it unless asked", async () => {
+    const { controller } = await buildController();
+
+    await controller.conveneThinkTank("A random topic");
+
+    const active = controller.getState().thinkTank.active!;
+    expect(active.messages.some(m => m.personaName === "The Skeptic")).toBe(false);
+  });
+
+  it("never adds it twice", async () => {
+    const { controller } = await buildController();
+    await controller.conveneThinkTank("A random topic", { includeSkeptic: true });
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
+    const roundtable = controller.getState().roundtables.find(rt => rt.id === roundtableId)!;
+
+    expect(roundtable.memberIds.filter(id => id === "builtin-skeptic")).toHaveLength(1);
+  });
+});
+
+describe("the reasoning toggle", () => {
+  it("defaults to on, and is never sent as false unless the captain turns it off", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    await controller.conveneThinkTank("A random topic");
+
+    expect(agentGateway.turnCalls.every(call => call.reasoning !== false)).toBe(true);
+  });
+
+  it("convening fast sends reasoning: false on the opening turn", async () => {
+    const { controller, agentGateway } = await buildController();
+
+    await controller.conveneThinkTank("A random topic", { reasoning: false });
+
+    expect(agentGateway.turnCalls).toHaveLength(2);
+    expect(agentGateway.turnCalls.every(call => call.reasoning === false)).toBe(true);
+  });
+
+  it("toggling it on the board applies from the next post, not retroactively", async () => {
+    const { controller, agentGateway } = await buildController();
+    await controller.conveneThinkTank("A random topic");
+    const roundtableId = controller.getState().thinkTank.active!.roundtableId;
+    agentGateway.turnCalls = [];
+
+    controller.setThinkTankReasoning(roundtableId, false);
+    controller.postToThinkTank(roundtableId, "a follow-up");
+    await flush();
+
+    expect(agentGateway.turnCalls.every(call => call.reasoning === false)).toBe(true);
+  });
+});
+
+describe("a station that opens a discussion on its own", () => {
+  it("convenes a think tank without the captain tapping anything", async () => {
+    const { controller, agentGateway } = await buildController();
+    await controller.openBridge();
+    controller.openCommission("sensors");
+    controller.updateStationDraft({ autoDiscuss: true, watch: { kind: "standing" } });
+    await controller.commissionStation();
+
+    // Sensors needs cards to actually find something — an ungrouped cluster is what
+    // `observeWorkspace` looks for.
+    for (let i = 0; i < 4; i += 1) {
+      await controller.createNote({ title: `Loose note ${i}`, content: "b" });
+    }
+    const stationId = controller.getState().bridge.stations[0].id;
+    agentGateway.designCalls = [];
+
+    await controller.standWatch(stationId);
+    // `autoConvene` is fire-and-forget, same as every other agent send in this app — see
+    // `BridgeWorkflowDeps.autoConvene`'s own doc.
+    await flush();
+
+    // A board topic exists, and the captain never called conveneThinkTank themselves.
+    expect(controller.getState().thinkTank.active).not.toBeNull();
+    expect(agentGateway.designCalls).toHaveLength(1);
+  });
+
+  it("stays quiet by default — a station never opens a discussion unless asked to", async () => {
+    const { controller, agentGateway } = await buildController();
+    await controller.openBridge();
+    controller.openCommission("sensors");
+    controller.updateStationDraft({ watch: { kind: "standing" } });
+    await controller.commissionStation();
+
+    for (let i = 0; i < 4; i += 1) {
+      await controller.createNote({ title: `Loose note ${i}`, content: "b" });
+    }
+    const stationId = controller.getState().bridge.stations[0].id;
+
+    await controller.standWatch(stationId);
+
+    expect(controller.getState().thinkTank.active).toBeNull();
   });
 });

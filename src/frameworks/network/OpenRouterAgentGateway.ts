@@ -260,6 +260,7 @@ export class OpenRouterAgentGateway implements AgentGateway {
     model: string;
     systemPrompt?: string;
     webSearchEnabled?: boolean;
+    reasoning?: boolean;
     onDelta?: (delta: { text?: string; reasoning?: string }) => void;
   }): Promise<WorkspaceAgentTurnResult> {
     return new Promise((resolve, reject) => {
@@ -367,10 +368,11 @@ export class OpenRouterAgentGateway implements AgentGateway {
             { role: "system", content: composeSystemPrompt("workspace-agent", input.systemPrompt) },
             { role: "user", content: input.briefing },
           ],
-          // Ask for the model's own reasoning alongside the answer. OpenRouter drops the
-          // parameter for models that cannot reason — those simply stream none, and no
-          // reasoning UI appears at all.
-          reasoning: REASONING_REQUEST,
+          // Ask for the model's own reasoning alongside the answer, unless the caller
+          // explicitly wants the fast/no-reasoning path — see `AgentGateway`'s own note.
+          // OpenRouter also drops the field for models that cannot reason regardless: those
+          // simply stream none, and no reasoning UI appears at all.
+          ...(input.reasoning === false ? {} : { reasoning: REASONING_REQUEST }),
           // On unless the user turned it off globally — see `webPlugins`. Whether it
           // actually ran is never inferred from this flag; only real citations say so.
           ...webPlugins(input.webSearchEnabled),

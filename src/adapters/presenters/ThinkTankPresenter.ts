@@ -54,6 +54,8 @@ export interface ThinkTankThreadViewModel {
   isEmpty: boolean;
   isThinking: boolean;
   error: string | null;
+  /** Whether this thread's next turn will ask for the model's own extended reasoning. */
+  reasoning: boolean;
 }
 
 export interface ThinkTankHistoryEntryViewModel {
@@ -108,6 +110,7 @@ function toThreadViewModel(
     isEmpty: messages.length === 0,
     isThinking: thread.isThinking,
     error: thread.error,
+    reasoning: thread.reasoning,
   };
 }
 

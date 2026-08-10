@@ -193,6 +193,17 @@ export interface Station {
   watch: Watch;
   /** How deep this station may expand a contact without being told to. */
   depthCap: number;
+  /**
+   * Whether a genuinely new finding also opens its own board topic, unattended — the
+   * station originating a discussion rather than waiting for the captain to tap "to the
+   * table" on it. Off by default: escalating a reading into a whole table talking about
+   * it is a bigger footprint than a quiet contact on the scope, and that jump should be
+   * something the captain opted into per station, not a thing every post does by default.
+   *
+   * Never a bigger jump than that: a topic is discussion, not action — nothing about this
+   * flag lets a station touch a card without the captain's own tap on an order.
+   */
+  autoDiscuss?: boolean;
   /** `relieved` is off duty: it keeps its contacts and stops waking. */
   status: "on-watch" | "relieved";
   lastRunAt?: number;
@@ -298,6 +309,7 @@ export interface CreateStationParams {
   personaId?: string;
   watch?: Watch;
   depthCap?: number;
+  autoDiscuss?: boolean;
   now?: number;
 }
 
@@ -316,6 +328,7 @@ export function createStation(params: CreateStationParams): Station {
     ...(params.personaId ? { personaId: params.personaId } : {}),
     watch: normalizeWatch(params.watch ?? { kind: "standing" }),
     depthCap: clamp(params.depthCap ?? DEFAULT_DEPTH_CAP, 0, MAX_DEPTH_CAP),
+    ...(params.autoDiscuss ? { autoDiscuss: true } : {}),
     status: "on-watch",
     contactsRaised: 0,
     createdAt: now,

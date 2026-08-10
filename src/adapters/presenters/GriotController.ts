@@ -54,6 +54,7 @@ import {
   AssistantProfile,
   AssistantCapability,
   BUILTIN_ASSISTANT_PROFILES,
+  BUILTIN_SKEPTIC_ID,
   resolveProfileModel,
   resolveProfileScope,
 } from "../../entities/assistantProfile";
@@ -723,6 +724,10 @@ export class GriotController {
       agentGateway: deps.agentGateway,
       observe: observeWorkspace,
       dispatchTool: (tool, context) => this.dispatchWorkspaceAgentTool(tool, context),
+      // A station with `autoDiscuss` on reaches the board through the exact same door a
+      // captain's own "to the table" tap does — nothing here is a second, looser path to
+      // the workspace, only a second way to *start a conversation* unattended.
+      autoConvene: (topic) => void this.conveneThinkTank(topic),
     });
   }
 
@@ -2805,12 +2810,25 @@ export class GriotController {
    * in `ThinkTankWorkflow`'s own store, with its own history — see that class's doc for
    * why a separate workflow, not a mode of the ambient one.
    */
-  async conveneThinkTank(topic: string): Promise<void> {
+  async conveneThinkTank(
+    topic: string,
+    options: { includeSkeptic?: boolean; reasoning?: boolean } = {}
+  ): Promise<void> {
     const trimmed = topic.trim();
     if (!trimmed) return;
 
-    const roundtable = await this.createRoundtable("", trimmed);
+    let roundtable = await this.createRoundtable("", trimmed);
     if (!roundtable) return;
+
+    // Seated by the app, not left to the architect's judgment: `roundtable-architect` is
+    // told to write panels that disagree, but nothing forces it to, and "guaranteed
+    // pushback" is exactly what a captain asking for it means. Written back into the
+    // saved roundtable too, so a later re-ask of this same table still has it.
+    if (options.includeSkeptic && !roundtable.memberIds.includes(BUILTIN_SKEPTIC_ID)) {
+      roundtable = { ...roundtable, memberIds: [...roundtable.memberIds, BUILTIN_SKEPTIC_ID] };
+      await this.roundtableRepo?.saveRoundtable(roundtable);
+      this.domain.roundtables = (await this.roundtableRepo?.getRoundtables()) ?? this.domain.roundtables;
+    }
 
     const members = resolveRoundtableMembers(roundtable, this.domain.assistantProfiles)
       .filter(profile => profile.capability === "chat")
@@ -2821,12 +2839,19 @@ export class GriotController {
         systemPrompt: profile.systemPrompt,
       }));
 
-    await this.thinkTank.convene(roundtable.id, roundtable.name, members, trimmed);
+    await this.thinkTank.convene(roundtable.id, roundtable.name, members, trimmed, {
+      reasoning: options.reasoning,
+    });
   }
 
   /** Puts a new message to an already-live thread — the board's own composer. */
   postToThinkTank(roundtableId: string, text: string): void {
     void this.thinkTank.post(roundtableId, text);
+  }
+
+  /** Toggles whether a thread's turns ask the model for its own extended reasoning. */
+  setThinkTankReasoning(roundtableId: string, enabled: boolean): void {
+    this.thinkTank.setReasoning(roundtableId, enabled);
   }
 
   /**

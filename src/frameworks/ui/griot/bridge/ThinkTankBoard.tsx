@@ -136,6 +136,17 @@ export function ThinkTankBoard({
               </Text>
             </View>
             <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel={active.reasoning ? "Turn off extended reasoning" : "Turn on extended reasoning"}
+              accessibilityHint="Faster, cheaper replies with it off; more deliberate with it on. Applies to this table's next post."
+              accessibilityState={{ checked: active.reasoning }}
+              onPress={() => controller.setThinkTankReasoning(active.roundtableId, !active.reasoning)}
+              hitSlop={8}
+              style={styles.reasoningToggle}
+            >
+              <Text style={styles.reasoningGlyph}>{active.reasoning ? "🧠" : "⚡"}</Text>
+            </Pressable>
+            <Pressable
               accessibilityRole="button"
               accessibilityLabel="Dismiss the think tank board"
               accessibilityHint="Hides the board. Nothing said is deleted."
@@ -493,6 +504,8 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: TypeScale.label, fontWeight: "900", letterSpacing: 1.4 },
   tableName: { fontSize: TypeScale.bodyStrong, fontWeight: "800", marginTop: 2 },
   hashtag: { fontSize: TypeScale.label, fontWeight: "700", marginTop: 2, letterSpacing: 0.4 },
+  reasoningToggle: { minWidth: Structure.tap, minHeight: Structure.tap, alignItems: "center", justifyContent: "center" },
+  reasoningGlyph: { fontSize: 20 },
   dismiss: { minWidth: Structure.tap, minHeight: Structure.tap, alignItems: "center", justifyContent: "center" },
   dismissText: { fontSize: 16, fontWeight: "900" },
   empty: { fontSize: TypeScale.meta, fontStyle: "italic" },

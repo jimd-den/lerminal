@@ -206,6 +206,14 @@ export interface AgentGateway {
      */
     webSearchEnabled?: boolean;
     /**
+     * Opt-*out* of asking the model for its own extended reasoning; defaults to on. A
+     * "push deeper" ping or a quick retry rarely needs the model to deliberate, and
+     * reasoning tokens cost real latency and real money on a call the caller wants fast —
+     * this is the honest "no" rather than silently discarding a reasoning block the
+     * provider was going to return anyway.
+     */
+    reasoning?: boolean;
+    /**
      * Called with each increment as it is generated — text, reasoning, or both. Optional:
      * a gateway that cannot stream simply never calls it, and the caller shows the honest
      * non-streaming state rather than faking a typing effect.

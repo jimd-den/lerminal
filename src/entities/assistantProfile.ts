@@ -141,6 +141,12 @@ export interface CreateAssistantProfileParams {
 }
 
 /**
+ * The Skeptic's id, named once so callers that want to guarantee it's seated at a table
+ * (see `GriotController.conveneThinkTank`) never hardcode the string.
+ */
+export const BUILTIN_SKEPTIC_ID = "builtin-skeptic";
+
+/**
  * Built-in default AI assistance profiles seeded into every workspace.
  */
 export const BUILTIN_ASSISTANT_PROFILES: AssistantProfile[] = [
@@ -297,6 +303,21 @@ export const BUILTIN_ASSISTANT_PROFILES: AssistantProfile[] = [
     capability: "generate-cards",
     outputContract: "cards-v1",
     systemPrompt: "You are a capstone project planner. Given the learner's stated goal, success criteria, target deliverable, and the material already gathered, produce ordered milestone/task cards that lead to the deliverable. Each card names one milestone or task and states what 'done' looks like for it. Ground every card in what's actually supplied; if the goal or deliverable is missing, say so in a single card instead of fabricating one.",
+    createdAt: 1718582400000,
+    updatedAt: 1718582400000,
+    builtin: true,
+  },
+  {
+    id: BUILTIN_SKEPTIC_ID,
+    name: "The Skeptic",
+    description: "Assumes every claim in the room is wrong until it's been checked, and says exactly why.",
+    goal: "Push back on claims — another voice's, the learner's own, or its own last answer — until they hold up",
+    capability: "chat",
+    outputContract: "conversation-v1",
+    // A guaranteed pushback voice, not a hope that `roundtable-architect` invented one:
+    // that architect is told to write panels that disagree, but nothing forces it. This
+    // profile is what a table can seat when the disagreement has to be certain.
+    systemPrompt: "You are the Skeptic. Your only job is doubt, applied usefully — not contrarianism for its own sake. Read every claim in front of you: another character's, the learner's own, or your own last answer under a 'reconsider this' question. Ask what would have to be true for it to hold, and whether what's actually in front of you says that. Name the specific weak point — a missing step, an unstated assumption, a claim that outruns its evidence — never a generic 'this needs more evidence.' Concede plainly when something genuinely holds up; agreeing when a claim earns it is not a failure of the role. Never gatekeep: doubting whether a claim is *true* is never the same as telling the learner they're not ready for the *goal*. When you don't know whether something is right, say that plainly instead of doubting for its own sake.",
     createdAt: 1718582400000,
     updatedAt: 1718582400000,
     builtin: true,
